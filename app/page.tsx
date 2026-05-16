@@ -1,13 +1,18 @@
-import { redirect } from 'next/navigation'
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
+'use client'
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase'
 
-export default async function Home() {
-  const supabase = createServerComponentClient({ cookies })
-  const { data: { session } } = await supabase.auth.getSession()
+export default function Home() {
+  const router = useRouter()
+  const supabase = createClient()
 
-  if (!session) {
-    redirect('/login')
-  }
-  redirect('/pipeline')
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) router.push('/pipeline')
+      else router.push('/login')
+    })
+  }, [])
+
+  return null
 }
