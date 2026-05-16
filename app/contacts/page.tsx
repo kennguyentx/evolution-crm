@@ -63,9 +63,17 @@ export default function ContactsPage() {
     if (!search.trim()) { setSearchResults(null); return }
     const timer = setTimeout(async () => {
       const q = search.trim()
-      const { data } = await supabase.from('contacts').select('*')
-        .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,firm.ilike.%${q}%,email.ilike.%${q}%`)
-        .order('last_name').limit(100)
+      const parts = q.split(' ').filter(Boolean)
+      let query = supabase.from('contacts').select('*')
+      if (parts.length >= 2) {
+        // Full name search — match first + last separately
+        query = query.or(
+          `first_name.ilike.%${parts[0]}%,last_name.ilike.%${parts[parts.length-1]}%,firm.ilike.%${q}%,email.ilike.%${q}%`
+        )
+      } else {
+        query = query.or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,firm.ilike.%${q}%,email.ilike.%${q}%`)
+      }
+      const { data } = await query.order('last_name').limit(100)
       setSearchResults(data || [])
     }, 300)
     return () => clearTimeout(timer)
