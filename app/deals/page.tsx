@@ -15,7 +15,7 @@ export default function DealsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [stageFilter, setStageFilter] = useState<string>('all')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('Active')
   const [showNewDeal, setShowNewDeal] = useState(false)
   const supabase = createClient()
 
@@ -46,20 +46,16 @@ export default function DealsPage() {
         borderBottom: '1px solid var(--border)',
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
+        gap: '16px',
         flexShrink: 0,
       }}>
         <div>
           <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '24px' }}>Deals</h1>
-        <button className="btn btn-primary" onClick={() => setShowNewDeal(true)}>
-          <Plus size={14} /> New Deal
+          <button className="btn btn-primary" onClick={() => setShowNewDeal(true)}>
+          <Plus size={14} />
+          New Deal
         </button>
-          <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
-            {filtered.length} deal{filtered.length !== 1 ? 's' : ''}
-            {totalEbitda > 0 && ` · ${formatCurrency(totalEbitda)} total EBITDA`}
-          </div>
-        </div>
-              </div>
+      </div>
 
       {/* Filters */}
       <div style={{
