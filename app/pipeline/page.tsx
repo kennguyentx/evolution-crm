@@ -206,8 +206,8 @@ function DealCard({ deal, contacts, onStageChange }: {
           <div style={{
             fontSize: '12px', color: 'var(--text-secondary)',
             marginTop: '7px', lineHeight: 1.5,
-            display: '-webkit-box', WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            overflow: 'hidden',
+            maxHeight: '3em',
           }}>
             {deal.description}
           </div>
