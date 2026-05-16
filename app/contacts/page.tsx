@@ -19,23 +19,23 @@ export default function ContactsPage() {
   const [typeFilter, setTypeFilter] = useState('all')
   const [offset, setOffset] = useState(0)
   const [showNew, setShowNew] = useState(false)
+  const [editingContact, setEditingContact] = useState<Contact | null>(null)
   const [typeCounts, setTypeCounts] = useState<Record<string, number>>({})
   const supabase = createClient()
 
   useEffect(() => {
     const fetchCounts = async () => {
-      const { data } = await supabase.from('contact_counts').select('*').single()
-      if (data) {
-        setTotal(Number(data.total) || 0)
-        setTypeCounts({
-          banker: Number(data.banker) || 0,
-          lp: Number(data.lp) || 0,
-          lender: Number(data.lender) || 0,
-          advisor: Number(data.advisor) || 0,
-          management: Number(data.management) || 0,
-          other: Number(data.other) || 0,
-        })
-      }
+      const { count: totalCount } = await supabase
+        .from('contacts').select('*', { count: 'exact', head: true })
+      if (totalCount !== null) setTotal(totalCount)
+      const types = ['banker', 'lp', 'lender', 'advisor', 'management', 'other']
+      const counts: Record<string, number> = {}
+      await Promise.all(types.map(async (t) => {
+        const { count } = await supabase
+          .from('contacts').select('*', { count: 'exact', head: true }).eq('contact_type', t)
+        counts[t] = count || 0
+      }))
+      setTypeCounts(counts)
     }
     fetchCounts()
   }, [])
@@ -44,15 +44,9 @@ export default function ContactsPage() {
     const currentOffset = reset ? 0 : offset
     if (reset) setLoading(true)
     else setLoadingMore(true)
-
-    let query = supabase
-      .from('contacts')
-      .select('*')
-      .order('last_name')
+    let query = supabase.from('contacts').select('*').order('last_name')
       .range(currentOffset, currentOffset + PAGE_SIZE - 1)
-
     if (typeFilter !== 'all') query = query.eq('contact_type', typeFilter)
-
     const { data } = await query
     if (data) {
       if (reset) setContacts(data)
@@ -63,45 +57,54 @@ export default function ContactsPage() {
     setLoadingMore(false)
   }, [supabase, typeFilter, offset])
 
-  useEffect(() => {
-    setOffset(0)
-    fetchContacts(true)
-  }, [typeFilter])
+  useEffect(() => { setOffset(0); fetchContacts(true) }, [typeFilter])
 
   useEffect(() => {
     if (!search.trim()) { setSearchResults(null); return }
     const timer = setTimeout(async () => {
       const q = search.trim()
-      const { data } = await supabase
-        .from('contacts')
-        .select('*')
+      const { data } = await supabase.from('contacts').select('*')
         .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,firm.ilike.%${q}%,email.ilike.%${q}%`)
-        .order('last_name')
-        .limit(200)
+        .order('last_name').limit(100)
       setSearchResults(data || [])
     }, 300)
     return () => clearTimeout(timer)
   }, [search])
+
+  const handleSaved = () => {
+    setShowNew(false)
+    setEditingContact(null)
+    setOffset(0)
+    fetchContacts(true)
+  }
 
   const displayed = searchResults !== null ? searchResults : contacts
   const displayTotal = typeFilter !== 'all' ? (typeCounts[typeFilter] || 0) : total
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-        <div>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '24px' }}>Contacts</h1>
-          <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
-            {total.toLocaleString()} total
-            {typeCounts['banker'] ? ` · ${typeCounts['banker'].toLocaleString()} bankers` : ''}
-            {typeCounts['lp'] ? ` · ${typeCounts['lp'].toLocaleString()} LPs` : ''}
-            {typeCounts['lender'] ? ` · ${typeCounts['lender'].toLocaleString()} lenders` : ''}
-          </div>
+
+      {/* Header — New Contact button next to title */}
+      <div style={{
+        padding: '20px 28px',
+        borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', gap: '16px',
+        flexShrink: 0, background: 'var(--surface)',
+      }}>
+        <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Contacts</h1>
+        <button className="btn btn-primary" onClick={() => setShowNew(true)}>
+          <Plus size={14} /> New Contact
+        </button>
+        <div style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: '12px' }}>
+          {total.toLocaleString()} total
+          {typeCounts['banker'] ? ` · ${typeCounts['banker'].toLocaleString()} bankers` : ''}
+          {typeCounts['lp'] ? ` · ${typeCounts['lp'].toLocaleString()} LPs` : ''}
+          {typeCounts['lender'] ? ` · ${typeCounts['lender'].toLocaleString()} lenders` : ''}
         </div>
-        <button className="btn btn-primary" onClick={() => setShowNew(true)}><Plus size={14} /> New Contact</button>
       </div>
 
-      <div style={{ padding: '12px 28px', display: 'flex', gap: '8px', flexWrap: 'wrap', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+      {/* Type filters */}
+      <div style={{ padding: '12px 28px', display: 'flex', gap: '8px', flexWrap: 'wrap', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
         {CONTACT_TYPES.map(type => (
           <button key={type} onClick={() => setTypeFilter(typeFilter === type ? 'all' : type)}
             style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '999px', border: `1px solid ${typeFilter === type ? 'var(--accent)' : 'var(--border)'}`, background: typeFilter === type ? 'var(--accent-muted)' : 'transparent', cursor: 'pointer', fontSize: '11px', color: typeFilter === type ? 'var(--accent)' : 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 500 }}>
@@ -110,17 +113,20 @@ export default function ContactsPage() {
         ))}
       </div>
 
-      <div style={{ padding: '12px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+      {/* Search */}
+      <div style={{ padding: '10px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
         <div style={{ position: 'relative', maxWidth: '320px' }}>
           <Search size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input className="input" placeholder="Search name, firm, email..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: '30px' }} />
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '8px 28px', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        <div>Name</div><div>Firm / Title</div><div>Type</div><div>Relationship</div><div>Contact</div>
+      {/* Table header */}
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 80px', padding: '8px 28px', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+        <div>Name</div><div>Firm / Title</div><div>Type</div><div>Contact</div>
       </div>
 
+      {/* Contacts list */}
       <div style={{ flex: 1, overflow: 'auto' }}>
         {loading ? (
           <div style={{ padding: '40px 28px', color: 'var(--text-muted)' }}>Loading...</div>
@@ -129,7 +135,12 @@ export default function ContactsPage() {
         ) : (
           <>
             {displayed.map(contact => (
-              <div key={contact.id} className="table-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '12px 28px' }}>
+              <div
+                key={contact.id}
+                className="table-row"
+                style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 80px', padding: '12px 28px', cursor: 'pointer' }}
+                onClick={() => setEditingContact(contact)}
+              >
                 <div>
                   <div style={{ fontWeight: 500, fontSize: '13px' }}>{contact.first_name} {contact.last_name}</div>
                 </div>
@@ -140,12 +151,7 @@ export default function ContactsPage() {
                 <div style={{ alignSelf: 'center' }}>
                   <span className={`badge ${contactTypeClass(contact.contact_type)}`}>{contact.contact_type}</span>
                 </div>
-                <div style={{ alignSelf: 'center' }}>
-                  <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '999px', background: 'rgba(100,116,139,0.1)', color: 'var(--text-muted)' }}>
-                    {contact.relationship_strength || 'Cold'}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: '8px', alignSelf: 'center' }}>
+                <div style={{ display: 'flex', gap: '8px', alignSelf: 'center' }} onClick={e => e.stopPropagation()}>
                   {contact.email && <a href={`mailto:${contact.email}`} style={{ color: 'var(--text-muted)' }}><Mail size={13} /></a>}
                   {contact.phone && <a href={`tel:${contact.phone}`} style={{ color: 'var(--text-muted)' }}><Phone size={13} /></a>}
                 </div>
@@ -162,7 +168,19 @@ export default function ContactsPage() {
         )}
       </div>
 
-      {showNew && <NewContactModal onClose={() => setShowNew(false)} onCreated={() => { setShowNew(false); setOffset(0); fetchContacts(true) }} />}
+      {/* New Contact modal */}
+      {showNew && (
+        <NewContactModal onClose={() => setShowNew(false)} onCreated={handleSaved} />
+      )}
+
+      {/* Edit Contact modal */}
+      {editingContact && (
+        <NewContactModal
+          onClose={() => setEditingContact(null)}
+          onCreated={handleSaved}
+          contact={editingContact}
+        />
+      )}
     </div>
   )
 }
