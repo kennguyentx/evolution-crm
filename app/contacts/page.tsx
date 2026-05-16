@@ -9,6 +9,25 @@ import NewContactModal from '@/components/contacts/NewContactModal'
 const CONTACT_TYPES = ['banker', 'lp', 'lender', 'advisor', 'management', 'other']
 const PAGE_SIZE = 100
 
+// Fetch exact count via REST API directly
+async function fetchCount(url: string, key: string, filter?: string): Promise<number> {
+  const endpoint = `${url}/rest/v1/contacts?select=id${filter ? `&contact_type=eq.${filter}` : ''}`
+  const res = await fetch(endpoint, {
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      Prefer: 'count=exact',
+      Range: '0-0',
+    },
+  })
+  const contentRange = res.headers.get('content-range')
+  if (contentRange) {
+    const total = contentRange.split('/')[1]
+    return parseInt(total) || 0
+  }
+  return 0
+}
+
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([])
   const [total, setTotal] = useState(0)
@@ -22,25 +41,18 @@ export default function ContactsPage() {
   const [typeCounts, setTypeCounts] = useState<Record<string, number>>({})
   const supabase = createClient()
 
-  // Fetch accurate counts using count:exact
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
   useEffect(() => {
     const fetchCounts = async () => {
-      // Get total count
-      const { count: totalCount } = await supabase
-        .from('contacts')
-        .select('*', { count: 'exact', head: true })
-      if (totalCount !== null) setTotal(totalCount)
-
-      // Get per-type counts
-      const types = ['banker', 'lp', 'lender', 'advisor', 'management', 'other']
+      const [total, ...typeTotals] = await Promise.all([
+        fetchCount(supabaseUrl, supabaseKey),
+        ...CONTACT_TYPES.map(t => fetchCount(supabaseUrl, supabaseKey, t))
+      ])
+      setTotal(total)
       const counts: Record<string, number> = {}
-      await Promise.all(types.map(async (t) => {
-        const { count } = await supabase
-          .from('contacts')
-          .select('*', { count: 'exact', head: true })
-          .eq('contact_type', t)
-        counts[t] = count || 0
-      }))
+      CONTACT_TYPES.forEach((t, i) => { counts[t] = typeTotals[i] })
       setTypeCounts(counts)
     }
     fetchCounts()
@@ -83,13 +95,14 @@ export default function ContactsPage() {
         .select('*')
         .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,firm.ilike.%${q}%,email.ilike.%${q}%`)
         .order('last_name')
-        .limit(100)
+        .limit(200)
       setSearchResults(data || [])
     }, 300)
     return () => clearTimeout(timer)
   }, [search])
 
   const displayed = searchResults !== null ? searchResults : contacts
+  const displayTotal = typeFilter !== 'all' ? (typeCounts[typeFilter] || 0) : total
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -156,10 +169,10 @@ export default function ContactsPage() {
                 </div>
               </div>
             ))}
-            {searchResults === null && displayed.length < total && (
+            {searchResults === null && displayed.length < displayTotal && (
               <div style={{ padding: '20px 28px', textAlign: 'center' }}>
                 <button className="btn btn-ghost" onClick={() => fetchContacts(false)} disabled={loadingMore}>
-                  {loadingMore ? 'Loading...' : `Load more (${displayed.length.toLocaleString()} of ${total.toLocaleString()})`}
+                  {loadingMore ? 'Loading...' : `Load more (${displayed.length.toLocaleString()} of ${displayTotal.toLocaleString()})`}
                 </button>
               </div>
             )}
