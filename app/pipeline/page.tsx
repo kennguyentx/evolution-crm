@@ -168,8 +168,8 @@ function DealCard({ deal, contacts, onStageChange }: {
 }) {
   return (
     <div style={{
-      width: '280px',
-      minWidth: '280px',
+      width: '320px',
+      minWidth: '320 px',
       height: '100%',
       minHeight: '200px',
       alignSelf: 'stretch',
