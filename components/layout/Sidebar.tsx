@@ -9,7 +9,8 @@ const nav = [
   { href: '/pipeline',   label: 'Pipeline',   icon: Kanban },
   { href: '/deals',      label: 'Deals',      icon: Building2 },
   { href: '/contacts',   label: 'Contacts',   icon: Users },
-  { href: '/intake',     label: 'CIM Intake', icon: Zap },
+  { href: '/digest',     label: 'Digest',     icon: BarChart3 },
+  { href: '/intake',     label: 'Teaser / CIM', icon: Zap },
 ]
 
 export default function Sidebar() {
