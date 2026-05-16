@@ -57,6 +57,7 @@ export default function DealsPage() {
           {filtered.length} deal{filtered.length !== 1 ? 's' : ''}
           {totalEbitda > 0 && ` · ${formatCurrency(totalEbitda)} total EBITDA`}
         </div>
+      </div>
 
       {/* Filters */}
       <div style={{
