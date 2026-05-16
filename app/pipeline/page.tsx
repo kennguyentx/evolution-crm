@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd'
 import { createClient } from '@/lib/supabase'
 import type { Deal, DealStage } from '@/types'
 import { formatCurrency, stageClass } from '@/types'
@@ -8,7 +7,6 @@ import { Plus, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import NewDealModal from '@/components/deals/NewDealModal'
 
-// Active stages — Exclusivity at top (reversed)
 const STAGES: { name: DealStage; label: string }[] = [
   { name: 'Exclusivity',   label: 'Exclusivity' },
   { name: 'LOI Submitted', label: 'LOI Submitted' },
@@ -32,7 +30,6 @@ export default function PipelinePage() {
       .order('updated_at', { ascending: false })
     if (data) {
       setDeals(data)
-      // Fetch source contacts for all deals
       const ids = data.map((d: Deal) => d.id)
       if (ids.length > 0) {
         const { data: links } = await supabase
@@ -55,15 +52,11 @@ export default function PipelinePage() {
 
   useEffect(() => { fetchDeals() }, [fetchDeals])
 
-  const dealsByStage = (stage: DealStage) =>
-    deals.filter(d => d.stage === stage)
+  const dealsByStage = (stage: DealStage) => deals.filter(d => d.stage === stage)
 
-  const handleDragEnd = async (result: DropResult) => {
-    if (!result.destination) return
-    const dealId = result.draggableId
-    const newStage = result.destination.droppableId as DealStage
-    setDeals(prev => prev.map(d => d.id === dealId ? { ...d, stage: newStage } : d))
-    await supabase.from('deals').update({ stage: newStage }).eq('id', dealId)
+  const updateStage = async (dealId: string, stage: DealStage) => {
+    setDeals(prev => prev.map(d => d.id === dealId ? { ...d, stage } : d))
+    await supabase.from('deals').update({ stage }).eq('id', dealId)
   }
 
   if (loading) return <div style={{ padding: '40px', color: 'var(--text-muted)' }}>Loading...</div>
@@ -78,7 +71,7 @@ export default function PipelinePage() {
         flexShrink: 0, background: 'var(--surface)',
       }}>
         <div>
-          <h1 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>Deal Pipeline</h1>
+          <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Deal Pipeline</h1>
           <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
             {deals.length} active deal{deals.length !== 1 ? 's' : ''}
           </div>
@@ -88,72 +81,75 @@ export default function PipelinePage() {
         </button>
       </div>
 
-      {/* Kanban — horizontal scroll */}
-      <DragDropContext onDragEnd={handleDragEnd}>
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          gap: '12px',
-          padding: '20px 24px',
-          overflowX: 'auto',
-          alignItems: 'flex-start',
-        }}>
-          {STAGES.map(({ name, label }) => {
-            const stageDeals = dealsByStage(name)
-            const totalEbitda = stageDeals.reduce((s, d) => s + (d.ebitda || 0), 0)
-            return (
-              <div key={name} style={{ minWidth: '260px', width: '260px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {/* Column header */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 2px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className={`badge ${stageClass(name)}`}>{label}</span>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'var(--surface-3)', borderRadius: '999px', padding: '1px 7px' }}>
-                      {stageDeals.length}
-                    </span>
-                  </div>
-                  {totalEbitda > 0 && (
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                      {formatCurrency(totalEbitda)}
-                    </span>
-                  )}
-                </div>
-
-                <Droppable droppableId={name}>
-                  {(provided, snapshot) => (
-                    <div
-                      ref={provided.innerRef}
-                      {...provided.droppableProps}
-                      style={{
-                        minHeight: '80px',
-                        background: snapshot.isDraggingOver ? 'rgba(79,40,75,0.04)' : 'transparent',
-                        borderRadius: '8px',
-                        transition: 'background 0.15s',
-                        display: 'flex', flexDirection: 'column', gap: '8px', padding: '2px',
-                      }}
-                    >
-                      {stageDeals.map((deal, index) => (
-                        <Draggable key={deal.id} draggableId={deal.id} index={index}>
-                          {(provided, snapshot) => (
-                            <DealCard
-                              deal={deal}
-                              contacts={dealContacts[deal.id] || []}
-                              draggableProps={provided.draggableProps}
-                              dragHandleProps={provided.dragHandleProps}
-                              innerRef={provided.innerRef}
-                              isDragging={snapshot.isDragging}
-                            />
-                          )}
-                        </Draggable>
-                      ))}
-                      {provided.placeholder}
-                    </div>
-                  )}
-                </Droppable>
+      {/* Pipeline rows */}
+      <div style={{ flex: 1, overflow: 'auto', padding: '16px 24px' }}>
+        {STAGES.map(({ name, label }) => {
+          const stageDeals = dealsByStage(name)
+          return (
+            <div key={name} style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '0',
+              marginBottom: '0',
+              borderBottom: '1px solid var(--border)',
+              minHeight: '120px',
+            }}>
+              {/* Stage label column */}
+              <div style={{
+                width: '140px',
+                minWidth: '140px',
+                padding: '16px 16px 16px 0',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+                position: 'sticky',
+                left: 0,
+                background: 'var(--bg)',
+                zIndex: 1,
+              }}>
+                <span className={`badge ${stageClass(name)}`} style={{ alignSelf: 'flex-start' }}>
+                  {label}
+                </span>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  {stageDeals.length} deal{stageDeals.length !== 1 ? 's' : ''}
+                </span>
+                {stageDeals.length > 0 && (
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                    {formatCurrency(stageDeals.reduce((s, d) => s + (d.ebitda || 0), 0))} EBITDA
+                  </span>
+                )}
               </div>
-            )
-          })}
-        </div>
-      </DragDropContext>
+
+              {/* Cards row */}
+              <div style={{
+                flex: 1,
+                display: 'flex',
+                gap: '12px',
+                padding: '12px 0 12px 12px',
+                overflowX: 'auto',
+                alignItems: 'flex-start',
+              }}>
+                {stageDeals.length === 0 ? (
+                  <div style={{
+                    display: 'flex', alignItems: 'center',
+                    fontSize: '12px', color: 'var(--text-muted)',
+                    fontStyle: 'italic', padding: '8px 0',
+                  }}>
+                    No deals
+                  </div>
+                ) : stageDeals.map(deal => (
+                  <DealCard
+                    key={deal.id}
+                    deal={deal}
+                    contacts={dealContacts[deal.id] || []}
+                    onStageChange={updateStage}
+                  />
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
 
       {showNewDeal && (
         <NewDealModal
@@ -165,38 +161,39 @@ export default function PipelinePage() {
   )
 }
 
-function DealCard({ deal, contacts, draggableProps, dragHandleProps, innerRef, isDragging }: {
+function DealCard({ deal, contacts, onStageChange }: {
   deal: Deal
   contacts: any[]
-  draggableProps: any
-  dragHandleProps: any
-  innerRef: any
-  isDragging: boolean
+  onStageChange: (id: string, stage: DealStage) => void
 }) {
   return (
-    <div
-      ref={innerRef}
-      {...draggableProps}
-      {...dragHandleProps}
-      style={{
-        ...draggableProps.style,
-        background: isDragging ? 'var(--surface-2)' : 'var(--surface)',
-        border: `1px solid ${isDragging ? 'var(--accent)' : 'var(--border)'}`,
-        borderRadius: '8px',
-        padding: '12px 14px',
-        cursor: 'grab',
-        boxShadow: isDragging ? '0 8px 24px rgba(49,20,50,0.15)' : '0 1px 3px rgba(0,0,0,0.04)',
-        transition: 'border-color 0.15s, box-shadow 0.15s',
-      }}
+    <div style={{
+      width: '280px',
+      minWidth: '280px',
+      background: 'var(--surface)',
+      border: '1px solid var(--border)',
+      borderRadius: '8px',
+      padding: '14px',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+      transition: 'box-shadow 0.15s, border-color 0.15s',
+    }}
+    onMouseEnter={e => {
+      (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(49,20,50,0.1)'
+      ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'
+    }}
+    onMouseLeave={e => {
+      (e.currentTarget as HTMLElement).style.boxShadow = '0 1px 3px rgba(0,0,0,0.04)'
+      ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'
+    }}
     >
-      <Link href={`/deals/${deal.id}`} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }} onClick={e => e.stopPropagation()}>
+      <Link href={`/deals/${deal.id}`} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
 
-        {/* Company name */}
+        {/* Company + arrow */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3 }}>
+          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>
             {deal.company_name}
           </div>
-          <ChevronRight size={12} style={{ color: 'var(--text-muted)', flexShrink: 0, marginTop: '2px' }} />
+          <ChevronRight size={13} style={{ color: 'var(--text-muted)', flexShrink: 0, marginTop: '2px' }} />
         </div>
 
         {/* Sector / Geography */}
@@ -209,8 +206,8 @@ function DealCard({ deal, contacts, draggableProps, dragHandleProps, innerRef, i
         {/* Description */}
         {deal.description && (
           <div style={{
-            fontSize: '11px', color: 'var(--text-secondary)',
-            marginTop: '6px', lineHeight: 1.5,
+            fontSize: '12px', color: 'var(--text-secondary)',
+            marginTop: '7px', lineHeight: 1.5,
             display: '-webkit-box', WebkitLineClamp: 2,
             WebkitBoxOrient: 'vertical', overflow: 'hidden',
           }}>
@@ -218,11 +215,12 @@ function DealCard({ deal, contacts, draggableProps, dragHandleProps, innerRef, i
           </div>
         )}
 
-        {/* Financials — Revenue first, EBITDA second */}
+        {/* Financials */}
         {(deal.revenue || deal.ebitda) && (
           <div style={{
-            display: 'flex', gap: '12px', marginTop: '10px',
-            paddingTop: '10px', borderTop: '1px solid var(--border-subtle)',
+            display: 'flex', gap: '16px',
+            marginTop: '10px', paddingTop: '10px',
+            borderTop: '1px solid var(--border-subtle)',
           }}>
             {deal.revenue && (
               <div>
@@ -235,8 +233,16 @@ function DealCard({ deal, contacts, draggableProps, dragHandleProps, innerRef, i
             {deal.ebitda && (
               <div>
                 <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>EBITDA</div>
-                <div style={{ fontSize: '12px', color: 'var(--accent)', fontFamily: 'var(--font-mono)', marginTop: '1px' }}>
+                <div style={{ fontSize: '12px', color: 'var(--accent)', fontFamily: 'var(--font-mono)', fontWeight: 600, marginTop: '1px' }}>
                   {formatCurrency(deal.ebitda)}
+                </div>
+              </div>
+            )}
+            {deal.deal_type && (
+              <div>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Type</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '1px', textTransform: 'capitalize' }}>
+                  {deal.deal_type}
                 </div>
               </div>
             )}
@@ -245,14 +251,11 @@ function DealCard({ deal, contacts, draggableProps, dragHandleProps, innerRef, i
 
         {/* Source contacts */}
         {contacts.length > 0 && (
-          <div style={{
-            marginTop: '8px', paddingTop: '8px',
-            borderTop: '1px solid var(--border-subtle)',
-          }}>
+          <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
             {contacts.slice(0, 2).map((c, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: i > 0 ? '3px' : '0' }}>
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: i > 0 ? '4px' : '0' }}>
                 <div style={{
-                  width: '18px', height: '18px', borderRadius: '50%',
+                  width: '20px', height: '20px', borderRadius: '50%',
                   background: 'var(--accent-muted)', color: 'var(--accent)',
                   fontSize: '9px', fontWeight: 700,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -260,8 +263,8 @@ function DealCard({ deal, contacts, draggableProps, dragHandleProps, innerRef, i
                 }}>
                   {c.first_name?.[0]}{c.last_name?.[0]}
                 </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.2 }}>
-                  <span style={{ fontWeight: 500 }}>{c.first_name} {c.last_name}</span>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  <span style={{ fontWeight: 600 }}>{c.first_name} {c.last_name}</span>
                   {c.firm && <span style={{ color: 'var(--text-muted)' }}> · {c.firm}</span>}
                 </div>
               </div>
@@ -271,12 +274,6 @@ function DealCard({ deal, contacts, draggableProps, dragHandleProps, innerRef, i
                 +{contacts.length - 2} more
               </div>
             )}
-          </div>
-        )}
-
-        {deal.cim_parsed && (
-          <div style={{ marginTop: '6px', fontSize: '10px', color: 'var(--green)', display: 'flex', alignItems: 'center', gap: '3px' }}>
-            ● CIM parsed
           </div>
         )}
       </Link>
