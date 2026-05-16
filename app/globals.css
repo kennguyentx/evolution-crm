@@ -193,6 +193,7 @@ html, body {
 .stage-pass-(doa)        { background: #f5f3f7; color: #9b90a8; }
 .stage-pass-(pre-loi)    { background: #f5f3f7; color: #9b90a8; }
 .stage-pass-(post-loi)   { background: #f5f3f7; color: #9b90a8; }
+.stage-hold               { background: rgba(15,78,140,0.08); color: #0F4E8C; border: 1px solid rgba(15,78,140,0.2); }
 
 /* Contact type badges */
 .type-banker     { background: var(--blue-muted);   color: var(--blue); }
