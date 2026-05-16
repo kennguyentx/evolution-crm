@@ -99,7 +99,7 @@ export default function DealsPage() {
       {/* Table header */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: '2fr 1fr 1fr 100px 100px 100px 110px',
+        gridTemplateColumns: '2fr 1fr 1fr 120px 120px 120px',
         padding: '8px 28px',
         fontSize: '11px',
         color: 'var(--text-muted)',
@@ -135,7 +135,7 @@ export default function DealsPage() {
               className="table-row"
               style={{
                 display: 'grid',
-                gridTemplateColumns: '2fr 1fr 1fr 100px 100px 100px 110px',
+                gridTemplateColumns: '2fr 1fr 1fr 120px 120px 120px',
                 padding: '12px 28px',
               }}
             >
@@ -161,10 +161,7 @@ export default function DealsPage() {
               <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)', alignSelf: 'center' }}>
                 {formatCurrency(deal.revenue)}
               </div>
-              <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)', alignSelf: 'center' }}>
-                {formatMultiple(deal.ev_ebitda_multiple)}
-              </div>
-              <div style={{ alignSelf: 'center' }}>
+               <div style={{ alignSelf: 'center' }}>
                 <span className={`badge ${stageClass(deal.stage)}`}>{deal.stage}</span>
               </div>
             </div>
