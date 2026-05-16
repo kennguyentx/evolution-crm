@@ -141,7 +141,7 @@ export default function IntakePage() {
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
       setParsed(data)
-      setEdited({ ...data, stage: data.stage || 'Reviewing' })
+      setEdited({ ...data, stage: data.stage || 'Teaser' })
 
       // Auto-search for banker in DB
       if (data.banker_name) {
