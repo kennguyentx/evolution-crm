@@ -168,9 +168,11 @@ export default function DealDetailPage() {
 
         {/* Top row: name + stage selector (inline, not far right) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-          <h1 style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' }}>
-            {deal.company_name}
-          </h1>
+          <EditableInline
+            value={deal.company_name}
+            onSave={v => updateField('company_name', v)}
+            style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' }}
+          />
 
           {/* Stage selector — right next to the name */}
           <div style={{ position: 'relative' }}>
@@ -534,6 +536,38 @@ function EditableField({ label, value, onSave, type = 'text', multiline = false,
   useEffect(() => { setVal(value) }, [value])
 
   const save = () => { onSave(val); setEditing(false) }
+
+  function EditableInline({ value, onSave, style }: { value: string, onSave: (v: string) => void, style?: any }) {
+  const [editing, setEditing] = useState(false)
+  const [val, setVal] = useState(value)
+  useEffect(() => { setVal(value) }, [value])
+  const save = () => { if (val.trim()) { onSave(val); setEditing(false) } }
+  if (editing) return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <input
+        autoFocus
+        className="input"
+        value={val}
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
+        style={{ ...style, padding: '4px 8px', width: '320px' }}
+      />
+      <button className="btn btn-primary" onClick={save} style={{ padding: '4px 10px', fontSize: '12px' }}>Save</button>
+      <button className="btn btn-ghost" onClick={() => setEditing(false)} style={{ padding: '4px 10px', fontSize: '12px' }}>Cancel</button>
+    </div>
+  )
+  return (
+    <h1
+      style={{ ...style, cursor: 'pointer', borderBottom: '1px dashed transparent' }}
+      onClick={() => setEditing(true)}
+      title="Click to edit"
+      onMouseEnter={e => (e.currentTarget.style.borderBottomColor = 'var(--text-muted)')}
+      onMouseLeave={e => (e.currentTarget.style.borderBottomColor = 'transparent')}
+    >
+      {value}
+    </h1>
+  )
+}
 
   return (
     <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: '10px' }}>
