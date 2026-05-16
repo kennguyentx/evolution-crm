@@ -48,9 +48,8 @@ export default function DealsPage() {
         alignItems: 'center',
         gap: '16px',
         flexShrink: 0,
-        background: 'var(--surface)',
       }}>
-        <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Deals</h1>
+        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '24px' }}>Deals</h1>
         <button className="btn btn-primary" onClick={() => setShowNewDeal(true)}>
           <Plus size={14} /> New Deal
         </button>
@@ -113,7 +112,8 @@ export default function DealsPage() {
         <div>Geography</div>
         <div style={{ textAlign: 'right' }}>EBITDA</div>
         <div style={{ textAlign: 'right' }}>Revenue</div>
-        <div>Stage</div>
+        <div style={{ textAlign: 'right' }}>EV/E</div>
+        <div style={{ paddingLeft: '8px' }}>Stage</div>
       </div>
 
       {/* Table rows */}
@@ -160,7 +160,10 @@ export default function DealsPage() {
               <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)', alignSelf: 'center' }}>
                 {formatCurrency(deal.revenue)}
               </div>
-               <div style={{ alignSelf: 'center' }}>
+              <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)', alignSelf: 'center' }}>
+                {formatMultiple(deal.ev_ebitda_multiple)}
+              </div>
+              <div style={{ alignSelf: 'center' }}>
                 <span className={`badge ${stageClass(deal.stage)}`}>{deal.stage}</span>
               </div>
             </div>
