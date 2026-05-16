@@ -431,7 +431,7 @@ export default function IntakePage() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div><label className="label">First Name *</label><input className="input" value={newContactForm.first_name} onChange={e => setNewContactForm(p => ({ ...p, first_name: e.target.value }))} /></div>
                   <div><label className="label">Last Name *</label><input className="input" value={newContactForm.last_name} onChange={e => setNewContactForm(p => ({ ...p, last_name: e.target.value }))} /></div>
-                  <div><label className="label">Firm</label><input className="input" value={newContactForm.firm} onChange={e => setNewContactForm(p => ({ ...p, firm: e.target.value }))} /></div>
+                  <div style={{ position: 'relative' }}><label className="label">Firm</label><FirmSearch value={newContactForm.firm} onChange={v => setNewContactForm(p => ({ ...p, firm: v }))} supabase={supabase} /></div>
                   <div><label className="label">Title</label><input className="input" value={newContactForm.title} onChange={e => setNewContactForm(p => ({ ...p, title: e.target.value }))} /></div>
                   <div><label className="label">Email</label><input className="input" type="email" value={newContactForm.email} onChange={e => setNewContactForm(p => ({ ...p, email: e.target.value }))} /></div>
                   <div><label className="label">Phone</label><input className="input" value={newContactForm.phone} onChange={e => setNewContactForm(p => ({ ...p, phone: e.target.value }))} /></div>
@@ -507,6 +507,72 @@ export default function IntakePage() {
     </div>
   )
 }
+
+function FirmSearch({ value, onChange, supabase }: { value: string, onChange: (v: string) => void, supabase: any }) {
+  const [firmSearch, setFirmSearch] = useState(value)
+  const [firmResults, setFirmResults] = useState<string[]>([])
+  const [showFirmResults, setShowFirmResults] = useState(false)
+  const firmRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => { setFirmSearch(value) }, [value])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (firmRef.current && !firmRef.current.contains(e.target as Node)) setShowFirmResults(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  useEffect(() => {
+    if (!firmSearch.trim()) { setFirmResults([]); return }
+    const timer = setTimeout(async () => {
+      const { data } = await supabase
+        .from('contacts')
+        .select('firm')
+        .ilike('firm', `%${firmSearch}%`)
+        .not('firm', 'is', null)
+        .limit(50)
+      const unique = [...new Set((data || []).map((c: any) => c.firm).filter(Boolean))] as string[]
+      setFirmResults(unique.slice(0, 8))
+      setShowFirmResults(true)
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [firmSearch, supabase])
+
+  return (
+    <div ref={firmRef} style={{ position: 'relative' }}>
+      <input
+        className="input"
+        value={firmSearch}
+        placeholder="Search or type firm name..."
+        onChange={e => { setFirmSearch(e.target.value); onChange(e.target.value) }}
+        onFocus={() => firmSearch && setShowFirmResults(true)}
+      />
+      {showFirmResults && firmResults.length > 0 && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '2px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '7px', zIndex: 60, boxShadow: '0 4px 16px rgba(0,0,0,0.1)', maxHeight: '180px', overflow: 'auto' }}>
+          {firmResults.map(firm => (
+            <button key={firm} onClick={() => { onChange(firm); setFirmSearch(firm); setShowFirmResults(false) }}
+              style={{ display: 'block', width: '100%', padding: '8px 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid var(--border-subtle)', fontSize: '13px', color: 'var(--text-primary)' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+              {firm}
+            </button>
+          ))}
+          {!firmResults.includes(firmSearch) && firmSearch.length > 1 && (
+            <button onClick={() => { onChange(firmSearch); setShowFirmResults(false) }}
+              style={{ display: 'block', width: '100%', padding: '8px 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: '12px', color: 'var(--accent)', fontWeight: 600 }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent-muted)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+              + Add "{firmSearch}" as new firm
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 
 function IntakeField({ label, children, required }: { label: string, children: React.ReactNode, required?: boolean }) {
   return (
