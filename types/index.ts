@@ -122,7 +122,7 @@ export function formatMultiple(value?: number | null): string {
 }
 
 export function stageClass(stage: string): string {
-  return `stage-${stage.toLowerCase()}`
+  return `stage-${stage.toLowerCase().replace(/[^a-z0-9]/g, '-')}`
 }
 
 export function contactTypeClass(type: string): string {
