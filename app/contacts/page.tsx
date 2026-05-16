@@ -9,25 +9,6 @@ import NewContactModal from '@/components/contacts/NewContactModal'
 const CONTACT_TYPES = ['banker', 'lp', 'lender', 'advisor', 'management', 'other']
 const PAGE_SIZE = 100
 
-// Fetch exact count via REST API directly
-async function fetchCount(url: string, key: string, filter?: string): Promise<number> {
-  const endpoint = `${url}/rest/v1/contacts?select=id${filter ? `&contact_type=eq.${filter}` : ''}`
-  const res = await fetch(endpoint, {
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      Prefer: 'count=exact',
-      Range: '0-0',
-    },
-  })
-  const contentRange = res.headers.get('content-range')
-  if (contentRange) {
-    const total = contentRange.split('/')[1]
-    return parseInt(total) || 0
-  }
-  return 0
-}
-
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([])
   const [total, setTotal] = useState(0)
@@ -41,21 +22,13 @@ export default function ContactsPage() {
   const [typeCounts, setTypeCounts] = useState<Record<string, number>>({})
   const supabase = createClient()
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
   useEffect(() => {
-    const fetchCounts = async () => {
-      const [total, ...typeTotals] = await Promise.all([
-        fetchCount(supabaseUrl, supabaseKey),
-        ...CONTACT_TYPES.map(t => fetchCount(supabaseUrl, supabaseKey, t))
-      ])
-      setTotal(total)
-      const counts: Record<string, number> = {}
-      CONTACT_TYPES.forEach((t, i) => { counts[t] = typeTotals[i] })
-      setTypeCounts(counts)
-    }
-    fetchCounts()
+    fetch('/api/contacts/counts')
+      .then(r => r.json())
+      .then(({ total, counts }) => {
+        setTotal(total)
+        setTypeCounts(counts)
+      })
   }, [])
 
   const fetchContacts = useCallback(async (reset = false) => {
