@@ -35,6 +35,8 @@ export default function IntakePage() {
   const [parsed, setParsed] = useState<ParsedDeal | null>(null)
   const [edited, setEdited] = useState<ParsedDeal | null>(null)
   const [dealId, setDealId] = useState<string | null>(null)
+  const [duplicateDeals, setDuplicateDeals] = useState<any[]>([])
+  const [ignoreDuplicate, setIgnoreDuplicate] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fileName, setFileName] = useState('')
   const [missingFields, setMissingFields] = useState<MissingField[]>([])
@@ -205,8 +207,26 @@ export default function IntakePage() {
     }
   }
 
-  const handleSave = async () => {
+  const handleSave = async (force = false) => {
     if (!edited) return
+
+    // Check for duplicates unless user has confirmed
+    if (!force && !ignoreDuplicate) {
+      const name = edited.company_name?.trim()
+      if (name) {
+        const { data: existing } = await supabase
+          .from('deals')
+          .select('id, company_name, stage, status, created_at')
+          .ilike('company_name', `%${name}%`)
+          .limit(5)
+        if (existing && existing.length > 0) {
+          setDuplicateDeals(existing)
+          return
+        }
+      }
+    }
+
+    setDuplicateDeals([])
     setStage('saving')
 
     const { data, error } = await supabase.from('deals').insert({
@@ -359,11 +379,25 @@ export default function IntakePage() {
               {/* Stage */}
               <IntakeField label="Stage *" required={!edited.stage}>
                 <select className="select" value={edited.stage || 'Reviewing'} onChange={e => updateField('stage', e.target.value)}>
-                  <option value="Teaser">Teaser</option>
-                  <option value="Reviewing">Reviewing</option>
-                  <option value="Pre-LOI">Pre-LOI</option>
-                  <option value="LOI Submitted">LOI Submitted</option>
-                  <option value="Exclusivity">Exclusivity</option>
+                  <optgroup label="Active">
+                    <option value="Teaser">Teaser</option>
+                    <option value="Reviewing">Reviewing</option>
+                    <option value="Pre-LOI">Pre-LOI</option>
+                    <option value="LOI Submitted">LOI Submitted</option>
+                    <option value="Exclusivity">Exclusivity</option>
+                  </optgroup>
+                  <optgroup label="Closed">
+                    <option value="Closed (Platform)">Closed (Platform)</option>
+                    <option value="Closed (Add-On)">Closed (Add-On)</option>
+                  </optgroup>
+                  <optgroup label="Pass">
+                    <option value="Pass (DOA)">Pass (DOA)</option>
+                    <option value="Pass (Pre-LOI)">Pass (Pre-LOI)</option>
+                    <option value="Pass (Post-LOI)">Pass (Post-LOI)</option>
+                  </optgroup>
+                  <optgroup label="Other">
+                    <option value="Hold">Hold</option>
+                  </optgroup>
                 </select>
               </IntakeField>
 
@@ -473,11 +507,39 @@ export default function IntakePage() {
               </div>
             )}
 
+            {/* Duplicate warning */}
+            {duplicateDeals.length > 0 && (
+              <div style={{ marginBottom: '16px', padding: '16px', background: 'rgba(237,117,32,0.06)', border: '1px solid rgba(237,117,32,0.25)', borderRadius: '8px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--orange)', marginBottom: '10px' }}>
+                  ⚠ Possible duplicate — {duplicateDeals.length} similar deal{duplicateDeals.length > 1 ? 's' : ''} already exist{duplicateDeals.length === 1 ? 's' : ''}:
+                </div>
+                {duplicateDeals.map(d => (
+                  <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', marginBottom: '6px' }}>
+                    <div>
+                      <span style={{ fontSize: '13px', fontWeight: 500 }}>{d.company_name}</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '8px' }}>{d.stage} · {d.status}</span>
+                    </div>
+                    <Link href={`/deals/${d.id}`} style={{ fontSize: '11px', color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>
+                      View deal →
+                    </Link>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                  <button className="btn btn-ghost" onClick={() => setDuplicateDeals([])} style={{ fontSize: '12px' }}>
+                    Cancel
+                  </button>
+                  <button className="btn btn-primary" onClick={() => { setIgnoreDuplicate(true); handleSave(true) }} style={{ fontSize: '12px', background: 'var(--orange)' }}>
+                    Save anyway — it's a different deal
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: '10px' }}>
               <button className="btn btn-ghost" onClick={reset}>Start over</button>
               <button
                 className="btn btn-primary"
-                onClick={handleSave}
+                onClick={() => handleSave(false)}
                 disabled={missingFields.length > 0}
                 title={missingFields.length > 0 ? `Fill in: ${missingFields.map(f => f.label).join(', ')}` : ''}
               >
