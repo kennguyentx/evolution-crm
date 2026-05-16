@@ -4,8 +4,9 @@ import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import type { Deal, Interaction, DiligenceItem, DealCapitalAssignment } from '@/types'
 import { formatCurrency, stageClass, contactTypeClass } from '@/types'
-import { ArrowLeft, Check, X, Plus, Phone, Mail, ChevronDown, Search } from 'lucide-react'
+import { ArrowLeft, Check, X, Plus, Phone, Mail, ChevronDown, Search, Trash2 } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 
 const STAGES = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
@@ -25,8 +26,10 @@ const DEFAULT_DILIGENCE = [
 
 export default function DealDetailPage() {
   const params = useParams()
+  const router = useRouter()
   const dealId = params.id as string
   const supabase = createClient()
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const [deal, setDeal] = useState<Deal | null>(null)
   const [linkedContacts, setLinkedContacts] = useState<any[]>([])
@@ -113,6 +116,15 @@ export default function DealDetailPage() {
   const unlinkContact = async (linkId: string) => {
     await supabase.from('contact_deal_links').delete().eq('id', linkId)
     setLinkedContacts(prev => prev.filter(l => l.id !== linkId))
+  }
+
+  const deleteDeal = async () => {
+    await supabase.from('diligence_items').delete().eq('deal_id', dealId)
+    await supabase.from('contact_deal_links').delete().eq('deal_id', dealId)
+    await supabase.from('interactions').delete().eq('deal_id', dealId)
+    await supabase.from('deal_capital_assignments').delete().eq('deal_id', dealId)
+    await supabase.from('deals').delete().eq('id', dealId)
+    router.push('/deals')
   }
 
   const seedDiligence = async () => {
@@ -224,6 +236,14 @@ export default function DealDetailPage() {
               ● CIM Parsed
             </span>
           )}
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--red)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+          >
+            <Trash2 size={14} /> Delete deal
+          </button>
         </div>
 
         {/* Sub-row: sector, geography */}
@@ -522,6 +542,21 @@ export default function DealDetailPage() {
           </div>
         )}
       </div>
+      {/* Delete confirmation */}
+      {showDeleteConfirm && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+          <div className="card" style={{ padding: '28px', maxWidth: '400px', width: '90%' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '8px' }}>Delete this deal?</h3>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px' }}>
+              This will permanently delete <strong>{deal.company_name}</strong> and all associated diligence, contacts, and activity. This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
+              <button className="btn btn-danger" onClick={deleteDeal}>Delete permanently</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
