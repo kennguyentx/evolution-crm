@@ -9,6 +9,7 @@ export type DealStage =
   | 'Pass (DOA)'
   | 'Pass (Pre-LOI)'
   | 'Pass (Post-LOI)'
+  | 'Hold'
 
 export type DealStatus = 'Active' | 'Dead' | 'Closed'
 
