@@ -71,14 +71,13 @@ export default function PipelinePage() {
         flexShrink: 0, background: 'var(--surface)',
       }}>
         <div>
-          <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Deal Pipeline</h1>
-          <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
-            {deals.length} active deal{deals.length !== 1 ? 's' : ''}
-          </div>
-        </div>
+         <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Deal Pipeline</h1>
         <button className="btn btn-primary" onClick={() => setShowNewDeal(true)}>
           <Plus size={14} /> New Deal
         </button>
+          <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+            {deals.length} active deal{deals.length !== 1 ? 's' : ''}
+          </div>
       </div>
 
       {/* Pipeline rows */}
