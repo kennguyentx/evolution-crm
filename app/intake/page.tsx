@@ -58,16 +58,46 @@ export default function IntakePage() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  // Contact search
+  // Contact search — searches name AND firm
   useEffect(() => {
     if (!contactSearch.trim()) { setContactResults([]); return }
     const timer = setTimeout(async () => {
       const q = contactSearch.trim()
-      const { data } = await supabase.from('contacts')
-        .select('id, first_name, last_name, firm, title')
-        .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,firm.ilike.%${q}%`)
-        .limit(8)
-      setContactResults(data || [])
+      const parts = q.split(' ').filter(Boolean)
+      let results: any[] = []
+
+      if (parts.length >= 2) {
+        // Multi-word: intersect first + last name
+        const [firstRes, lastRes] = await Promise.all([
+          supabase.from('contacts').select('id, first_name, last_name, firm, title').ilike('first_name', `%${parts[0]}%`).limit(100),
+          supabase.from('contacts').select('id, first_name, last_name, firm, title').ilike('last_name', `%${parts[parts.length-1]}%`).limit(100),
+        ])
+        const firstIds = new Set((firstRes.data || []).map((c: any) => c.id))
+        results = (lastRes.data || []).filter((c: any) => firstIds.has(c.id))
+        // Also add firm matches
+        const { data: firmData } = await supabase.from('contacts').select('id, first_name, last_name, firm, title').ilike('firm', `%${q}%`).limit(8)
+        const seen = new Set(results.map((c: any) => c.id))
+        ;(firmData || []).forEach((c: any) => { if (!seen.has(c.id)) { results.push(c); seen.add(c.id) } })
+      } else {
+        const { data } = await supabase.from('contacts')
+          .select('id, first_name, last_name, firm, title')
+          .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,firm.ilike.%${q}%`)
+          .limit(8)
+        results = data || []
+      }
+
+      setContactResults(results.slice(0, 8))
+
+      // If no results found, pre-fill the add contact form with what was typed
+      if (results.length === 0 && q.length > 2) {
+        const nameParts = q.split(' ')
+        setNewContactForm(prev => ({
+          ...prev,
+          first_name: nameParts.length >= 2 ? nameParts[0] : prev.first_name,
+          last_name: nameParts.length >= 2 ? nameParts.slice(1).join(' ') : prev.last_name,
+          firm: nameParts.length === 1 ? q : prev.firm, // if single word, treat as firm
+        }))
+      }
     }, 250)
     return () => clearTimeout(timer)
   }, [contactSearch])
@@ -356,16 +386,16 @@ export default function IntakePage() {
                       <Search size={12} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                       <input
                         className="input"
-                        placeholder={edited.banker_name ? `Search for "${edited.banker_name}"...` : 'Search contacts...'}
+                        placeholder={edited.banker_name ? `Search for "${edited.banker_name}" or firm...` : 'Search by name or firm...'}
                         value={contactSearch}
                         onChange={e => { setContactSearch(e.target.value); setShowContactSearch(true) }}
                         onFocus={() => setShowContactSearch(true)}
                         style={{ paddingLeft: '30px' }}
                       />
                     </div>
-                    {showContactSearch && contactResults.length > 0 && (
+                    {showContactSearch && (contactResults.length > 0 || contactSearch.length > 2) && (
                       <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '2px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '7px', zIndex: 50, boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }}>
-                        {contactResults.map(c => (
+                        {contactResults.length > 0 ? contactResults.map(c => (
                           <button key={c.id} onClick={() => { setSelectedContact(c); setShowContactSearch(false); setContactSearch('') }}
                             style={{ display: 'block', width: '100%', padding: '9px 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid var(--border-subtle)' }}
                             onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
@@ -373,7 +403,14 @@ export default function IntakePage() {
                             <div style={{ fontSize: '13px', fontWeight: 500 }}>{c.first_name} {c.last_name}</div>
                             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{c.firm || c.title}</div>
                           </button>
-                        ))}
+                        )) : (
+                          <div style={{ padding: '10px 12px' }}>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>No contacts found for "{contactSearch}"</div>
+                            <button className="btn btn-ghost" onClick={() => { setShowAddContact(true); setShowContactSearch(false) }} style={{ fontSize: '11px', padding: '4px 10px' }}>
+                              <Plus size={11} /> Add as new contact
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                     <button className="btn btn-ghost" onClick={() => setShowAddContact(true)} style={{ fontSize: '11px', padding: '4px 10px', marginTop: '6px' }}>
