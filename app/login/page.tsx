@@ -28,28 +28,25 @@ export default function LoginPage() {
       background: 'var(--bg)',
     }}>
       <div style={{ width: '380px' }}>
-        {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-          <div style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: '36px',
-            color: 'var(--accent)',
-            lineHeight: 1,
-          }}>
-            Evolution
-          </div>
+        {/* Logo */}
+        <div style={{ textAlign: 'center', marginBottom: '36px' }}>
+          <img
+            src="/logo.png"
+            alt="Evolution Strategy Partners"
+            style={{ width: '220px', height: 'auto', margin: '0 auto', display: 'block' }}
+          />
           <div style={{
             fontSize: '12px',
             color: 'var(--text-muted)',
-            letterSpacing: '0.15em',
+            marginTop: '10px',
+            letterSpacing: '0.06em',
             textTransform: 'uppercase',
-            marginTop: '4px',
           }}>
-            Strategy · Deal CRM
+            Deal CRM
           </div>
         </div>
 
-        {/* Auth UI */}
+        {/* Auth */}
         <div className="card" style={{ padding: '28px' }}>
           <Auth
             supabaseClient={supabase}
@@ -58,24 +55,24 @@ export default function LoginPage() {
               variables: {
                 default: {
                   colors: {
-                    brand: '#c9a96e',
-                    brandAccent: '#d9bc8a',
-                    inputBackground: '#1a1e28',
-                    inputBorder: '#2a2f40',
-                    inputText: '#eef0f6',
-                    inputPlaceholder: '#5c6480',
+                    brand: '#4F284B',
+                    brandAccent: '#3d1e3a',
+                    inputBackground: '#ffffff',
+                    inputBorder: '#e3e6eb',
+                    inputText: '#1c1228',
+                    inputPlaceholder: '#9088a0',
                   },
                   radii: {
-                    borderRadiusButton: '6px',
-                    buttonBorderRadius: '6px',
-                    inputBorderRadius: '6px',
+                    borderRadiusButton: '7px',
+                    buttonBorderRadius: '7px',
+                    inputBorderRadius: '7px',
                   }
                 }
               },
               style: {
-                button: { fontFamily: 'DM Sans, sans-serif', fontSize: '13px' },
-                input: { fontFamily: 'DM Sans, sans-serif', fontSize: '13px' },
-                label: { fontFamily: 'DM Sans, sans-serif', color: '#9ba3bf', fontSize: '12px' },
+                button: { fontFamily: 'Nunito Sans, sans-serif', fontSize: '13px', fontWeight: '600' },
+                input: { fontFamily: 'Nunito Sans, sans-serif', fontSize: '13px' },
+                label: { fontFamily: 'Nunito Sans, sans-serif', color: '#9088a0', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' },
               }
             }}
             providers={[]}
