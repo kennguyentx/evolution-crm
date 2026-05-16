@@ -67,17 +67,16 @@ export default function PipelinePage() {
       <div style={{
         padding: '20px 28px',
         borderBottom: '1px solid var(--border)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        display: 'flex', alignItems: 'center', gap: '16px',
         flexShrink: 0, background: 'var(--surface)',
       }}>
-        <div>
-         <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Deal Pipeline</h1>
+        <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Deal Pipeline</h1>
         <button className="btn btn-primary" onClick={() => setShowNewDeal(true)}>
           <Plus size={14} /> New Deal
         </button>
-          <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-            {deals.length} active deal{deals.length !== 1 ? 's' : ''}
-          </div>
+        <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+          {deals.length} active deal{deals.length !== 1 ? 's' : ''}
+        </div>
       </div>
 
       {/* Pipeline rows */}
@@ -126,7 +125,7 @@ export default function PipelinePage() {
                 gap: '12px',
                 padding: '12px 0 12px 12px',
                 flexWrap: 'wrap',
-                alignItems: 'stretch',
+                alignItems: 'flex-start',
               }}>
                 {stageDeals.length === 0 ? (
                   <div style={{
@@ -167,11 +166,8 @@ function DealCard({ deal, contacts, onStageChange }: {
 }) {
   return (
     <div style={{
-      width: '320px',
-      minWidth: '320 px',
-      height: '100%',
-      minHeight: '200px',
-      alignSelf: 'stretch',
+      width: '280px',
+      minWidth: '280px',
       background: 'var(--surface)',
       border: '1px solid var(--border)',
       borderRadius: '8px',
