@@ -8,7 +8,7 @@ import Link from 'next/link'
 import NewDealModal from '@/components/deals/NewDealModal'
 import { format } from 'date-fns'
 
-const ALL_STAGES: DealStage[] = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)']
+const ALL_STAGES: DealStage[] = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
 
 export default function DealsPage() {
   const [deals, setDeals] = useState<Deal[]>([])
