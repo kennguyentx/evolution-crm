@@ -22,18 +22,26 @@ export default function ContactsPage() {
   const [typeCounts, setTypeCounts] = useState<Record<string, number>>({})
   const supabase = createClient()
 
-  // Fetch type counts once
+  // Fetch accurate counts using count:exact
   useEffect(() => {
     const fetchCounts = async () => {
-      const { data } = await supabase.from('contacts').select('contact_type')
-      if (data) {
-        const counts: Record<string, number> = {}
-        data.forEach((c: any) => {
-          counts[c.contact_type] = (counts[c.contact_type] || 0) + 1
-        })
-        setTypeCounts(counts)
-        setTotal(data.length)
-      }
+      // Get total count
+      const { count: totalCount } = await supabase
+        .from('contacts')
+        .select('*', { count: 'exact', head: true })
+      if (totalCount !== null) setTotal(totalCount)
+
+      // Get per-type counts
+      const types = ['banker', 'lp', 'lender', 'advisor', 'management', 'other']
+      const counts: Record<string, number> = {}
+      await Promise.all(types.map(async (t) => {
+        const { count } = await supabase
+          .from('contacts')
+          .select('*', { count: 'exact', head: true })
+          .eq('contact_type', t)
+        counts[t] = count || 0
+      }))
+      setTypeCounts(counts)
     }
     fetchCounts()
   }, [])
@@ -66,12 +74,8 @@ export default function ContactsPage() {
     fetchContacts(true)
   }, [typeFilter])
 
-  // Search — queries server directly
   useEffect(() => {
-    if (!search.trim()) {
-      setSearchResults(null)
-      return
-    }
+    if (!search.trim()) { setSearchResults(null); return }
     const timer = setTimeout(async () => {
       const q = search.trim()
       const { data } = await supabase
@@ -89,54 +93,28 @@ export default function ContactsPage() {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <div style={{
-        padding: '20px 28px',
-        borderBottom: '1px solid var(--border)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        flexShrink: 0,
-      }}>
+      <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <div>
           <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '24px' }}>Contacts</h1>
           <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
             {total.toLocaleString()} total
-            {typeCounts['banker'] ? ` · ${typeCounts['banker']} bankers` : ''}
-            {typeCounts['lp'] ? ` · ${typeCounts['lp']} LPs` : ''}
-            {typeCounts['lender'] ? ` · ${typeCounts['lender']} lenders` : ''}
+            {typeCounts['banker'] ? ` · ${typeCounts['banker'].toLocaleString()} bankers` : ''}
+            {typeCounts['lp'] ? ` · ${typeCounts['lp'].toLocaleString()} LPs` : ''}
+            {typeCounts['lender'] ? ` · ${typeCounts['lender'].toLocaleString()} lenders` : ''}
           </div>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowNew(true)}>
-          <Plus size={14} /> New Contact
-        </button>
+        <button className="btn btn-primary" onClick={() => setShowNew(true)}><Plus size={14} /> New Contact</button>
       </div>
 
-      {/* Type filters */}
-      <div style={{
-        padding: '12px 28px',
-        display: 'flex', gap: '8px', flexWrap: 'wrap',
-        borderBottom: '1px solid var(--border)',
-        flexShrink: 0,
-      }}>
+      <div style={{ padding: '12px 28px', display: 'flex', gap: '8px', flexWrap: 'wrap', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         {CONTACT_TYPES.map(type => (
-          <button
-            key={type}
-            onClick={() => setTypeFilter(typeFilter === type ? 'all' : type)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              padding: '4px 10px', borderRadius: '999px',
-              border: `1px solid ${typeFilter === type ? 'var(--accent)' : 'var(--border)'}`,
-              background: typeFilter === type ? 'var(--accent-muted)' : 'transparent',
-              cursor: 'pointer', fontSize: '11px',
-              color: typeFilter === type ? 'var(--accent)' : 'var(--text-secondary)',
-              textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 500,
-            }}
-          >
-            {type} <span style={{ fontFamily: 'var(--font-mono)' }}>{typeCounts[type] || 0}</span>
+          <button key={type} onClick={() => setTypeFilter(typeFilter === type ? 'all' : type)}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '999px', border: `1px solid ${typeFilter === type ? 'var(--accent)' : 'var(--border)'}`, background: typeFilter === type ? 'var(--accent-muted)' : 'transparent', cursor: 'pointer', fontSize: '11px', color: typeFilter === type ? 'var(--accent)' : 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 500 }}>
+            {type} <span style={{ fontFamily: 'var(--font-mono)' }}>{typeCounts[type]?.toLocaleString() || 0}</span>
           </button>
         ))}
       </div>
 
-      {/* Search */}
       <div style={{ padding: '12px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div style={{ position: 'relative', maxWidth: '320px' }}>
           <Search size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
@@ -144,17 +122,10 @@ export default function ContactsPage() {
         </div>
       </div>
 
-      {/* Table header */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px',
-        padding: '8px 28px', fontSize: '11px', color: 'var(--text-muted)',
-        textTransform: 'uppercase', letterSpacing: '0.06em',
-        borderBottom: '1px solid var(--border)', flexShrink: 0,
-      }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '8px 28px', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div>Name</div><div>Firm / Title</div><div>Type</div><div>Relationship</div><div>Contact</div>
       </div>
 
-      {/* Contacts list */}
       <div style={{ flex: 1, overflow: 'auto' }}>
         {loading ? (
           <div style={{ padding: '40px 28px', color: 'var(--text-muted)' }}>Loading...</div>
@@ -166,7 +137,6 @@ export default function ContactsPage() {
               <div key={contact.id} className="table-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '12px 28px' }}>
                 <div>
                   <div style={{ fontWeight: 500, fontSize: '13px' }}>{contact.first_name} {contact.last_name}</div>
-                  {contact.notes && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{contact.notes}</div>}
                 </div>
                 <div style={{ alignSelf: 'center' }}>
                   <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{contact.firm || '—'}</div>
@@ -176,13 +146,7 @@ export default function ContactsPage() {
                   <span className={`badge ${contactTypeClass(contact.contact_type)}`}>{contact.contact_type}</span>
                 </div>
                 <div style={{ alignSelf: 'center' }}>
-                  <span style={{
-                    fontSize: '11px', padding: '2px 8px', borderRadius: '999px',
-                    background: contact.relationship_strength === 'Strong' ? 'rgba(52,211,153,0.1)' :
-                                 contact.relationship_strength === 'Warm' ? 'rgba(251,191,36,0.1)' : 'rgba(100,116,139,0.1)',
-                    color: contact.relationship_strength === 'Strong' ? 'var(--green)' :
-                           contact.relationship_strength === 'Warm' ? 'var(--yellow)' : 'var(--text-muted)',
-                  }}>
+                  <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '999px', background: 'rgba(100,116,139,0.1)', color: 'var(--text-muted)' }}>
                     {contact.relationship_strength || 'Cold'}
                   </span>
                 </div>
@@ -192,15 +156,9 @@ export default function ContactsPage() {
                 </div>
               </div>
             ))}
-
-            {/* Load more */}
             {searchResults === null && displayed.length < total && (
               <div style={{ padding: '20px 28px', textAlign: 'center' }}>
-                <button
-                  className="btn btn-ghost"
-                  onClick={() => fetchContacts(false)}
-                  disabled={loadingMore}
-                >
+                <button className="btn btn-ghost" onClick={() => fetchContacts(false)} disabled={loadingMore}>
                   {loadingMore ? 'Loading...' : `Load more (${displayed.length.toLocaleString()} of ${total.toLocaleString()})`}
                 </button>
               </div>
@@ -209,12 +167,7 @@ export default function ContactsPage() {
         )}
       </div>
 
-      {showNew && (
-        <NewContactModal
-          onClose={() => setShowNew(false)}
-          onCreated={() => { setShowNew(false); setOffset(0); fetchContacts(true) }}
-        />
-      )}
+      {showNew && <NewContactModal onClose={() => setShowNew(false)} onCreated={() => { setShowNew(false); setOffset(0); fetchContacts(true) }} />}
     </div>
   )
 }
