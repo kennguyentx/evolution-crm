@@ -127,7 +127,7 @@ export default function PipelinePage() {
                 gap: '12px',
                 padding: '12px 0 12px 12px',
                 flexWrap: 'wrap',
-                alignItems: 'flex-start',
+                alignItems: 'stretch',
               }}>
                 {stageDeals.length === 0 ? (
                   <div style={{
@@ -170,6 +170,9 @@ function DealCard({ deal, contacts, onStageChange }: {
     <div style={{
       width: '280px',
       minWidth: '280px',
+      height: '100%',
+      minHeight: '200px',
+      alignSelf: 'stretch',
       background: 'var(--surface)',
       border: '1px solid var(--border)',
       borderRadius: '8px',
