@@ -1,62 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-})
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
-const SYSTEM_PROMPT = `You are a private equity deal analyst at an independent sponsor firm focused on infrastructure and industrial services businesses. You extract deal data from teasers and CIMs (Confidential Information Memoranda).
+const SYSTEM_PROMPT = `You extract factual deal data from teasers and CIMs. Return ONLY valid JSON, no markdown, no explanation, no opinions.
 
-Extract the following and respond ONLY with valid JSON (no markdown, no explanation):
 {
-  "company_name": "string — company name",
-  "sector": "string — most specific sector: Underground Utilities | Electrical Contracting | Civil / Public Works | Commercial Landscaping | Fiber Optics | HVAC | Plumbing | Industrial Services | Other",
-  "geography": "string — primary state(s) or region of operations",
-  "description": "string — 1-2 sentence description of the business",
-  "revenue": "number in dollars or null — most recent annual revenue",
-  "ebitda": "number in dollars or null — most recent annual EBITDA (use adjusted/normalized if available)",
-  "asking_price": "number in dollars or null — stated asking price or EV",
-  "ev_ebitda_multiple": "number or null — implied EV/EBITDA multiple",
-  "deal_type": "platform | add-on | recap | growth",
-  "source_notes": "string — investment bank or advisor name if mentioned",
-  "cim_summary": "string — 3-4 sentence executive summary covering: what the company does, why it's attractive, key financial profile, and any notable risks or considerations"
+  "company_name": "string — exact company name as stated",
+  "sector": "string — one of: Underground Utilities | Electrical Contracting | Civil / Public Works | Commercial Landscaping | Fiber Optics | HVAC | Plumbing | Industrial Services | Environmental Services | Construction & Engineering | Other",
+  "geography": "string — primary state(s) or region of operations as stated in the document",
+  "deal_type": "string — one of: platform | add-on | recap | growth",
+  "revenue": "number in raw dollars or null — most recent annual revenue as stated",
+  "ebitda": "number in raw dollars or null — most recent annual EBITDA (use adjusted/normalized if explicitly stated)",
+  "cim_summary": "string — 3-5 factual sentences describing: what the company does, where it operates, its financial profile, and ownership/transaction context. State only facts from the document. No opinions, no qualitative assessments, no phrases like 'attractive', 'compelling', 'strong', 'impressive', or 'unique'.",
+  "banker_name": "string or null — full name of the investment banker or broker as stated",
+  "banker_firm": "string or null — name of the investment bank or advisory firm as stated"
 }
 
-For dollar values: always return as raw numbers (e.g. 4200000 for $4.2M).
-If a field cannot be determined, return null.
-Be conservative — only extract what is clearly stated.`
+Rules:
+- Dollar values as raw numbers (4200000 for $4.2M)
+- If a field is not stated in the document, return null
+- Do not infer or estimate values not explicitly stated
+- The summary must be purely factual — no adjectives that express quality or opinion`
 
 export async function POST(req: NextRequest) {
   try {
     const { base64, fileName } = await req.json()
-
-    if (!base64) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 })
-    }
+    if (!base64) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
 
     const response = await anthropic.messages.create({
       model: 'claude-opus-4-5',
       max_tokens: 1500,
       system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'document',
-              source: {
-                type: 'base64',
-                media_type: 'application/pdf',
-                data: base64,
-              },
-            },
-            {
-              type: 'text',
-              text: `Extract deal data from this document (${fileName}). Return only valid JSON.`,
-            },
-          ],
-        },
-      ],
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+          { type: 'text', text: `Extract deal data from this document (${fileName}). Return only valid JSON.` },
+        ],
+      }],
     })
 
     const text = response.content
@@ -70,9 +52,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(parsed)
   } catch (err: any) {
     console.error('CIM parse error:', err)
-    return NextResponse.json(
-      { error: err.message || 'Parse failed' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: err.message || 'Parse failed' }, { status: 500 })
   }
 }
