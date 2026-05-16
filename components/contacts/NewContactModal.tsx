@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
-import { X, ExternalLink } from 'lucide-react'
+import { X, ExternalLink, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 
 interface ContactModalProps {
@@ -21,6 +21,7 @@ export default function NewContactModal({ onClose, onCreated, contact }: Contact
   const supabase = createClient()
   const isEdit = !!contact
   const [saving, setSaving] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [dealLinks, setDealLinks] = useState<any[]>([])
   const [form, setForm] = useState({
     first_name: contact?.first_name || '',
@@ -54,6 +55,15 @@ export default function NewContactModal({ onClose, onCreated, contact }: Contact
       setForm(prev => ({ ...prev, [key]: val }))
     },
   })
+
+  const handleDelete = async () => {
+    if (!contact?.id) return
+    await supabase.from('contact_deal_links').delete().eq('contact_id', contact.id)
+    await supabase.from('interactions').delete().eq('contact_id', contact.id)
+    await supabase.from('deal_capital_assignments').delete().eq('contact_id', contact.id)
+    await supabase.from('contacts').delete().eq('id', contact.id)
+    onCreated()
+  }
 
   const handleSubmit = async () => {
     if (!form.first_name || !form.last_name) return
@@ -208,7 +218,17 @@ export default function NewContactModal({ onClose, onCreated, contact }: Contact
         </div>
 
         {/* Footer */}
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '24px', paddingTop: '20px', borderTop: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '24px', paddingTop: '20px', borderTop: '1px solid var(--border)', alignItems: 'center' }}>
+          {isEdit && (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              style={{ marginRight: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--red)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+            >
+              <Trash2 size={13} /> Delete
+            </button>
+          )}
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button
             className="btn btn-primary"
@@ -218,6 +238,22 @@ export default function NewContactModal({ onClose, onCreated, contact }: Contact
             {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Contact'}
           </button>
         </div>
+      </div>
+        {/* Delete confirmation */}
+        {showDeleteConfirm && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+            <div className="card" style={{ padding: '28px', maxWidth: '380px', width: '90%' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '8px' }}>Delete this contact?</h3>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px' }}>
+                This will permanently delete <strong>{contact?.first_name} {contact?.last_name}</strong> and remove them from all linked deals. This cannot be undone.
+              </p>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button className="btn btn-ghost" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
+                <button className="btn btn-danger" onClick={handleDelete}>Delete permanently</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
