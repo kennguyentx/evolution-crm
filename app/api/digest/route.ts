@@ -31,7 +31,13 @@ function stageBadge(stage: string): string {
 }
 
 export async function GET(req: NextRequest) {
-    try {
+  // Verify cron secret
+  const authHeader = req.headers.get('authorization')
+  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  try {
     // Fetch active deals
     const { data: deals } = await supabase
       .from('deals')
@@ -113,14 +119,10 @@ export async function GET(req: NextRequest) {
       stageSections += `
         <tr>
           <td colspan="7" style="padding:14px 16px 8px;background:#faf9fb;border-top:2px solid #f0eef2;">
-            <table cellpadding="0" cellspacing="0" style="width:100%;">
-              <tr>
-                <td>${stageBadge(stage)}</td>
-                <td style="padding-left:10px;font-size:11px;color:#999;">
-                  ${stageDeals.length} deal${stageDeals.length !== 1 ? 's' : ''}${stageEbitda > 0 ? ' &nbsp;·&nbsp; ' + fmt(stageEbitda) + ' EBITDA' : ''}
-                </td>
-              </tr>
-            </table>
+            <span style="display:inline-flex;align-items:center;gap:10px;">
+              ${stageBadge(stage)}
+              <span style="font-size:11px;color:#999;white-space:nowrap;">${stageDeals.length} deal${stageDeals.length !== 1 ? 's' : ''}${stageEbitda > 0 ? ' · ' + fmt(stageEbitda) + ' EBITDA' : ''}</span>
+            </span>
           </td>
         </tr>
         ${dealRows}`
