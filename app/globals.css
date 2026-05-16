@@ -186,7 +186,7 @@ html, body {
 .stage-teaser            { background: #f2f0f5; color: #7a6b88; }
 .stage-reviewing         { background: var(--blue-muted); color: var(--blue); }
 .stage-pre-loi           { background: var(--accent-muted); color: var(--accent); }
-.stage-loi-submitted     { background: var(--yellow-muted); color: var(--yellow); }
+.stage-loi-submitted      { background: var(--yellow-muted); color: var(--yellow); border-radius: 999px; }
 .stage-exclusivity       { background: var(--orange-muted); color: var(--orange); }
 .stage-closed-(platform) { background: var(--green-muted); color: var(--green); }
 .stage-closed-(add-on)   { background: rgba(26,107,69,0.06); color: #1a6b45; }
