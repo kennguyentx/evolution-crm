@@ -99,7 +99,7 @@ export default function DealsPage() {
       {/* Table header */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: '2fr 1fr 1fr 120px 120px 120px',
+        gridTemplateColumns: '2fr 1fr 1fr 100px 100px 130px',
         padding: '8px 28px',
         fontSize: '11px',
         color: 'var(--text-muted)',
@@ -134,7 +134,7 @@ export default function DealsPage() {
               className="table-row"
               style={{
                 display: 'grid',
-                gridTemplateColumns: '2fr 1fr 1fr 120px 120px 120px',
+                gridTemplateColumns: '2fr 1fr 1fr 100px 100px 130px',
                 padding: '12px 28px',
               }}
             >
