@@ -8,7 +8,7 @@ import { ArrowLeft, Check, X, Plus, Phone, Mail, ChevronDown, Search } from 'luc
 import Link from 'next/link'
 import { format } from 'date-fns'
 
-const STAGES = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)']
+const STAGES = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
 
 const DEFAULT_DILIGENCE = [
   { category: 'financial', item: 'Audited financials (3 years)' },
