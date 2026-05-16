@@ -113,7 +113,7 @@ export default function DealsPage() {
         <div>Geography</div>
         <div style={{ textAlign: 'right' }}>EBITDA</div>
         <div style={{ textAlign: 'right' }}>Revenue</div>
-        <div style={{ textAlign: 'right' }}>EV/E</div>
+        <div style={{ textAlign: 'right' }}></div>
         <div>Stage</div>
       </div>
 
