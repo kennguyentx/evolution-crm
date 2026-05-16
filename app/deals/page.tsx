@@ -51,16 +51,15 @@ export default function DealsPage() {
       }}>
         <div>
           <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '24px' }}>Deals</h1>
+        <button className="btn btn-primary" onClick={() => setShowNewDeal(true)}>
+          <Plus size={14} /> New Deal
+        </button>
           <div style={{ color: 'var(--text-muted)', fontSize: '12px', marginTop: '2px' }}>
             {filtered.length} deal{filtered.length !== 1 ? 's' : ''}
             {totalEbitda > 0 && ` · ${formatCurrency(totalEbitda)} total EBITDA`}
           </div>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowNewDeal(true)}>
-          <Plus size={14} />
-          New Deal
-        </button>
-      </div>
+              </div>
 
       {/* Filters */}
       <div style={{
