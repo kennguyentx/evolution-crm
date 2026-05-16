@@ -23,12 +23,21 @@ export default function ContactsPage() {
   const supabase = createClient()
 
   useEffect(() => {
-    fetch('/api/contacts/counts')
-      .then(r => r.json())
-      .then(({ total, counts }) => {
-        setTotal(total)
-        setTypeCounts(counts)
-      })
+    const fetchCounts = async () => {
+      const { data } = await supabase.from('contact_counts').select('*').single()
+      if (data) {
+        setTotal(Number(data.total) || 0)
+        setTypeCounts({
+          banker: Number(data.banker) || 0,
+          lp: Number(data.lp) || 0,
+          lender: Number(data.lender) || 0,
+          advisor: Number(data.advisor) || 0,
+          management: Number(data.management) || 0,
+          other: Number(data.other) || 0,
+        })
+      }
+    }
+    fetchCounts()
   }, [])
 
   const fetchContacts = useCallback(async (reset = false) => {
