@@ -126,7 +126,7 @@ export default function PipelinePage() {
                 display: 'flex',
                 gap: '12px',
                 padding: '12px 0 12px 12px',
-                overflowX: 'auto',
+                flexWrap: 'wrap',
                 alignItems: 'flex-start',
               }}>
                 {stageDeals.length === 0 ? (
