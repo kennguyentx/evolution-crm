@@ -16,6 +16,7 @@ interface ParsedDeal {
   sector: string
   geography: string
   deal_type: string
+  stage: string
   revenue: number | null
   ebitda: number | null
   cim_summary: string
@@ -110,6 +111,7 @@ export default function IntakePage() {
       { key: 'sector', label: 'Sector' },
       { key: 'geography', label: 'Geography' },
       { key: 'deal_type', label: 'Deal Type' },
+      { key: 'stage', label: 'Stage' },
       { key: 'revenue', label: 'Revenue' },
       { key: 'ebitda', label: 'EBITDA' },
     ]
@@ -137,7 +139,7 @@ export default function IntakePage() {
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
       setParsed(data)
-      setEdited(data)
+      setEdited({ ...data, stage: data.stage || 'Reviewing' })
 
       // Auto-search for banker in DB
       if (data.banker_name) {
@@ -211,13 +213,15 @@ export default function IntakePage() {
       company_name: edited.company_name || 'Unknown Company',
       sector: edited.sector || null,
       geography: edited.geography || null,
+      description: edited.cim_summary || null,
       deal_type: edited.deal_type || 'platform',
       revenue: edited.revenue,
       ebitda: edited.ebitda,
       cim_summary: edited.cim_summary,
       cim_parsed: true,
-      stage: 'Reviewing',
+      stage: edited.stage || 'Reviewing',
       status: 'Active',
+      expected_close: new Date().toISOString().split('T')[0],
       source_notes: selectedContact?.firm || edited.banker_firm || null,
     }).select().single()
 
@@ -349,6 +353,17 @@ export default function IntakePage() {
                   <option value="add-on">Add-On</option>
                   <option value="recap">Recap</option>
                   <option value="growth">Growth</option>
+                </select>
+              </IntakeField>
+
+              {/* Stage */}
+              <IntakeField label="Stage *" required={!edited.stage}>
+                <select className="select" value={edited.stage || 'Reviewing'} onChange={e => updateField('stage', e.target.value)}>
+                  <option value="Teaser">Teaser</option>
+                  <option value="Reviewing">Reviewing</option>
+                  <option value="Pre-LOI">Pre-LOI</option>
+                  <option value="LOI Submitted">LOI Submitted</option>
+                  <option value="Exclusivity">Exclusivity</option>
                 </select>
               </IntakeField>
 
