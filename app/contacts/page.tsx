@@ -64,17 +64,31 @@ export default function ContactsPage() {
     const timer = setTimeout(async () => {
       const q = search.trim()
       const parts = q.split(' ').filter(Boolean)
-      let query = supabase.from('contacts').select('*')
+      let results: any[] = []
+
       if (parts.length >= 2) {
-        // Full name search — match first + last separately
-        query = query.or(
-          `first_name.ilike.%${parts[0]}%,last_name.ilike.%${parts[parts.length-1]}%,firm.ilike.%${q}%,email.ilike.%${q}%`
-        )
+        // Multi-word: fetch matching first name AND last name separately, then intersect
+        const [firstRes, lastRes] = await Promise.all([
+          supabase.from('contacts').select('*').ilike('first_name', `%${parts[0]}%`).limit(500),
+          supabase.from('contacts').select('*').ilike('last_name', `%${parts[parts.length - 1]}%`).limit(500),
+        ])
+        const firstIds = new Set((firstRes.data || []).map((c: any) => c.id))
+        const lastMatches = (lastRes.data || []).filter((c: any) => firstIds.has(c.id))
+        // Also include firm/email matches for the full query
+        const { data: firmData } = await supabase.from('contacts').select('*')
+          .or(`firm.ilike.%${q}%,email.ilike.%${q}%`).limit(50)
+        const combined = [...lastMatches, ...(firmData || [])]
+        const seen = new Set<string>()
+        results = combined.filter((c: any) => { if (seen.has(c.id)) return false; seen.add(c.id); return true })
       } else {
-        query = query.or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,firm.ilike.%${q}%,email.ilike.%${q}%`)
+        const { data } = await supabase.from('contacts').select('*')
+          .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,firm.ilike.%${q}%,email.ilike.%${q}%`)
+          .order('last_name').limit(100)
+        results = data || []
       }
-      const { data } = await query.order('last_name').limit(100)
-      setSearchResults(data || [])
+
+      results.sort((a: any, b: any) => (a.last_name || '').localeCompare(b.last_name || ''))
+      setSearchResults(results.slice(0, 100))
     }, 300)
     return () => clearTimeout(timer)
   }, [search])
