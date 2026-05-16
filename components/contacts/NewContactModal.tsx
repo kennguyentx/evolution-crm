@@ -239,22 +239,22 @@ export default function NewContactModal({ onClose, onCreated, contact }: Contact
           </button>
         </div>
       </div>
-        {/* Delete confirmation */}
-        {showDeleteConfirm && (
-          <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-            <div className="card" style={{ padding: '28px', maxWidth: '380px', width: '90%' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '8px' }}>Delete this contact?</h3>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px' }}>
-                This will permanently delete <strong>{contact?.first_name} {contact?.last_name}</strong> and remove them from all linked deals. This cannot be undone.
-              </p>
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button className="btn btn-ghost" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
-                <button className="btn btn-danger" onClick={handleDelete}>Delete permanently</button>
-              </div>
+
+      {/* Delete confirmation */}
+      {showDeleteConfirm && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+          <div className="card" style={{ padding: '28px', maxWidth: '380px', width: '90%' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '8px' }}>Delete this contact?</h3>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px' }}>
+              This will permanently delete <strong>{contact?.first_name} {contact?.last_name}</strong> and remove them from all linked deals. This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
+              <button className="btn btn-danger" onClick={handleDelete}>Delete permanently</button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
