@@ -6,17 +6,9 @@ import Sidebar from './Sidebar'
 
 export default function LayoutClient({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<any>(undefined)
-  const [isMobile, setIsMobile] = useState(false)
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
-
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768)
-    check()
-    window.addEventListener('resize', check)
-    return () => window.removeEventListener('resize', check)
-  }, [])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -36,12 +28,7 @@ export default function LayoutClient({ children }: { children: React.ReactNode }
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <Sidebar />
-      <main style={{
-        flex: 1,
-        overflow: 'auto',
-        // Push content below the fixed 52px mobile top bar
-        paddingTop: isMobile ? '52px' : '0',
-      }}>
+      <main className="main-content" style={{ flex: 1, overflow: 'auto' }}>
         {children}
       </main>
     </div>
