@@ -3,45 +3,51 @@ import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
-const SYSTEM_PROMPT = `You extract financial data from P&L statements and management accounts. 
+const SYSTEM_PROMPT = `You extract financial data from P&L statements and management accounts.
 
-If the document has multiple time periods (months/quarters as columns), extract ALL of them and return an array.
-If it's a single period, return an array with one object.
+Return a JSON array — one object per time period found. If multiple months/quarters are columns, extract each one separately.
 
-CRITICAL: Your entire response must be ONLY the JSON array. Start your response with [ and end with ]. No other text, no explanation, no preamble:
+IMPORTANT: Return ONLY raw valid JSON. No markdown, no explanation, no trailing commas.
 
-[
-  {
-    "period_end": "YYYY-MM-DD — last day of that month/quarter",
-    "period_type": "monthly | quarterly | annual",
-    "revenue": "number in raw dollars or null — total revenue/sales for that period",
-    "gross_profit": "number in raw dollars or null — gross profit for that period",
-    "ebitda": "number in raw dollars or null — EBITDA for that period (calculate if not explicit: gross profit minus SG&A/overhead if shown)",
-    "ebit": "number in raw dollars or null",
-    "net_income": "number in raw dollars or null",
-    "revenue_budget": "number in raw dollars or null — budget/plan revenue if shown for that period",
-    "ebitda_budget": "number in raw dollars or null — budget/plan EBITDA if shown",
-    "revenue_py": "number in raw dollars or null — prior year revenue if shown",
-    "ebitda_py": "number in raw dollars or null — prior year EBITDA if shown",
-    "backlog": "number in raw dollars or null",
-    "ar_balance": "number in raw dollars or null",
-    "debt_balance": "number in raw dollars or null",
-    "headcount": "integer or null",
-    "commentary": "string or null — any notes for this period"
-  }
-]
+Each period object:
+{
+  "period_end": "YYYY-MM-DD",
+  "period_type": "monthly",
+  "revenue": 4200000,
+  "gross_profit": null,
+  "ebitda": 800000,
+  "ebit": null,
+  "net_income": null,
+  "revenue_budget": null,
+  "ebitda_budget": null,
+  "revenue_py": null,
+  "ebitda_py": null,
+  "backlog": null,
+  "ar_balance": null,
+  "debt_balance": null,
+  "headcount": null,
+  "commentary": null
+}
 
 Rules:
-- Return ALL periods found in the document, not just the most recent
-- Dollar values as raw numbers (4200000 for $4.2M)
-- If columns are months, each month = one object in the array
-- Return null for anything not explicitly stated
-- Do NOT include YTD totals as a period — only include actual time periods
-- Do not infer or estimate`
+- All numeric values in raw dollars (4200000 not 4.2M)
+- Use null for missing values, never omit keys
+- period_end = last day of the month/quarter (e.g. 2024-01-31 for January 2024)
+- Skip YTD/Total columns — only individual periods
+- Do not estimate — only extract what is explicitly stated`
+
+function repairJson(str: string): string {
+  // Remove trailing commas before ] or }
+  return str
+    .replace(/,(\s*[\]\}])/g, '$1')
+    .replace(/:\s*undefined/g, ': null')
+    .replace(/:\s*NaN/g, ': null')
+    .replace(/:\s*Infinity/g, ': null')
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const { base64, mediaType, fileName, companyName, csvText } = await req.json()
+    const { base64, fileName, companyName, csvText } = await req.json()
     const isSpreadsheet = fileName?.match(/\.(xlsx|xls|csv)$/i)
 
     let messageContent: any[]
@@ -49,12 +55,12 @@ export async function POST(req: NextRequest) {
     if (isSpreadsheet && csvText) {
       messageContent = [{
         type: 'text',
-        text: `Extract ALL monthly/quarterly financial periods from this ${companyName} spreadsheet (${fileName}). The spreadsheet likely has months as columns and line items as rows. Extract every column that represents a time period. Return a JSON array with one object per period.\n\nSpreadsheet contents:\n${csvText.slice(0, 12000)}`
+        text: `Extract all monthly/quarterly financial periods from this ${companyName} spreadsheet. Months are likely columns, line items are rows. Return one JSON object per time period column. Skip any totals or YTD columns.\n\nData:\n${csvText.slice(0, 12000)}`
       }]
     } else {
       messageContent = [
         { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
-        { type: 'text', text: `Extract ALL financial periods from this ${companyName} report (${fileName}). Return a JSON array with one object per period.` }
+        { type: 'text', text: `Extract all financial periods from this ${companyName} report. Return a JSON array.` }
       ]
     }
 
@@ -69,15 +75,31 @@ export async function POST(req: NextRequest) {
       .filter((b: any) => b.type === 'text')
       .map((b: any) => b.text)
       .join('')
+      .replace(/```json|```/g, '')
+      .trim()
 
-    // Extract JSON from response — handle array or object, and extra text
-    const clean = raw.replace(/```json|```/g, '').trim()
-    const arrayMatch = clean.match(/\[[\s\S]*\]/)
-    const objectMatch = clean.match(/\{[\s\S]*\}/)
-    const jsonStr = arrayMatch ? arrayMatch[0] : objectMatch ? objectMatch[0] : null
+    // Find JSON array or object
+    const arrayMatch = raw.match(/\[[\s\S]*\]/)
+    const objectMatch = raw.match(/\{[\s\S]*\}/)
+    let jsonStr = arrayMatch ? arrayMatch[0] : objectMatch ? objectMatch[0] : null
+
     if (!jsonStr) throw new Error('No JSON found in response')
-    const parsed = JSON.parse(jsonStr)
-    // Normalize — always return array
+
+    // Repair common JSON issues
+    jsonStr = repairJson(jsonStr)
+
+    let parsed: any
+    try {
+      parsed = JSON.parse(jsonStr)
+    } catch {
+      // Last resort: try to extract just valid objects
+      const objects = [...jsonStr.matchAll(/\{[^{}]*\}/g)].map(m => {
+        try { return JSON.parse(repairJson(m[0])) } catch { return null }
+      }).filter(Boolean)
+      if (!objects.length) throw new Error('Could not parse financial data from document')
+      parsed = objects
+    }
+
     const result = Array.isArray(parsed) ? parsed : [parsed]
     return NextResponse.json({ periods: result, count: result.length })
   } catch (err: any) {
