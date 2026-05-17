@@ -123,7 +123,7 @@ export default function InvestorPage() {
       <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px' }}>
 
         {activeTab === 'overview' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', maxWidth: '800px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', maxWidth: '900px' }}>
             <div className="card" style={{ padding: '20px' }}>
               <div className="label" style={{ marginBottom: '14px' }}>Contact Info</div>
               {investor.email && <div style={{ fontSize: '13px', marginBottom: '8px' }}><span style={{ color: 'var(--text-muted)', fontSize: '11px', marginRight: '8px', textTransform: 'uppercase' }}>Email</span>{investor.email}</div>}
@@ -131,15 +131,27 @@ export default function InvestorPage() {
               {investor.notes && <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '12px', lineHeight: 1.6 }}>{investor.notes}</div>}
             </div>
             <div className="card" style={{ padding: '20px' }}>
-              <div className="label" style={{ marginBottom: '14px' }}>Investment Summary</div>
+              <div className="label" style={{ marginBottom: '14px' }}>Investment Breakdown</div>
               {investments.length === 0 ? (
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No investments recorded yet</div>
-              ) : investments.slice(0, 5).map(inv => (
-                <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px' }}>
-                  <span style={{ color: 'var(--text-primary)' }}>{inv.portfolio_company?.name || inv.deal?.company_name || 'Unknown'}</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent)', fontWeight: 600 }}>{formatCurrency(inv.invested_amount)}</span>
-                </div>
-              ))}
+              ) : (
+                <>
+                  {investments.map(inv => (
+                    <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '13px', paddingBottom: '8px', borderBottom: '1px solid var(--border-subtle)' }}>
+                      <div>
+                        <div style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{inv.portfolio_company?.name || inv.deal?.company_name || 'Unknown'}</div>
+                        {inv.entity?.name && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>via {inv.entity.name}</div>}
+                      </div>
+                      <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent)', fontWeight: 600 }}>{formatCurrency(inv.invested_amount)}</span>
+                    </div>
+                  ))}
+                  {/* Total */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', paddingTop: '10px', borderTop: '2px solid var(--border)' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Total Invested</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', fontWeight: 700, color: 'var(--accent)' }}>{formatCurrency(investments.reduce((s, i) => s + (i.invested_amount || 0), 0))}</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
