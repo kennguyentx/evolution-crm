@@ -15,7 +15,7 @@ export default function DealsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [stageFilter, setStageFilter] = useState<string>('all')
-  const [statusFilter, setStatusFilter] = useState<string>('Active')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
   const [showNewDeal, setShowNewDeal] = useState(false)
   const supabase = createClient()
 
