@@ -70,12 +70,13 @@ export async function POST(req: NextRequest) {
       .map((b: any) => b.text)
       .join('')
 
-    // Extract JSON array from response — handle cases where model adds text
-    const match = raw.match(/\[[\s\S]*\]/)
-    if (!match) throw new Error('No JSON array found in response')
-    const text = match[0]
-
-    const parsed = JSON.parse(text)
+    // Extract JSON from response — handle array or object, and extra text
+    const clean = raw.replace(/```json|```/g, '').trim()
+    const arrayMatch = clean.match(/\[[\s\S]*\]/)
+    const objectMatch = clean.match(/\{[\s\S]*\}/)
+    const jsonStr = arrayMatch ? arrayMatch[0] : objectMatch ? objectMatch[0] : null
+    if (!jsonStr) throw new Error('No JSON found in response')
+    const parsed = JSON.parse(jsonStr)
     // Normalize — always return array
     const result = Array.isArray(parsed) ? parsed : [parsed]
     return NextResponse.json({ periods: result, count: result.length })
