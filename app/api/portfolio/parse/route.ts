@@ -8,7 +8,7 @@ const SYSTEM_PROMPT = `You extract financial data from P&L statements and manage
 If the document has multiple time periods (months/quarters as columns), extract ALL of them and return an array.
 If it's a single period, return an array with one object.
 
-Return ONLY valid JSON array, no markdown, no explanation:
+CRITICAL: Your entire response must be ONLY the JSON array. Start your response with [ and end with ]. No other text, no explanation, no preamble:
 
 [
   {
@@ -65,12 +65,15 @@ export async function POST(req: NextRequest) {
       messages: [{ role: 'user', content: messageContent }]
     })
 
-    const text = response.content
+    const raw = response.content
       .filter((b: any) => b.type === 'text')
       .map((b: any) => b.text)
       .join('')
-      .replace(/```json|```/g, '')
-      .trim()
+
+    // Extract JSON array from response — handle cases where model adds text
+    const match = raw.match(/\[[\s\S]*\]/)
+    if (!match) throw new Error('No JSON array found in response')
+    const text = match[0]
 
     const parsed = JSON.parse(text)
     // Normalize — always return array
