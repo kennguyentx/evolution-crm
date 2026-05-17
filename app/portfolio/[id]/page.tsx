@@ -230,7 +230,7 @@ export default function PortfolioCompanyPage() {
           <div style={{ maxWidth: '900px' }}>
             {chartData.length > 1 ? (
               <div className="card" style={{ padding: '20px', marginBottom: '20px' }}>
-                <div className="label" style={{ marginBottom: '16px' }}>Revenue & EBITDA Trend ($M)</div>
+                <div className="label" style={{ display: 'block', margin: '0 auto 16px' }}>Revenue & EBITDA Trend ($M)</div>
                 <ResponsiveContainer width="100%" height={240}>
                   <LineChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -284,7 +284,7 @@ export default function PortfolioCompanyPage() {
           <div style={{ maxWidth: '680px' }}>
             {uploadStage === 'idle' && (
               <>
-                <div {...getRootProps()} style={{ border: `2px dashed ${isDragActive ? 'var(--accent)' : 'var(--border)'}`, borderRadius: '12px', padding: '60px 40px', textAlign: 'center', cursor: 'pointer', background: isDragActive ? 'var(--accent-muted)' : 'var(--surface)', transition: 'all 0.2s', marginBottom: '16px' }}>
+                <div {...getRootProps()} style={{ border: `2px dashed ${isDragActive ? 'var(--accent)' : 'var(--border)'}`, borderRadius: '12px', padding: '60px 40px', textAlign: 'center', cursor: 'pointer', background: isDragActive ? 'var(--accent-muted)' : 'var(--surface)', transition: 'all 0.2s', display: 'block', margin: '0 auto 16px' }}>
                   <input {...getInputProps()} />
                  <Upload size={32} style={{ color: isDragActive ? 'var(--accent)' : 'var(--text-muted)', display: 'block', margin: '0 auto 16px' }} />
                   <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>Drop P&L or financial report here</div>
@@ -313,9 +313,9 @@ export default function PortfolioCompanyPage() {
 
             {uploadStage === 'review' && editedData && (
               <div>
-                <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '16px' }}>Review extracted data — edit any field before saving</div>
+                <div style={{ fontSize: '14px', fontWeight: 600, display: 'block', margin: '0 auto 16px' }}>Review extracted data — edit any field before saving</div>
 
-                <div className="card" style={{ padding: '20px', marginBottom: '16px' }}>
+                <div className="card" style={{ padding: '20px', display: 'block', margin: '0 auto 16px' }}>
                   <div className="label" style={{ marginBottom: '14px' }}>Period</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                     <div>
@@ -333,7 +333,7 @@ export default function PortfolioCompanyPage() {
                   </div>
                 </div>
 
-                <div className="card" style={{ padding: '20px', marginBottom: '16px' }}>
+                <div className="card" style={{ padding: '20px', display: 'block', margin: '0 auto 16px' }}>
                   <div className="label" style={{ marginBottom: '14px' }}>Actuals ($M)</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
                     <FieldInput label="Revenue" fieldKey="revenue" />
@@ -343,7 +343,7 @@ export default function PortfolioCompanyPage() {
                   </div>
                 </div>
 
-                <div className="card" style={{ padding: '20px', marginBottom: '16px' }}>
+                <div className="card" style={{ padding: '20px', display: 'block', margin: '0 auto 16px' }}>
                   <div className="label" style={{ marginBottom: '14px' }}>Budget & Prior Year ($M)</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
                     <FieldInput label="Revenue Budget" fieldKey="revenue_budget" />
@@ -353,7 +353,7 @@ export default function PortfolioCompanyPage() {
                   </div>
                 </div>
 
-                <div className="card" style={{ padding: '20px', marginBottom: '16px' }}>
+                <div className="card" style={{ padding: '20px', display: 'block', margin: '0 auto 16px' }}>
                   <div className="label" style={{ marginBottom: '14px' }}>Operations</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
                     <FieldInput label="Backlog ($M)" fieldKey="backlog" />
@@ -402,7 +402,7 @@ export default function PortfolioCompanyPage() {
         {/* FINANCIALS TABLE */}
         {activeTab === 'financials' && (
           <div style={{ maxWidth: '900px' }}>
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-start', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-start', display: 'block', margin: '0 auto 16px' }}>
               <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => setActiveTab('upload')}>
                 <Upload size={12} /> Upload PDF
               </button>
@@ -413,7 +413,7 @@ export default function PortfolioCompanyPage() {
 
             {showAddPeriod && (
               <div className="card" style={{ padding: '20px', marginBottom: '20px', border: '1px solid var(--accent)' }}>
-                <div className="label" style={{ marginBottom: '16px' }}>New Financial Period</div>
+                <div className="label" style={{ display: 'block', margin: '0 auto 16px' }}>New Financial Period</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   <div><label className="label">Period End Date *</label><input className="input" type="date" value={newPeriod.period_end} onChange={e => setNewPeriod(p => ({ ...p, period_end: e.target.value }))} /></div>
                   <div><label className="label">Period Type</label>
@@ -496,7 +496,7 @@ export default function PortfolioCompanyPage() {
         {/* AI ANALYSIS */}
         {activeTab === 'analysis' && (
           <div style={{ maxWidth: '700px' }}>
-            <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-start', display: 'block', margin: '0 auto 16px' }}>
               <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={runAnalysis} disabled={analyzing || financials.length === 0}>
                 <Zap size={13} /> {analyzing ? 'Analyzing...' : 'Run Analysis'}
               </button>
