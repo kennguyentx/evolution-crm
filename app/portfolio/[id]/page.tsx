@@ -305,7 +305,7 @@ export default function PortfolioCompanyPage() {
 
             {uploadStage === 'parsing' && (
               <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
-                <Zap size={32} style={{ color: 'var(--accent)', marginBottom: '16px' }} />
+                <Zap size={32} style={{ color: 'var(--accent)', display: 'block', margin: '0 auto 16px' }} />
                 <div style={{ fontSize: '15px', fontWeight: 600, marginBottom: '8px' }}>Parsing financials...</div>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Claude is reading and extracting financial data</div>
               </div>
@@ -504,7 +504,7 @@ export default function PortfolioCompanyPage() {
             {financials.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Add financials first before running analysis.</div>}
             {analyzing && (
               <div className="card" style={{ padding: '32px', textAlign: 'center' }}>
-                <Zap size={24} style={{ color: 'var(--accent)', marginBottom: '12px' }} />
+                <Zap size={24} style={{ color: 'var(--accent)', display: 'block', margin: '0 auto 12px' }} />
                 <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Analyzing financial trends...</div>
               </div>
             )}
