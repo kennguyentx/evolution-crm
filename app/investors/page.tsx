@@ -141,10 +141,10 @@ export default function InvestorsPage() {
           <>
             {filtered.map(inv => (
               <Link key={inv.id} href={`/investors/${inv.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                <div className="table-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '12px 28px', alignItems: 'center' }}>
+                <div className="table-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '8px 28px', alignItems: 'center' }}>
                   <div>
                     <div style={{ fontWeight: 500, fontSize: '13px' }}>{inv.first_name} {inv.last_name}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>
                       {inv.firm && <span>{inv.firm} · </span>}
                       <span>{inv.investor_type}</span>
                     </div>
