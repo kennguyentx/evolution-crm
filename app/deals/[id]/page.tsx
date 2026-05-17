@@ -9,6 +9,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useDropzone } from 'react-dropzone'
 import { format } from 'date-fns'
+import DocumentsTab from '@/components/deals/DocumentsTab'
 
 const STAGES = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
 
@@ -36,8 +37,9 @@ export default function DealDetailPage() {
   const [interactions, setInteractions] = useState<Interaction[]>([])
   const [diligence, setDiligence] = useState<DiligenceItem[]>([])
   const [capital, setCapital] = useState<DealCapitalAssignment[]>([])
+  const [documents, setDocuments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview'|'diligence'|'contacts'|'capital'|'activity'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview'|'diligence'|'contacts'|'capital'|'activity'|'documents'>('overview')
   const [editingStage, setEditingStage] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [portfolioCompanies, setPortfolioCompanies] = useState<any[]>([])
@@ -269,7 +271,8 @@ export default function DealDetailPage() {
     { key: 'contacts',  label: `Contacts (${linkedContacts.length})` },
     { key: 'capital',   label: `Capital (${capital.length})` },
     { key: 'activity',  label: `Activity (${interactions.length})` },
-  ]
+    { key: 'documents',  label: `Documents (${documents.length})` },
+      ]
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -639,6 +642,13 @@ export default function DealDetailPage() {
                 {i.next_steps && <div style={{ fontSize: '12px', color: 'var(--accent)', marginTop: '6px' }}>→ {i.next_steps}</div>}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* DOCUMENTS */}
+        {activeTab === 'documents' && (
+          <div style={{ maxWidth: '700px' }}>
+            <DocumentsTab dealId={dealId} />
           </div>
         )}
       </div>
