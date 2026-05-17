@@ -44,12 +44,10 @@ export default function DealsPage() {
       <div style={{
         padding: '20px 28px',
         borderBottom: '1px solid var(--border)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '16px',
-        flexShrink: 0,
+        display: 'flex', alignItems: 'center', gap: '16px',
+        flexShrink: 0, background: 'var(--surface)',
       }}>
-        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '24px' }}>Deals</h1>
+        <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Deals</h1>
         <button className="btn btn-primary" onClick={() => setShowNewDeal(true)}>
           <Plus size={14} /> New Deal
         </button>
