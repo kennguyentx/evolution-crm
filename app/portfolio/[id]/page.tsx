@@ -402,7 +402,7 @@ export default function PortfolioCompanyPage() {
         {/* FINANCIALS TABLE */}
         {activeTab === 'financials' && (
           <div style={{ maxWidth: '900px' }}>
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-start', marginBottom: '16px' }}>
               <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => setActiveTab('upload')}>
                 <Upload size={12} /> Upload PDF
               </button>
@@ -449,7 +449,7 @@ export default function PortfolioCompanyPage() {
                   </div>
                 </div>
                 <div style={{ marginTop: '14px' }}><label className="label">Commentary</label><textarea className="input" rows={3} style={{ resize: 'vertical' }} value={newPeriod.commentary} onChange={e => setNewPeriod(p => ({ ...p, commentary: e.target.value }))} /></div>
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px' }}>
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-start', marginTop: '16px' }}>
                   <button className="btn btn-ghost" onClick={() => setShowAddPeriod(false)}>Cancel</button>
                   <button className="btn btn-primary" onClick={saveManualPeriod} disabled={!newPeriod.period_end}><Check size={13} /> Save Period</button>
                 </div>
@@ -496,7 +496,7 @@ export default function PortfolioCompanyPage() {
         {/* AI ANALYSIS */}
         {activeTab === 'analysis' && (
           <div style={{ maxWidth: '700px' }}>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '16px' }}>
               <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={runAnalysis} disabled={analyzing || financials.length === 0}>
                 <Zap size={13} /> {analyzing ? 'Analyzing...' : 'Run Analysis'}
               </button>
