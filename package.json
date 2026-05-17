@@ -28,7 +28,7 @@
     "@anthropic-ai/sdk": "^0.16.0",
     "formidable": "^3.5.1",
     "react-dropzone": "^14.2.3",
-    "xlsx": ^0.18.5"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",
