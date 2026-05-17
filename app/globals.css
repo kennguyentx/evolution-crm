@@ -247,9 +247,12 @@ html, body {
   }
 }
 
+
 /* Push main content below fixed mobile top bar */
 @media (max-width: 768px) {
   .main-content {
-    padding-top: 52px !important;
+    margin-top: 52px !important;
+    height: calc(100vh - 52px) !important;
+    overflow: auto !important;
   }
 }
