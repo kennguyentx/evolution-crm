@@ -9,7 +9,6 @@ const nav = [
   { href: '/pipeline',   label: 'Pipeline',   icon: Kanban },
   { href: '/deals',      label: 'Deals',      icon: Building2 },
   { href: '/contacts',   label: 'Contacts',   icon: Users },
-  { href: '/digest',     label: 'Digest',     icon: BarChart3 },
   { href: '/intake',     label: 'Teaser / CIM', icon: Zap },
   { href: '/portfolio',  label: 'Portfolio',    icon: Building2 },
   { href: '/investors',  label: 'Investors',    icon: Users },
