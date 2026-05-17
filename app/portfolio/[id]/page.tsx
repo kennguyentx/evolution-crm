@@ -289,7 +289,7 @@ export default function PortfolioCompanyPage() {
               <>
                 <div {...getRootProps()} style={{ border: `2px dashed ${isDragActive ? 'var(--accent)' : 'var(--border)'}`, borderRadius: '12px', padding: '60px 40px', textAlign: 'center', cursor: 'pointer', background: isDragActive ? 'var(--accent-muted)' : 'var(--surface)', transition: 'all 0.2s', marginBottom: '16px' }}>
                   <input {...getInputProps()} />
-                  <Upload size={32} style={{ color: isDragActive ? 'var(--accent)' : 'var(--text-muted)', marginBottom: '16px' }} />
+                  <Upload size={32} style={{ color: isDragActive ? 'var(--accent)' : 'var(--text-muted)', display: 'block', margin: '0 auto 16px' }} />
                   <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>Drop P&L or financial report here</div>
                   <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>PDF, Excel (.xlsx), or CSV · Claude will extract revenue, EBITDA, margins, and more</div>
                 </div>
@@ -308,7 +308,7 @@ export default function PortfolioCompanyPage() {
 
             {uploadStage === 'parsing' && (
               <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
-                <Zap size={32} style={{ color: 'var(--accent)', marginBottom: '16px' }} />
+                <Zap size={32} style={{ color: 'var(--accent)', display: 'block', margin: '0 auto 16px' }} />
                 <div style={{ fontSize: '15px', fontWeight: 600, marginBottom: '8px' }}>Parsing financials...</div>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Claude is reading and extracting financial data</div>
               </div>
@@ -378,7 +378,7 @@ export default function PortfolioCompanyPage() {
 
             {uploadStage === 'done' && (
               <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
-                <Check size={40} style={{ color: 'var(--green)', marginBottom: '16px' }} />
+                <Check size={40} style={{ color: 'var(--green)', display: 'block', margin: '0 auto 16px' }} />
                 <div style={{ fontSize: '18px', fontWeight: 700, marginBottom: '8px' }}>Period saved</div>
                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginTop: '16px' }}>
                   <button className="btn btn-ghost" onClick={resetUpload}>Upload another</button>
@@ -392,7 +392,7 @@ export default function PortfolioCompanyPage() {
         {/* FINANCIALS TABLE */}
         {activeTab === 'financials' && (
           <div style={{ maxWidth: '900px' }}>
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-start', marginBottom: '16px' }}>
               <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => setActiveTab('upload')}>
                 <Upload size={12} /> Upload PDF
               </button>
@@ -439,7 +439,7 @@ export default function PortfolioCompanyPage() {
                   </div>
                 </div>
                 <div style={{ marginTop: '14px' }}><label className="label">Commentary</label><textarea className="input" rows={3} style={{ resize: 'vertical' }} value={newPeriod.commentary} onChange={e => setNewPeriod(p => ({ ...p, commentary: e.target.value }))} /></div>
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px' }}>
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-start', marginTop: '16px' }}>
                   <button className="btn btn-ghost" onClick={() => setShowAddPeriod(false)}>Cancel</button>
                   <button className="btn btn-primary" onClick={saveManualPeriod} disabled={!newPeriod.period_end}><Check size={13} /> Save Period</button>
                 </div>
@@ -489,7 +489,7 @@ export default function PortfolioCompanyPage() {
         {/* AI ANALYSIS */}
         {activeTab === 'analysis' && (
           <div style={{ maxWidth: '700px' }}>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '16px' }}>
               <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={runAnalysis} disabled={analyzing || financials.length === 0}>
                 <Zap size={13} /> {analyzing ? 'Analyzing...' : 'Run Analysis'}
               </button>
@@ -497,7 +497,7 @@ export default function PortfolioCompanyPage() {
             {financials.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Add financials first before running analysis.</div>}
             {analyzing && (
               <div className="card" style={{ padding: '32px', textAlign: 'center' }}>
-                <Zap size={24} style={{ color: 'var(--accent)', marginBottom: '12px' }} />
+                <Zap size={24} style={{ color: 'var(--accent)', display: 'block', margin: '0 auto 12px' }} />
                 <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Analyzing financial trends...</div>
               </div>
             )}
