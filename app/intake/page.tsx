@@ -299,7 +299,7 @@ export default function IntakePage() {
             }}
           >
             <input {...getInputProps()} />
-            <Upload size={32} style={{ color: isDragActive ? 'var(--accent)' : 'var(--text-muted)', marginBottom: '16px' }} />
+            <Upload size={32} style={{ color: isDragActive ? 'var(--accent)' : 'var(--text-muted)', marginBottom: '16px', display: 'block', margin: '0 auto 16px' }} />
             <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>
               Drop teaser or CIM here
             </div>
