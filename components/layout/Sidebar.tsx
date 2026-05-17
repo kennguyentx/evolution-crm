@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import Image from 'next/image'
 import { Kanban, Building2, Users, BarChart3, Zap, LogOut, TrendingUp, FileText, Menu, X } from 'lucide-react'
 
 const NAV = [
@@ -27,7 +26,6 @@ export default function Sidebar() {
     return () => window.removeEventListener('resize', check)
   }, [])
 
-  // Close mobile menu on route change
   useEffect(() => { setMobileOpen(false) }, [pathname])
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/')
@@ -59,29 +57,30 @@ export default function Sidebar() {
         {/* Mobile top bar */}
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
-          background: '#4F284B', height: '52px', paddingTop: 'env(safe-area-inset-top)',
+          background: '#4F284B',
+          height: 'calc(52px + env(safe-area-inset-top))',
+          paddingTop: 'env(safe-area-inset-top)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '0 16px', boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+          padding: 'env(safe-area-inset-top) 16px 0',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', height: '52px' }}>
             <div style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.15)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ color: 'white', fontSize: '12px', fontWeight: 700 }}>ES</span>
+              <span style={{ color: 'white', fontSize: '11px', fontWeight: 700 }}>ESP</span>
             </div>
-            <span style={{ color: 'white', fontSize: '14px', fontWeight: 700 }}>Evolution Strategy</span>
+            <span style={{ color: 'white', fontSize: '14px', fontWeight: 700 }}>Evolution Strategy Partners</span>
           </div>
-          <button onClick={() => setMobileOpen(!mobileOpen)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'white', padding: '4px' }}>
+          <button onClick={() => setMobileOpen(!mobileOpen)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'white', padding: '4px', height: '52px', display: 'flex', alignItems: 'center' }}>
             {mobileOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
         </div>
 
         {/* Mobile drawer */}
         {mobileOpen && (
-          <div style={{
-            position: 'fixed', inset: 0, zIndex: 99,
-          }}>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 99 }}>
             <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} onClick={() => setMobileOpen(false)} />
             <div style={{
-              position: 'absolute', top: 52, left: 0, bottom: 0, width: '260px',
+              position: 'absolute', top: 'calc(52px + env(safe-area-inset-top))', left: 0, bottom: 0, width: '260px',
               background: '#4F284B', padding: '12px 8px',
               display: 'flex', flexDirection: 'column', gap: '2px',
               overflowY: 'auto',
@@ -91,7 +90,7 @@ export default function Sidebar() {
           </div>
         )}
 
-        {/* Spacer for fixed top bar */}
+        {/* Spacer so content starts below the fixed bar */}
         <div style={{ height: 'calc(52px + env(safe-area-inset-top))', flexShrink: 0 }} />
       </>
     )
@@ -107,9 +106,9 @@ export default function Sidebar() {
       {/* Logo */}
       <div style={{ padding: '8px 10px 20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
         <div style={{ width: '32px', height: '32px', background: 'rgba(255,255,255,0.15)', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <span style={{ color: 'white', fontSize: '12px', fontWeight: 700 }}>ES</span>
+          <span style={{ color: 'white', fontSize: '11px', fontWeight: 700 }}>ESP</span>
         </div>
-        <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', fontWeight: 600, lineHeight: 1.2 }}>Evolution Strategy</span>
+        <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', fontWeight: 600, lineHeight: 1.2 }}>Evolution Strategy Partners</span>
       </div>
 
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
