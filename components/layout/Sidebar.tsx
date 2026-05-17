@@ -59,9 +59,9 @@ export default function Sidebar() {
           position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
           background: '#4F284B',
           height: 'calc(52px + env(safe-area-inset-top))',
+          display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
+          paddingLeft: '16px', paddingRight: '16px', paddingBottom: '0',
           paddingTop: 'env(safe-area-inset-top)',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: 'env(safe-area-inset-top) 16px 0',
           boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', height: '52px' }}>
