@@ -137,23 +137,44 @@ export default function InvestorsPage() {
           <div style={{ padding: '60px 28px', textAlign: 'center', color: 'var(--text-muted)' }}>
             {investors.length === 0 ? 'No investors yet — add your first one above.' : 'No investors found.'}
           </div>
-        ) : filtered.map(inv => (
-          <Link key={inv.id} href={`/investors/${inv.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-            <div className="table-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '12px 28px', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontWeight: 500, fontSize: '13px' }}>{inv.first_name} {inv.last_name}</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  {inv.firm && <span>{inv.firm} · </span>}
-                  <span>{inv.investor_type}</span>
+        ) : (
+          <>
+            {filtered.map(inv => (
+              <Link key={inv.id} href={`/investors/${inv.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                <div className="table-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '12px 28px', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: '13px' }}>{inv.first_name} {inv.last_name}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      {inv.firm && <span>{inv.firm} · </span>}
+                      <span>{inv.investor_type}</span>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '12px', color: inv.totalInvested > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>{inv.totalInvested > 0 ? formatCurrency(inv.totalInvested) : '—'}</div>
+                  <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)' }}>{inv.totalCommitted > 0 ? formatCurrency(inv.totalCommitted) : '—'}</div>
+                  <div style={{ textAlign: 'right', fontSize: '12px', color: 'var(--text-secondary)' }}>{inv.dealCount > 0 ? inv.dealCount : '—'}</div>
+                  <div style={{ textAlign: 'right', fontSize: '11px', color: 'var(--accent)' }}>View →</div>
                 </div>
+              </Link>
+            ))}
+
+            {/* Grand total row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '14px 28px', alignItems: 'center', borderTop: '2px solid var(--border)', background: 'var(--surface-2)', position: 'sticky', bottom: 0 }}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Total ({filtered.length} investors)
               </div>
-              <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '12px', color: inv.totalInvested > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>{inv.totalInvested > 0 ? formatCurrency(inv.totalInvested) : '—'}</div>
-              <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)' }}>{inv.totalCommitted > 0 ? formatCurrency(inv.totalCommitted) : '—'}</div>
-              <div style={{ textAlign: 'right', fontSize: '12px', color: 'var(--text-secondary)' }}>{inv.dealCount > 0 ? inv.dealCount : '—'}</div>
-              <div style={{ textAlign: 'right', fontSize: '11px', color: 'var(--accent)' }}>View →</div>
+              <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: 'var(--accent)' }}>
+                {formatCurrency(filtered.reduce((s, i) => s + i.totalInvested, 0))}
+              </div>
+              <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                {formatCurrency(filtered.reduce((s, i) => s + i.totalCommitted, 0))}
+              </div>
+              <div style={{ textAlign: 'right', fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                {filtered.reduce((s, i) => s + i.dealCount, 0)}
+              </div>
+              <div></div>
             </div>
-          </Link>
-        ))}
+          </>
+        )}
       </div>
     </div>
   )
