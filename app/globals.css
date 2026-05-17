@@ -246,3 +246,10 @@ html, body {
     -webkit-overflow-scrolling: touch;
   }
 }
+
+/* Push main content below fixed mobile top bar */
+@media (max-width: 768px) {
+  .main-content {
+    padding-top: 52px !important;
+  }
+}
