@@ -388,7 +388,7 @@ export default function PortfolioCompanyPage() {
 
             {uploadStage === 'done' && (
               <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
-                <Check size={40} style={{ color: 'var(--green)', marginBottom: '16px' }} />
+                <Check size={40} style={{ color: 'var(--green)', display: 'block', margin: '0 auto 16px' }} />
                 <div style={{ fontSize: '18px', fontWeight: 700, marginBottom: '8px' }}>Period saved</div>
                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginTop: '16px' }}>
                   <button className="btn btn-ghost" onClick={resetUpload}>Upload another</button>
