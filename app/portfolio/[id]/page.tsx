@@ -20,6 +20,7 @@ export default function PortfolioCompanyPage() {
   const [showAddPeriod, setShowAddPeriod] = useState(false)
   const [analysis, setAnalysis] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
+  const [addons, setAddons] = useState<any[]>([])
 
   // Upload state
   const [uploadStage, setUploadStage] = useState<'idle'|'parsing'|'review'|'saving'|'done'>('idle')
@@ -42,7 +43,17 @@ export default function PortfolioCompanyPage() {
       supabase.from('portfolio_companies').select('*').eq('id', companyId).single(),
       supabase.from('portfolio_financials').select('*').eq('company_id', companyId).order('period_end', { ascending: true }),
     ])
-    if (co) setCompany(co)
+    if (co) {
+      setCompany(co)
+      // Find closed add-on deals linked to this portfolio company
+      const { data: addonDeals } = await supabase
+        .from('deals')
+        .select('id, company_name, stage, ebitda, revenue, expected_close')
+        .eq('stage', 'Closed (Add-On)')
+        .eq('parent_company_id', co.id)
+        .order('expected_close', { ascending: false })
+      if (addonDeals) setAddons(addonDeals)
+    }
     if (fins) setFinancials(fins)
     setLoading(false)
   }, [supabase, companyId])
@@ -258,7 +269,7 @@ export default function PortfolioCompanyPage() {
                 {[
                   { label: 'Sector', value: company.sector },
                   { label: 'Geography', value: company.geography },
-                  { label: 'Deal Type', value: company.deal_type },
+                  { label: 'Deal Type', value: company.deal_type ? company.deal_type.charAt(0).toUpperCase() + company.deal_type.slice(1) : null },
                   { label: 'Acquired', value: company.acquisition_date ? new Date(company.acquisition_date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : null },
                   { label: 'Entry Revenue', value: company.acquisition_revenue ? formatCurrency(company.acquisition_revenue) : null },
                   { label: 'Entry EBITDA', value: company.acquisition_ebitda ? formatCurrency(company.acquisition_ebitda) : null },
@@ -270,6 +281,25 @@ export default function PortfolioCompanyPage() {
                     <div style={{ fontSize: '13px', color: 'var(--text-primary)' }}>{value}</div>
                   </div>
                 ))}
+
+                {/* Add-on deals */}
+                {addons.length > 0 && (
+                  <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>Add-Ons ({addons.length})</div>
+                    {addons.map(deal => (
+                      <Link key={deal.id} href={`/deals/${deal.id}`} style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', background: 'var(--surface-2)', borderRadius: '6px', marginBottom: '5px', border: '1px solid var(--border)' }}
+                        onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                        onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}>
+                        <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-primary)' }}>{deal.company_name}</div>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                          {deal.ebitda && <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>{formatCurrency(deal.ebitda)}</span>}
+                          {deal.expected_close && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{new Date(deal.expected_close).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>}
+                          <span style={{ fontSize: '10px', color: 'var(--green)' }}>→</span>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
               </div>
               {latest?.commentary && (
                 <div className="card" style={{ padding: '20px' }}>
