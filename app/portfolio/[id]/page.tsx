@@ -25,7 +25,7 @@ export default function PortfolioCompanyPage() {
   const [uploadStage, setUploadStage] = useState<'idle'|'parsing'|'review'|'saving'|'done'>('idle')
   const [uploadError, setUploadError] = useState('')
   const [parsedData, setParsedData] = useState<any>(null)
-  const [editedData, setEditedData] = useState<any>(null)
+  const [editedData, setEditedData] = useState<any[]|null>(null)
 
   // Manual entry state
   const [newPeriod, setNewPeriod] = useState({
@@ -113,13 +113,16 @@ export default function PortfolioCompanyPage() {
   })
 
   const saveUploadedPeriod = async () => {
-    if (!editedData?.period_end) return
+    if (!editedData?.length) return
     setUploadStage('saving')
-    const payload: any = { company_id: companyId, period_end: editedData.period_end, period_type: editedData.period_type || 'monthly', commentary: editedData.commentary || null }
     const numFields = ['revenue','ebitda','gross_profit','net_income','revenue_budget','ebitda_budget','revenue_py','ebitda_py','backlog','ar_balance','debt_balance']
-    numFields.forEach(f => { if (editedData[f]) payload[f] = parseFloat(editedData[f]) * 1e6 })
-    if (editedData.headcount) payload.headcount = parseInt(editedData.headcount)
-    await supabase.from('portfolio_financials').insert(payload)
+    const payloads = editedData.filter((p: any) => p.period_end).map((p: any) => {
+      const payload: any = { company_id: companyId, period_end: p.period_end, period_type: p.period_type || 'monthly', commentary: p.commentary || null }
+      numFields.forEach(f => { if (p[f]) payload[f] = parseFloat(p[f]) * 1e6 })
+      if (p.headcount) payload.headcount = parseInt(p.headcount)
+      return payload
+    })
+    if (payloads.length > 0) await supabase.from('portfolio_financials').insert(payloads)
     setUploadStage('done')
     fetchData()
   }
@@ -230,7 +233,7 @@ export default function PortfolioCompanyPage() {
           <div style={{ maxWidth: '900px' }}>
             {chartData.length > 1 ? (
               <div className="card" style={{ padding: '20px', marginBottom: '20px' }}>
-                <div className="label" style={{ display: 'block', margin: '0 auto 16px' }}>Revenue & EBITDA Trend ($M)</div>
+                <div className="label" style={{ marginBottom: '16px' }}>Revenue & EBITDA Trend ($M)</div>
                 <ResponsiveContainer width="100%" height={240}>
                   <LineChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -284,9 +287,9 @@ export default function PortfolioCompanyPage() {
           <div style={{ maxWidth: '680px' }}>
             {uploadStage === 'idle' && (
               <>
-                <div {...getRootProps()} style={{ border: `2px dashed ${isDragActive ? 'var(--accent)' : 'var(--border)'}`, borderRadius: '12px', padding: '60px 40px', textAlign: 'center', cursor: 'pointer', background: isDragActive ? 'var(--accent-muted)' : 'var(--surface)', transition: 'all 0.2s', display: 'block', margin: '0 auto 16px' }}>
+                <div {...getRootProps()} style={{ border: `2px dashed ${isDragActive ? 'var(--accent)' : 'var(--border)'}`, borderRadius: '12px', padding: '60px 40px', textAlign: 'center', cursor: 'pointer', background: isDragActive ? 'var(--accent-muted)' : 'var(--surface)', transition: 'all 0.2s', marginBottom: '16px' }}>
                   <input {...getInputProps()} />
-                 <Upload size={32} style={{ color: isDragActive ? 'var(--accent)' : 'var(--text-muted)', display: 'block', margin: '0 auto 16px' }} />
+                  <Upload size={32} style={{ color: isDragActive ? 'var(--accent)' : 'var(--text-muted)', marginBottom: '16px' }} />
                   <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>Drop P&L or financial report here</div>
                   <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>PDF, Excel (.xlsx), or CSV · Claude will extract revenue, EBITDA, margins, and more</div>
                 </div>
@@ -305,7 +308,7 @@ export default function PortfolioCompanyPage() {
 
             {uploadStage === 'parsing' && (
               <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
-                <Zap size={32} style={{ color: 'var(--accent)', display: 'block', margin: '0 auto 16px' }} />
+                <Zap size={32} style={{ color: 'var(--accent)', marginBottom: '16px' }} />
                 <div style={{ fontSize: '15px', fontWeight: 600, marginBottom: '8px' }}>Parsing financials...</div>
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Claude is reading and extracting financial data</div>
               </div>
@@ -313,68 +316,55 @@ export default function PortfolioCompanyPage() {
 
             {uploadStage === 'review' && editedData && (
               <div>
-                <div style={{ fontSize: '14px', fontWeight: 600, display: 'block', margin: '0 auto 16px' }}>Review extracted data — edit any field before saving</div>
+                <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '4px' }}>Review extracted data</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>{editedData.length} period{editedData.length !== 1 ? 's' : ''} found — edit any field before saving</div>
 
-                <div className="card" style={{ padding: '20px', display: 'block', margin: '0 auto 16px' }}>
-                  <div className="label" style={{ marginBottom: '14px' }}>Period</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    <div>
-                      <label className="label">Period End Date *</label>
-                      <input className="input" type="date" value={editedData.period_end || ''} onChange={e => setEditedData((p: any) => ({ ...p, period_end: e.target.value }))} />
+                {editedData.map((period: any, idx: number) => (
+                  <div key={idx} className="card" style={{ padding: '20px', marginBottom: '16px', borderLeft: '3px solid var(--accent)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                      <div className="label">Period {idx + 1}</div>
+                      <button onClick={() => setEditedData((prev: any) => prev.filter((_: any, i: number) => i !== idx))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '11px' }}>Remove</button>
                     </div>
-                    <div>
-                      <label className="label">Period Type</label>
-                      <select className="select" value={editedData.period_type || 'monthly'} onChange={e => setEditedData((p: any) => ({ ...p, period_type: e.target.value }))}>
-                        <option value="monthly">Monthly</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="annual">Annual</option>
-                      </select>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                      <div>
+                        <label className="label">Period End Date *</label>
+                        <input className="input" type="date" value={period.period_end || ''} onChange={e => setEditedData((prev: any) => prev.map((p: any, i: number) => i === idx ? { ...p, period_end: e.target.value } : p))} />
+                      </div>
+                      <div>
+                        <label className="label">Type</label>
+                        <select className="select" value={period.period_type || 'monthly'} onChange={e => setEditedData((prev: any) => prev.map((p: any, i: number) => i === idx ? { ...p, period_type: e.target.value } : p))}>
+                          <option value="monthly">Monthly</option>
+                          <option value="quarterly">Quarterly</option>
+                          <option value="annual">Annual</option>
+                        </select>
+                      </div>
                     </div>
-                  </div>
-                </div>
-
-                <div className="card" style={{ padding: '20px', display: 'block', margin: '0 auto 16px' }}>
-                  <div className="label" style={{ marginBottom: '14px' }}>Actuals ($M)</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-                    <FieldInput label="Revenue" fieldKey="revenue" />
-                    <FieldInput label="EBITDA" fieldKey="ebitda" />
-                    <FieldInput label="Gross Profit" fieldKey="gross_profit" />
-                    <FieldInput label="Net Income" fieldKey="net_income" />
-                  </div>
-                </div>
-
-                <div className="card" style={{ padding: '20px', display: 'block', margin: '0 auto 16px' }}>
-                  <div className="label" style={{ marginBottom: '14px' }}>Budget & Prior Year ($M)</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-                    <FieldInput label="Revenue Budget" fieldKey="revenue_budget" />
-                    <FieldInput label="EBITDA Budget" fieldKey="ebitda_budget" />
-                    <FieldInput label="Revenue Prior Year" fieldKey="revenue_py" />
-                    <FieldInput label="EBITDA Prior Year" fieldKey="ebitda_py" />
-                  </div>
-                </div>
-
-                <div className="card" style={{ padding: '20px', display: 'block', margin: '0 auto 16px' }}>
-                  <div className="label" style={{ marginBottom: '14px' }}>Operations</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-                    <FieldInput label="Backlog ($M)" fieldKey="backlog" />
-                    <FieldInput label="AR Balance ($M)" fieldKey="ar_balance" />
-                    <FieldInput label="Debt ($M)" fieldKey="debt_balance" />
-                    <div>
-                      <label className="label">Headcount</label>
-                      <input className="input" type="number" value={editedData.headcount || ''} onChange={e => setEditedData((p: any) => ({ ...p, headcount: e.target.value }))} />
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                      {[
+                        { label: 'Revenue', key: 'revenue' },
+                        { label: 'EBITDA', key: 'ebitda' },
+                        { label: 'Gross Profit', key: 'gross_profit' },
+                        { label: 'Net Income', key: 'net_income' },
+                        { label: 'Rev Budget', key: 'revenue_budget' },
+                        { label: 'EBITDA Budget', key: 'ebitda_budget' },
+                        { label: 'Rev PY', key: 'revenue_py' },
+                        { label: 'EBITDA PY', key: 'ebitda_py' },
+                      ].map(({ label, key }) => (
+                        <div key={key}>
+                          <label className="label" style={{ fontSize: '9px' }}>{label}</label>
+                          <input className="input" type="number" step="0.01" placeholder="0.00" style={{ fontSize: '12px', padding: '5px 8px' }}
+                            value={period[key] || ''}
+                            onChange={e => setEditedData((prev: any) => prev.map((p: any, i: number) => i === idx ? { ...p, [key]: e.target.value } : p))} />
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </div>
+                ))}
 
-                <div className="card" style={{ padding: '20px', marginBottom: '20px' }}>
-                  <div className="label" style={{ marginBottom: '10px' }}>Commentary</div>
-                  <textarea className="input" rows={3} style={{ resize: 'vertical' }} value={editedData.commentary || ''} onChange={e => setEditedData((p: any) => ({ ...p, commentary: e.target.value }))} placeholder="Management commentary or notes..." />
-                </div>
-
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
                   <button className="btn btn-ghost" onClick={resetUpload}>Start over</button>
-                  <button className="btn btn-primary" onClick={saveUploadedPeriod} disabled={!editedData.period_end}>
-                    <Check size={13} /> Save Period
+                  <button className="btn btn-primary" onClick={saveUploadedPeriod} disabled={!editedData.some((p: any) => p.period_end)}>
+                    <Check size={13} /> Save {editedData.length} Period{editedData.length !== 1 ? 's' : ''}
                   </button>
                 </div>
               </div>
@@ -388,7 +378,7 @@ export default function PortfolioCompanyPage() {
 
             {uploadStage === 'done' && (
               <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
-                <Check size={40} style={{ color: 'var(--green)', display: 'block', margin: '0 auto 16px' }} />
+                <Check size={40} style={{ color: 'var(--green)', marginBottom: '16px' }} />
                 <div style={{ fontSize: '18px', fontWeight: 700, marginBottom: '8px' }}>Period saved</div>
                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginTop: '16px' }}>
                   <button className="btn btn-ghost" onClick={resetUpload}>Upload another</button>
@@ -402,7 +392,7 @@ export default function PortfolioCompanyPage() {
         {/* FINANCIALS TABLE */}
         {activeTab === 'financials' && (
           <div style={{ maxWidth: '900px' }}>
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-start', display: 'block', margin: '0 auto 16px' }}>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginBottom: '16px' }}>
               <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => setActiveTab('upload')}>
                 <Upload size={12} /> Upload PDF
               </button>
@@ -413,7 +403,7 @@ export default function PortfolioCompanyPage() {
 
             {showAddPeriod && (
               <div className="card" style={{ padding: '20px', marginBottom: '20px', border: '1px solid var(--accent)' }}>
-                <div className="label" style={{ display: 'block', margin: '0 auto 16px' }}>New Financial Period</div>
+                <div className="label" style={{ marginBottom: '16px' }}>New Financial Period</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   <div><label className="label">Period End Date *</label><input className="input" type="date" value={newPeriod.period_end} onChange={e => setNewPeriod(p => ({ ...p, period_end: e.target.value }))} /></div>
                   <div><label className="label">Period Type</label>
@@ -449,7 +439,7 @@ export default function PortfolioCompanyPage() {
                   </div>
                 </div>
                 <div style={{ marginTop: '14px' }}><label className="label">Commentary</label><textarea className="input" rows={3} style={{ resize: 'vertical' }} value={newPeriod.commentary} onChange={e => setNewPeriod(p => ({ ...p, commentary: e.target.value }))} /></div>
-                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-start', marginTop: '16px' }}>
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px' }}>
                   <button className="btn btn-ghost" onClick={() => setShowAddPeriod(false)}>Cancel</button>
                   <button className="btn btn-primary" onClick={saveManualPeriod} disabled={!newPeriod.period_end}><Check size={13} /> Save Period</button>
                 </div>
@@ -463,7 +453,7 @@ export default function PortfolioCompanyPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                   <thead>
                     <tr style={{ background: 'var(--surface-2)', borderBottom: '2px solid var(--border)' }}>
-                      {['Period','Revenue','EBITDA','Margin','vs Budget','vs PY','Backlog','Headcount'].map(h => (
+                      {['Period','Revenue','EBITDA','Margin','vs Budget','vs PY','Backlog','Headcount',''].map(h => (
                         <th key={h} style={{ padding: '9px 14px', textAlign: h==='Period'?'left':'right', color: 'var(--text-muted)', fontWeight: 600, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
                       ))}
                     </tr>
@@ -483,6 +473,9 @@ export default function PortfolioCompanyPage() {
                           <td style={{ padding: '10px 14px', textAlign: 'right', color: vpy===null?'inherit':vpy>=0?'var(--green)':'var(--red)' }}>{vpy===null?'—':(vpy>0?'+':'')+vpy.toFixed(1)+'%'}</td>
                           <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{f.backlog?formatCurrency(f.backlog):'—'}</td>
                           <td style={{ padding: '10px 14px', textAlign: 'right' }}>{f.headcount?f.headcount.toLocaleString():'—'}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                          <button onClick={async () => { if (confirm('Delete this period?')) { await supabase.from('portfolio_financials').delete().eq('id', f.id); fetchData() } }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '11px' }}>✕</button>
+                        </td>
                         </tr>
                       )
                     })}
@@ -496,7 +489,7 @@ export default function PortfolioCompanyPage() {
         {/* AI ANALYSIS */}
         {activeTab === 'analysis' && (
           <div style={{ maxWidth: '700px' }}>
-            <div style={{ display: 'flex', justifyContent: 'flex-start', display: 'block', margin: '0 auto 16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '16px' }}>
               <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={runAnalysis} disabled={analyzing || financials.length === 0}>
                 <Zap size={13} /> {analyzing ? 'Analyzing...' : 'Run Analysis'}
               </button>
@@ -504,7 +497,7 @@ export default function PortfolioCompanyPage() {
             {financials.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Add financials first before running analysis.</div>}
             {analyzing && (
               <div className="card" style={{ padding: '32px', textAlign: 'center' }}>
-                <Zap size={24} style={{ color: 'var(--accent)', display: 'block', margin: '0 auto 12px' }} />
+                <Zap size={24} style={{ color: 'var(--accent)', marginBottom: '12px' }} />
                 <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Analyzing financial trends...</div>
               </div>
             )}
