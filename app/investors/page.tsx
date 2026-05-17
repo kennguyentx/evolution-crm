@@ -12,6 +12,8 @@ export default function InvestorsPage() {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [sortField, setSortField] = useState<'name'|'totalInvested'|'totalCommitted'|'dealCount'>('name')
+  const [sortDir, setSortDir] = useState<'asc'|'desc'>('asc')
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
     first_name: '', last_name: '', firm: '', email: '',
@@ -58,7 +60,20 @@ export default function InvestorsPage() {
     fetchInvestors()
   }
 
-  const filtered = investors.filter(i =>
+  const toggleSort = (field: typeof sortField) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortField(field); setSortDir(field === 'name' ? 'asc' : 'desc') }
+  }
+
+  const sorted = [...investors].sort((a, b) => {
+    let av: any, bv: any
+    if (sortField === 'name') { av = a.last_name; bv = b.last_name }
+    else { av = a[sortField]; bv = b[sortField] }
+    const cmp = av > bv ? 1 : av < bv ? -1 : 0
+    return sortDir === 'asc' ? cmp : -cmp
+  })
+
+  const filtered = sorted.filter(i =>
     `${i.first_name} ${i.last_name} ${i.firm || ''}`.toLowerCase().includes(search.toLowerCase())
   )
 
@@ -128,7 +143,17 @@ export default function InvestorsPage() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '8px 28px', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
-        <div>Investor</div><div style={{ textAlign: 'right' }}>Deployed</div><div style={{ textAlign: 'right' }}>Committed</div><div style={{ textAlign: 'right' }}>Investments</div><div></div>
+        {[
+          { key: 'name', label: 'Investor', align: 'left' },
+          { key: 'totalInvested', label: 'Deployed', align: 'right' },
+          { key: 'totalCommitted', label: 'Committed', align: 'right' },
+          { key: 'dealCount', label: 'Investments', align: 'right' },
+        ].map(({ key, label, align }) => (
+          <div key={key} onClick={() => toggleSort(key as any)} style={{ textAlign: align as any, cursor: 'pointer', userSelect: 'none', color: sortField === key ? 'var(--accent)' : 'var(--text-muted)' }}>
+            {label} {sortField === key ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+          </div>
+        ))}
+        <div></div>
       </div>
 
       <div style={{ flex: 1, overflow: 'auto' }}>
