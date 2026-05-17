@@ -286,7 +286,7 @@ export default function PortfolioCompanyPage() {
               <>
                 <div {...getRootProps()} style={{ border: `2px dashed ${isDragActive ? 'var(--accent)' : 'var(--border)'}`, borderRadius: '12px', padding: '60px 40px', textAlign: 'center', cursor: 'pointer', background: isDragActive ? 'var(--accent-muted)' : 'var(--surface)', transition: 'all 0.2s', marginBottom: '16px' }}>
                   <input {...getInputProps()} />
-                  <Upload size={32} style={{ color: isDragActive ? 'var(--accent)' : 'var(--text-muted)', marginBottom: '16px' }} />
+                 <Upload size={32} style={{ color: isDragActive ? 'var(--accent)' : 'var(--text-muted)', display: 'block', margin: '0 auto 16px' }} />
                   <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>Drop P&L or financial report here</div>
                   <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>PDF, Excel (.xlsx), or CSV · Claude will extract revenue, EBITDA, margins, and more</div>
                 </div>
