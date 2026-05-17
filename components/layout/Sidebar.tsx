@@ -90,8 +90,6 @@ export default function Sidebar() {
           </div>
         )}
 
-        {/* Spacer so content starts below the fixed bar */}
-        <div style={{ height: 'calc(52px + env(safe-area-inset-top))', flexShrink: 0 }} />
       </>
     )
   }
