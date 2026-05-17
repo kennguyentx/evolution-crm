@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Kanban, Building2, Users, BarChart3, Zap, LogOut } from 'lucide-react'
+import { Kanban, Building2, Users, BarChart3, Zap, LogOut, TrendingUp } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
