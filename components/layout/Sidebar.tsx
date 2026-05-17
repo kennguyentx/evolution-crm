@@ -59,7 +59,7 @@ export default function Sidebar() {
         {/* Mobile top bar */}
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
-          background: '#4F284B', height: '52px',
+          background: '#4F284B', height: '52px', paddingTop: 'env(safe-area-inset-top)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '0 16px', boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
         }}>
@@ -92,7 +92,7 @@ export default function Sidebar() {
         )}
 
         {/* Spacer for fixed top bar */}
-        <div style={{ height: '52px', flexShrink: 0 }} />
+        <div style={{ height: 'calc(52px + env(safe-area-inset-top))', flexShrink: 0 }} />
       </>
     )
   }
