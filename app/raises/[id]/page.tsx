@@ -30,7 +30,7 @@ export default function RaiseDetailPage() {
   const fetchAll = useCallback(async () => {
     const [raiseRes, commitmentsRes] = await Promise.all([
       supabase.from('capital_raises').select('*, deal:deals(id, company_name, stage)').eq('id', raiseId).single(),
-      supabase.from('lp_commitments').select('*, contact:contacts(first_name, last_name, firm), entity:investment_entities(name)').eq('raise_id', raiseId).order('committed_amount', { ascending: false }),
+      supabase.from('lp_commitments').select('*, investor:investors(first_name, last_name, firm), entity:investment_entities(name)').eq('raise_id', raiseId).order('committed_amount', { ascending: false }),
     ])
     if (raiseRes.data) setRaise(raiseRes.data)
     if (commitmentsRes.data) setCommitments(commitmentsRes.data)
@@ -43,7 +43,7 @@ export default function RaiseDetailPage() {
     if (!contactSearch.trim()) { setContactResults([]); return }
     const timer = setTimeout(async () => {
       const q = contactSearch.trim()
-      const { data } = await supabase.from('contacts').select('id, first_name, last_name, firm, contact_type').or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,firm.ilike.%${q}%`).limit(8)
+      const { data } = await supabase.from('investors').select('id, first_name, last_name, firm, investor_type').or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,firm.ilike.%${q}%`).limit(8)
       setContactResults(data || [])
     }, 250)
     return () => clearTimeout(timer)
@@ -51,7 +51,7 @@ export default function RaiseDetailPage() {
 
   useEffect(() => {
     if (!selectedContact) return
-    supabase.from('contact_entities').select('*, entity:investment_entities(*)').eq('contact_id', selectedContact.id).then(({ data }) => {
+    supabase.from('investment_entities').select('*').eq('investor_id', selectedContact.id).then(({ data }) => {
       setEntities(data || [])
     })
   }, [selectedContact])
@@ -60,7 +60,7 @@ export default function RaiseDetailPage() {
     if (!selectedContact) return
     const payload: any = {
       raise_id: raiseId,
-      contact_id: selectedContact.id,
+      investor_id: selectedContact.id,
       entity_id: form.entity_id || null,
       commitment_type: form.commitment_type,
       status: form.status,
@@ -154,7 +154,7 @@ export default function RaiseDetailPage() {
                 <div style={{ position: 'relative' }}>
                   <div style={{ position: 'relative' }}>
                     <Search size={12} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                    <input className="input" placeholder="Search investors..." value={contactSearch} onChange={e => setContactSearch(e.target.value)} style={{ paddingLeft: '30px' }} />
+                    <input className="input" placeholder="Search by name or firm..." value={contactSearch} onChange={e => setContactSearch(e.target.value)} style={{ paddingLeft: '30px' }} />
                   </div>
                   {contactResults.length > 0 && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '2px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '7px', zIndex: 50, boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }}>
@@ -164,7 +164,7 @@ export default function RaiseDetailPage() {
                           onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
                           onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                           <div style={{ fontSize: '13px', fontWeight: 500 }}>{c.first_name} {c.last_name}</div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{c.firm || c.contact_type}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{c.firm || c.investor_type}</div>
                         </button>
                       ))}
                     </div>
@@ -179,7 +179,7 @@ export default function RaiseDetailPage() {
                   <label className="label">Investing Entity</label>
                   <select className="select" value={form.entity_id} onChange={e => setForm(p => ({ ...p, entity_id: e.target.value }))}>
                     <option value="">Direct</option>
-                    {entities.map(e => <option key={e.entity?.id} value={e.entity?.id}>{e.entity?.name}</option>)}
+                    {entities.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                   </select>
                 </div>
               )}
@@ -230,10 +230,10 @@ export default function RaiseDetailPage() {
             {items.map(c => (
               <div key={c.id} className="card-2" style={{ padding: '14px 16px', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 500 }}>{c.contact?.first_name} {c.contact?.last_name}</div>
+                  <div style={{ fontSize: '13px', fontWeight: 500 }}>{c.investor?.first_name} {c.investor?.last_name}</div>
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
                     {c.entity?.name ? `via ${c.entity.name}` : 'Direct'}
-                    {c.contact?.firm ? ` · ${c.contact.firm}` : ''}
+                    {c.investor?.firm ? ` · ${c.investor.firm}` : ''}
                     {c.commitment_type !== 'equity' ? ` · ${c.commitment_type}` : ''}
                     {c.notes ? ` · ${c.notes}` : ''}
                   </div>
