@@ -40,6 +40,7 @@ export default function DealDetailPage() {
   const [activeTab, setActiveTab] = useState<'overview'|'diligence'|'contacts'|'capital'|'activity'>('overview')
   const [editingStage, setEditingStage] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [portfolioCompanies, setPortfolioCompanies] = useState<any[]>([])
 
   // Contact search
   const [contactSearch, setContactSearch] = useState('')
@@ -73,6 +74,9 @@ export default function DealDetailPage() {
     if (diligenceRes.data) setDiligence(diligenceRes.data)
     if (capitalRes.data) setCapital(capitalRes.data)
     setLoading(false)
+    // Fetch portfolio companies for parent linking
+    const { data: pcos } = await supabase.from('portfolio_companies').select('id, name').eq('status', 'Active').order('name')
+    if (pcos) setPortfolioCompanies(pcos)
   }, [supabase, dealId])
 
   useEffect(() => { fetchAll() }, [fetchAll])
@@ -298,6 +302,17 @@ export default function DealDetailPage() {
             <option value="growth">Growth</option>
           </select>
           {deal.cim_parsed && <span style={{ fontSize: '11px', color: 'var(--green)', display: 'flex', alignItems: 'center', gap: '4px' }}>● CIM Parsed</span>}
+          {(deal.deal_type === 'add-on') && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '8px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Parent:</span>
+              <select className="select" style={{ width: 'auto', fontSize: '12px', padding: '3px 10px' }}
+                value={deal.parent_company_id || ''}
+                onChange={e => updateField('parent_company_id', e.target.value || null)}>
+                <option value="">— Link to platform —</option>
+                {portfolioCompanies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          )}
           <button onClick={() => setShowDeleteConfirm(true)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--red)' }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}>
