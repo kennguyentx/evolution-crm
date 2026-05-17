@@ -39,8 +39,8 @@ export default function LayoutClient({ children }: { children: React.ReactNode }
       <main style={{
         flex: 1,
         overflow: 'auto',
-        // On mobile, subtract the 52px top bar so pages fill the remaining height correctly
-        height: isMobile ? 'calc(100vh - 52px)' : '100vh',
+        // Push content below the fixed 52px mobile top bar
+        paddingTop: isMobile ? '52px' : '0',
       }}>
         {children}
       </main>
