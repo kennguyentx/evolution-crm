@@ -3,32 +3,41 @@ import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
-const SYSTEM_PROMPT = `You extract financial data from P&L statements, financial reports, and management accounts. Return ONLY valid JSON, no markdown, no explanation.
+const SYSTEM_PROMPT = `You extract financial data from P&L statements and management accounts. 
 
-{
-  "period_end": "YYYY-MM-DD — last day of the reporting period",
-  "period_type": "monthly | quarterly | annual",
-  "revenue": "number in raw dollars or null",
-  "gross_profit": "number in raw dollars or null",
-  "ebitda": "number in raw dollars or null",
-  "ebit": "number in raw dollars or null",
-  "net_income": "number in raw dollars or null",
-  "revenue_budget": "number in raw dollars or null — budget/plan revenue if shown",
-  "ebitda_budget": "number in raw dollars or null — budget/plan EBITDA if shown",
-  "revenue_py": "number in raw dollars or null — prior year revenue if shown",
-  "ebitda_py": "number in raw dollars or null — prior year EBITDA if shown",
-  "backlog": "number in raw dollars or null — backlog or pipeline if shown",
-  "ar_balance": "number in raw dollars or null — accounts receivable if shown",
-  "debt_balance": "number in raw dollars or null — total debt if shown",
-  "headcount": "integer or null — employee count if shown",
-  "commentary": "string or null — any management commentary or notes found in the document"
-}
+If the document has multiple time periods (months/quarters as columns), extract ALL of them and return an array.
+If it's a single period, return an array with one object.
+
+Return ONLY valid JSON array, no markdown, no explanation:
+
+[
+  {
+    "period_end": "YYYY-MM-DD — last day of that month/quarter",
+    "period_type": "monthly | quarterly | annual",
+    "revenue": "number in raw dollars or null — total revenue/sales for that period",
+    "gross_profit": "number in raw dollars or null — gross profit for that period",
+    "ebitda": "number in raw dollars or null — EBITDA for that period (calculate if not explicit: gross profit minus SG&A/overhead if shown)",
+    "ebit": "number in raw dollars or null",
+    "net_income": "number in raw dollars or null",
+    "revenue_budget": "number in raw dollars or null — budget/plan revenue if shown for that period",
+    "ebitda_budget": "number in raw dollars or null — budget/plan EBITDA if shown",
+    "revenue_py": "number in raw dollars or null — prior year revenue if shown",
+    "ebitda_py": "number in raw dollars or null — prior year EBITDA if shown",
+    "backlog": "number in raw dollars or null",
+    "ar_balance": "number in raw dollars or null",
+    "debt_balance": "number in raw dollars or null",
+    "headcount": "integer or null",
+    "commentary": "string or null — any notes for this period"
+  }
+]
 
 Rules:
-- All dollar values as raw numbers (4200000 for $4.2M)
+- Return ALL periods found in the document, not just the most recent
+- Dollar values as raw numbers (4200000 for $4.2M)
+- If columns are months, each month = one object in the array
 - Return null for anything not explicitly stated
-- For period_end, use the last day of the reporting month/quarter/year
-- Do not infer or estimate — only extract what is explicitly stated`
+- Do NOT include YTD totals as a period — only include actual time periods
+- Do not infer or estimate`
 
 export async function POST(req: NextRequest) {
   try {
@@ -38,22 +47,20 @@ export async function POST(req: NextRequest) {
     let messageContent: any[]
 
     if (isSpreadsheet && csvText) {
-      // Excel/CSV — send as text
       messageContent = [{
         type: 'text',
-        text: `Extract financial data from this ${companyName} spreadsheet (${fileName}). Return only valid JSON.\n\nSpreadsheet contents:\n${csvText.slice(0, 8000)}`
+        text: `Extract ALL monthly/quarterly financial periods from this ${companyName} spreadsheet (${fileName}). The spreadsheet likely has months as columns and line items as rows. Extract every column that represents a time period. Return a JSON array with one object per period.\n\nSpreadsheet contents:\n${csvText.slice(0, 12000)}`
       }]
     } else {
-      // PDF — send as document
       messageContent = [
         { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
-        { type: 'text', text: `Extract financial data from this ${companyName} report (${fileName}). Return only valid JSON.` }
+        { type: 'text', text: `Extract ALL financial periods from this ${companyName} report (${fileName}). Return a JSON array with one object per period.` }
       ]
     }
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1500,
+      max_tokens: 4000,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: messageContent }]
     })
@@ -66,7 +73,9 @@ export async function POST(req: NextRequest) {
       .trim()
 
     const parsed = JSON.parse(text)
-    return NextResponse.json(parsed)
+    // Normalize — always return array
+    const result = Array.isArray(parsed) ? parsed : [parsed]
+    return NextResponse.json({ periods: result, count: result.length })
   } catch (err: any) {
     console.error('Portfolio parse error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
