@@ -186,14 +186,13 @@ html, body {
 .stage-teaser            { background: #f2f0f5; color: #7a6b88; }
 .stage-reviewing         { background: var(--blue-muted); color: var(--blue); }
 .stage-pre-loi           { background: var(--accent-muted); color: var(--accent); }
-.stage-loi-submitted      { background: var(--yellow-muted); color: var(--yellow); border-radius: 999px; }
+.stage-loi-submitted     { background: var(--yellow-muted); color: var(--yellow); }
 .stage-exclusivity       { background: var(--orange-muted); color: var(--orange); }
 .stage-closed-(platform) { background: var(--green-muted); color: var(--green); }
 .stage-closed-(add-on)   { background: rgba(26,107,69,0.06); color: #1a6b45; }
 .stage-pass-(doa)        { background: #f5f3f7; color: #9b90a8; }
 .stage-pass-(pre-loi)    { background: #f5f3f7; color: #9b90a8; }
 .stage-pass-(post-loi)   { background: #f5f3f7; color: #9b90a8; }
-.stage-hold               { background: rgba(15,78,140,0.08); color: #0F4E8C; border: 1px solid rgba(15,78,140,0.2); }
 
 /* Contact type badges */
 .type-banker     { background: var(--blue-muted);   color: var(--blue); }
@@ -223,3 +222,27 @@ html, body {
   to   { opacity: 1; transform: translateX(0); }
 }
 .slide-in { animation: slideIn 0.25s ease forwards; }
+
+/* ─── Mobile Responsive ─────────────────────────── */
+@media (max-width: 768px) {
+  /* Make cards stack on mobile */
+  .mobile-stack {
+    flex-direction: column !important;
+  }
+
+  /* Full width inputs on mobile */
+  input.input, select.select, textarea.input {
+    font-size: 16px !important; /* prevents iOS zoom */
+  }
+
+  /* Tighter padding on mobile */
+  .card {
+    border-radius: 8px !important;
+  }
+
+  /* Table rows scroll horizontally */
+  .table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
