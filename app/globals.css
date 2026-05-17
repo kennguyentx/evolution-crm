@@ -251,8 +251,8 @@ html, body {
 /* Push main content below fixed mobile top bar */
 @media (max-width: 768px) {
   .main-content {
-    margin-top: 52px !important;
-    height: calc(100vh - 52px) !important;
+    margin-top: calc(52px + env(safe-area-inset-top)) !important;
+    height: calc(100vh - 52px - env(safe-area-inset-top)) !important;
     overflow: auto !important;
   }
 }
