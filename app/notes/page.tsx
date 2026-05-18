@@ -59,6 +59,9 @@ export default function NotesPage() {
   const [editForm, setEditForm] = useState<{ note_date: string; raw_text: string; summary: string; next_steps: string; logged_by: string }>({ note_date: '', raw_text: '', summary: '', next_steps: '', logged_by: '' })
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
+  const [detectedContacts, setDetectedContacts] = useState<any[]>([])
+  const [detectedDeals, setDetectedDeals] = useState<any[]>([])
+  const detectTimer = useRef<any>(null)
   const searchTimer = useRef<any>(null)
 
   // Fetch deals for filter dropdown
@@ -112,19 +115,65 @@ export default function NotesPage() {
     setOffset(0)
   }
 
+  const detectMentions = useCallback(async (text: string) => {
+    if (!text.trim()) { setDetectedContacts([]); setDetectedDeals([]); return }
+    const lower = text.toLowerCase()
+
+    // Contacts: scan consecutive word pairs
+    const words = text.trim().split(/\s+/).filter(w => w.length > 1)
+    const pairs = words.slice(0, -1).map((w, i) => ({ first: w, last: words[i + 1] }))
+    const foundContacts: any[] = []
+    const foundContactIds = new Set<string>()
+    for (const pair of pairs.slice(0, 10)) {
+      const { data } = await supabase
+        .from('contacts')
+        .select('id, first_name, last_name, firm, contact_type')
+        .ilike('first_name', pair.first)
+        .ilike('last_name', pair.last)
+        .limit(1)
+      if (data?.[0] && !foundContactIds.has(data[0].id)) {
+        foundContacts.push(data[0])
+        foundContactIds.add(data[0].id)
+      }
+    }
+    setDetectedContacts(foundContacts)
+
+    // Deals: check each active deal company name against the text
+    const foundDeals: any[] = []
+    const foundDealIds = new Set<string>()
+    for (const deal of deals) {
+      if (deal.company_name.length > 3 && lower.includes(deal.company_name.toLowerCase()) && !foundDealIds.has(deal.id)) {
+        foundDeals.push(deal)
+        foundDealIds.add(deal.id)
+      }
+    }
+    setDetectedDeals(foundDeals)
+  }, [supabase, deals])
+
+  const handleRawTextChange = (text: string) => {
+    setAddForm(p => ({ ...p, raw_text: text }))
+    if (detectTimer.current) clearTimeout(detectTimer.current)
+    detectTimer.current = setTimeout(() => detectMentions(text), 600)
+  }
+
   const addNote = async () => {
     if (!addForm.raw_text.trim()) return
     setSaving(true)
-    // Simple manual note — no AI parse, just log raw
-    const { data } = await supabase.from('notes').insert({
+    const payload: any = {
       raw_text: addForm.raw_text,
       summary: addForm.raw_text.slice(0, 300),
       logged_by: addForm.logged_by || 'Manual',
       source: 'manual',
       note_date: addForm.note_date,
-    }).select(`*, deal:deals(company_name), contact:contacts(first_name, last_name, firm), raise:capital_raises(name), capital_contact:capital_contacts(firm, contact_name)`).single()
+    }
+    if (detectedContacts[0]?.id) payload.contact_id = detectedContacts[0].id
+    if (detectedDeals[0]?.id) payload.deal_id = detectedDeals[0].id
+    const { data } = await supabase.from('notes').insert(payload)
+      .select(`*, deal:deals(company_name), contact:contacts(first_name, last_name, firm), raise:capital_raises(name), capital_contact:capital_contacts(firm, contact_name)`).single()
     if (data) setNotes(prev => [data, ...prev])
     setAddForm({ note_date: new Date().toISOString().split('T')[0], raw_text: '', logged_by: 'Ken' })
+    setDetectedContacts([])
+    setDetectedDeals([])
     setShowAddForm(false)
     setSaving(false)
   }
@@ -200,7 +249,24 @@ export default function NotesPage() {
               </div>
               <div>
                 <label className="label">Notes *</label>
-                <textarea className="input" rows={3} placeholder="Paste freeform notes here…" value={addForm.raw_text} onChange={e => setAddForm(p => ({...p, raw_text: e.target.value}))} style={{ resize: 'vertical', width: '100%' }} />
+                <textarea className="input" rows={3} placeholder="Paste freeform notes here…" value={addForm.raw_text} onChange={e => handleRawTextChange(e.target.value)} style={{ resize: 'vertical', width: '100%' }} />
+                {(detectedContacts.length > 0 || detectedDeals.length > 0) && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Detected:</span>
+                    {detectedDeals.map(d => (
+                      <span key={d.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 8px', borderRadius: '999px', background: 'var(--accent-muted)', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
+                        {d.company_name}
+                        <button onClick={() => setDetectedDeals(p => p.filter(x => x.id !== d.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, color: 'var(--accent)' }}><X size={10} /></button>
+                      </span>
+                    ))}
+                    {detectedContacts.map(c => (
+                      <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 8px', borderRadius: '999px', background: 'var(--surface)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
+                        {c.first_name} {c.last_name}{c.firm ? ` · ${c.firm}` : ''}
+                        <button onClick={() => setDetectedContacts(p => p.filter(x => x.id !== c.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, color: 'var(--text-muted)' }}><X size={10} /></button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="label">Logged by</label>
@@ -208,7 +274,7 @@ export default function NotesPage() {
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="btn btn-ghost" onClick={() => setShowAddForm(false)}>Cancel</button>
+              <button className="btn btn-ghost" onClick={() => { setShowAddForm(false); setDetectedContacts([]); setDetectedDeals([]) }}>Cancel</button>
               <button className="btn btn-primary" onClick={addNote} disabled={saving || !addForm.raw_text.trim()}>
                 <Check size={13} /> {saving ? 'Saving…' : 'Save'}
               </button>
