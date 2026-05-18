@@ -29,27 +29,44 @@ export default function DealsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [stageFilter, setStageFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('Active')
   const [showNewDeal, setShowNewDeal] = useState(false)
   const [sortField, setSortField] = useState<SortField>('created_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([])
   const supabase = createClient()
 
-  const fetchDeals = useCallback(async () => {
-    let query = supabase.from('deals').select('*')
+  const fetchDeals = useCallback(async (field = sortField, dir = sortDir) => {
+    // Map UI sort field to DB column
+    const dbCol: Record<string, string> = {
+      company_name: 'company_name',
+      sector: 'sector',
+      geography: 'geography',
+      ebitda: 'ebitda',
+      revenue: 'revenue',
+      stage: 'stage',
+      created_at: 'sourced_date', // prefer sourced_date for date sort
+    }
+    const col = dbCol[field] || 'created_at'
+    const asc = dir === 'asc'
+
+    let query = supabase.from('deals').select('*').order(col, { ascending: asc, nullsFirst: false })
+    // secondary sort by created_at for stable ordering
+    if (col !== 'created_at') query = (query as any).order('created_at', { ascending: false })
     if (statusFilter !== 'all') query = query.eq('status', statusFilter)
     if (stageFilter !== 'all') query = query.eq('stage', stageFilter)
     const { data } = await query
     if (data) setDeals(data)
     setLoading(false)
-  }, [supabase, statusFilter, stageFilter])
+  }, [supabase, statusFilter, stageFilter, sortField, sortDir])
 
   useEffect(() => { fetchDeals() }, [fetchDeals])
 
   const handleSort = (field: SortField) => {
-    if (sortField === field) setSortDir(d => d==='asc'?'desc':'asc')
-    else { setSortField(field); setSortDir(field==='ebitda'||field==='revenue'?'desc':'asc') }
+    const newDir = sortField === field ? (sortDir === 'asc' ? 'desc' : 'asc') : (field === 'ebitda' || field === 'revenue' ? 'desc' : 'asc')
+    setSortField(field)
+    setSortDir(newDir)
+    fetchDeals(field, newDir)
   }
 
   const pushUndo = (entry: Omit<UndoEntry,'id'>) => {
@@ -69,18 +86,8 @@ export default function DealsPage() {
     (d.geography||'').toLowerCase().includes(search.toLowerCase())
   )
 
-  const sorted = [...filtered].sort((a,b) => {
-    let av: any, bv: any
-    if (sortField==='company_name') { av=a.company_name; bv=b.company_name }
-    else if (sortField==='sector') { av=a.sector||''; bv=b.sector||'' }
-    else if (sortField==='geography') { av=a.geography||''; bv=b.geography||'' }
-    else if (sortField==='ebitda') { av=a.ebitda||0; bv=b.ebitda||0 }
-    else if (sortField==='revenue') { av=a.revenue||0; bv=b.revenue||0 }
-    else if (sortField==='created_at') { av=(a as any).sourced_date||a.created_at||''; bv=(b as any).sourced_date||b.created_at||'' }
-    else { av=a.stage; bv=b.stage }
-    const cmp = av>bv?1:av<bv?-1:0
-    return sortDir==='asc'?cmp:-cmp
-  })
+  // Server handles ordering — filtered preserves server sort order
+  const sorted = filtered
 
   const totalEbitda = filtered.reduce((s,d) => s+(d.ebitda||0), 0)
   const hdr: React.CSSProperties = { fontSize:'11px', textTransform:'uppercase', letterSpacing:'0.06em', fontWeight:600 }
@@ -106,11 +113,11 @@ export default function DealsPage() {
           {ALL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <select className="select" style={{ width:'120px' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-          <option value="all">All Status</option>
           <option value="Active">Active</option>
           <option value="Dead">Dead</option>
           <option value="Closed">Closed</option>
-                  </select>
+          <option value="all">All Status</option>
+        </select>
       </div>
 
       <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr 100px 110px 140px 90px', padding:'8px 28px', borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--surface)' }}>
