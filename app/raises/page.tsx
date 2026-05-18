@@ -29,13 +29,11 @@ type Participant = {
   firm_type: string | null
   check_size_min: number | null
   check_size_max: number | null
-  sbic: boolean
   status: string
   teaser_date: string | null
   nda_date: string | null
   cim_date: string | null
   first_call_date: string | null
-  model_date: string | null
   term_sheet_date: string | null
   invested_date: string | null
   committed_amount: number | null
@@ -67,7 +65,6 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   nda_signed:  { label: 'NDA signed',  className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
   cim_sent:    { label: 'CIM sent',    className: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' },
   call_had:    { label: 'Call had',    className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
-  model_sent:  { label: 'Model sent',  className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
   in_dd:       { label: 'In DD',       className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
   term_sheet:  { label: 'Term sheet',  className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
   invested:    { label: 'Invested',    className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
@@ -78,7 +75,7 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
 
 const STATUS_GROUPS = [
   { key: 'invested',   label: '✓ Invested / confirmed', statuses: ['invested','confirmed'] },
-  { key: 'active',     label: '↻ Active diligence',     statuses: ['term_sheet','in_dd','model_sent','call_had','nda_signed','cim_sent'] },
+  { key: 'active',     label: '↻ Active diligence',     statuses: ['term_sheet','in_dd','call_had','nda_signed','cim_sent'] },
   { key: 'outreach',   label: '→ Outreach',              statuses: ['teaser_sent','outreach'] },
   { key: 'pass',       label: '✕ Passed / no response', statuses: ['pass','no_response'] },
 ]
@@ -197,7 +194,7 @@ function AddActivityModal({
   const [saving, setSaving] = useState(false)
 
   const eventTypes = [
-    'teaser_sent','nda_signed','cim_sent','call','model_sent',
+    'teaser_sent','nda_signed','cim_sent','call',
     'dd_started','term_sheet','invested','confirmed','pass','email','ping','note'
   ]
 
@@ -274,7 +271,7 @@ function AddParticipantModal({
   const [form, setForm] = useState({
     firm_name: '', contact_name: '', contact_title: '', contact_email: '',
     firm_type: 'PE Fund', check_size_min: '', check_size_max: '',
-    sbic: false, status: 'outreach', notes: '',
+    status: 'outreach', notes: '',
     debt_structure: '', pricing_notes: '',
   })
   const [saving, setSaving] = useState(false)
@@ -293,7 +290,6 @@ function AddParticipantModal({
       firm_type: form.firm_type,
       check_size_min: form.check_size_min ? Number(form.check_size_min) * 1e6 : null,
       check_size_max: form.check_size_max ? Number(form.check_size_max) * 1e6 : null,
-      sbic: form.sbic,
       status: form.status,
       notes: form.notes || null,
       debt_structure: form.debt_structure || null,
@@ -343,10 +339,6 @@ function AddParticipantModal({
             <textarea value={form.notes} onChange={e => setForm({...form, notes: e.target.value})}
               rows={2} className="w-full text-xs border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 bg-transparent outline-none focus:border-blue-400 resize-none" />
           </div>
-          <div className="col-span-2 flex items-center gap-2">
-            <input type="checkbox" id="sbic" checked={form.sbic} onChange={e => setForm({...form, sbic: e.target.checked})} />
-            <label htmlFor="sbic" className="text-xs text-gray-500">SBIC</label>
-          </div>
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <button onClick={onClose} className="text-xs px-3 py-1.5 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">Cancel</button>
@@ -393,7 +385,6 @@ function ParticipantRow({
     if (['check_size_min','check_size_max','committed_amount','debt_amount'].includes(field)) {
       v = value ? Number(value) * 1e6 : null
     }
-    if (field === 'sbic') v = value === 'true'
     onUpdate(p.id, field, v)
   }
 
@@ -410,8 +401,6 @@ function ParticipantRow({
     { key: 'teaser_date', val: p.teaser_date },
     { key: 'nda_date', val: p.nda_date },
     { key: 'cim_date', val: p.cim_date },
-    { key: 'first_call_date', val: p.first_call_date },
-    { key: 'model_date', val: p.model_date },
     { key: 'term_sheet_date', val: p.term_sheet_date },
   ]
 
@@ -435,7 +424,6 @@ function ParticipantRow({
           <EditableCell value={p.firm_type} onSave={update('firm_type')} type="select"
             options={['PE Fund','Family Office','FOF','Endowment','SBIC','Bank','Mezz','Unitranche','Other'].map(v=>({value:v,label:v}))}
             className="!text-[10px] border border-gray-200 dark:border-gray-700 rounded px-1" />
-          {p.sbic && <span className="text-[9px] text-purple-500 block mt-0.5">SBIC</span>}
         </td>
 
         {/* Check / hold size */}
@@ -459,6 +447,17 @@ function ParticipantRow({
               className="!text-[10px] text-center" />
           </td>
         ))}
+
+        {/* Call Date(s) — first_call_date editable + count of additional calls from activity log */}
+        <td className="py-2 px-2 text-center">
+          <div className="flex flex-col items-center gap-0.5">
+            <EditableCell value={p.first_call_date ? fmtDate(p.first_call_date) : null} onSave={update('first_call_date')} type="date" placeholder="—"
+              className="!text-[10px] text-center" />
+            {activities.filter(a => a.event_type === 'call').length > 1 && (
+              <span className="text-[9px] text-blue-400">+{activities.filter(a => a.event_type === 'call').length - 1} more</span>
+            )}
+          </div>
+        </td>
 
         {/* Amount committed */}
         <td className="py-2 px-3 whitespace-nowrap">
@@ -506,7 +505,7 @@ function ParticipantRow({
       {/* Expanded activity log */}
       {expanded && (
         <tr className="border-b border-gray-100 dark:border-gray-800">
-          <td colSpan={11} className="p-0">
+          <td colSpan={12} className="p-0">
             <div className="pl-10 pr-4 py-3 bg-gray-50 dark:bg-gray-800/40 border-t border-gray-100 dark:border-gray-800">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Activity log</span>
@@ -567,7 +566,25 @@ function EditRaiseModal({
     status: raise.status ?? 'Open',
     notes: raise.notes ?? '',
   })
+  const [dealSearch, setDealSearch] = useState(raise.deal?.company_name ?? '')
+  const [dealResults, setDealResults] = useState<{ id: string; company_name: string }[]>([])
+  const [showDealResults, setShowDealResults] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  const handleDealSearch = (q: string) => {
+    setDealSearch(q)
+    if (!q.trim()) { setDealResults([]); setForm(f => ({...f, deal_id: ''})); return }
+    const results = deals.filter(d => d.company_name.toLowerCase().includes(q.toLowerCase())).slice(0, 8)
+    setDealResults(results)
+    setShowDealResults(true)
+  }
+
+  const selectDeal = (d: { id: string; company_name: string }) => {
+    setForm(f => ({...f, deal_id: d.id}))
+    setDealSearch(d.company_name)
+    setShowDealResults(false)
+    setDealResults([])
+  }
 
   const save = async () => {
     setSaving(true)
@@ -597,11 +614,23 @@ function EditRaiseModal({
           </div>
           <div className="col-span-2">
             <label className="text-xs text-gray-500 mb-1 block">Linked deal</label>
-            <select value={form.deal_id} onChange={e => setForm({...form, deal_id: e.target.value})}
-              className="w-full text-xs border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 bg-white dark:bg-gray-900 outline-none focus:border-blue-400">
-              <option value="">— None —</option>
-              {deals.map(d => <option key={d.id} value={d.id}>{d.company_name}</option>)}
-            </select>
+            <div className="relative">
+              <input value={dealSearch} onChange={e => handleDealSearch(e.target.value)}
+                onFocus={() => dealSearch && setShowDealResults(true)}
+                placeholder="Search deals…"
+                className="w-full text-xs border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 bg-transparent outline-none focus:border-blue-400" />
+              {form.deal_id && <button onClick={() => { setForm(f=>({...f,deal_id:''})); setDealSearch('') }} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">✕</button>}
+              {showDealResults && dealResults.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
+                  {dealResults.map(d => (
+                    <button key={d.id} onClick={() => selectDeal(d)}
+                      className="block w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-100 dark:border-gray-800 last:border-0">
+                      {d.company_name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           <div>
             <label className="text-xs text-gray-500 mb-1 block">Target equity ($M)</label>
@@ -654,7 +683,25 @@ function NewRaiseModal({
   const [form, setForm] = useState({
     name: '', deal_id: '', target_equity: '', target_debt: '', close_date: '', notes: ''
   })
+  const [dealSearch, setDealSearch] = useState('')
+  const [dealResults, setDealResults] = useState<{ id: string; company_name: string }[]>([])
+  const [showDealResults, setShowDealResults] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  const handleDealSearch = (q: string) => {
+    setDealSearch(q)
+    if (!q.trim()) { setDealResults([]); setForm(f => ({...f, deal_id: ''})); return }
+    const results = deals.filter(d => d.company_name.toLowerCase().includes(q.toLowerCase())).slice(0, 8)
+    setDealResults(results)
+    setShowDealResults(true)
+  }
+
+  const selectDeal = (d: { id: string; company_name: string }) => {
+    setForm(f => ({...f, deal_id: d.id}))
+    setDealSearch(d.company_name)
+    setShowDealResults(false)
+    setDealResults([])
+  }
 
   const save = async () => {
     if (!form.name.trim()) return
@@ -687,11 +734,23 @@ function NewRaiseModal({
           </div>
           <div className="col-span-2">
             <label className="text-xs text-gray-500 mb-1 block">Linked deal</label>
-            <select value={form.deal_id} onChange={e => setForm({...form, deal_id: e.target.value})}
-              className="w-full text-xs border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 bg-white dark:bg-gray-900 outline-none focus:border-blue-400">
-              <option value="">— Select deal —</option>
-              {deals.map(d => <option key={d.id} value={d.id}>{d.company_name}</option>)}
-            </select>
+            <div className="relative">
+              <input value={dealSearch} onChange={e => handleDealSearch(e.target.value)}
+                onFocus={() => dealSearch && setShowDealResults(true)}
+                placeholder="Search deals…"
+                className="w-full text-xs border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 bg-transparent outline-none focus:border-blue-400" />
+              {form.deal_id && <button onClick={() => { setForm(f=>({...f,deal_id:''})); setDealSearch('') }} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">✕</button>}
+              {showDealResults && dealResults.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
+                  {dealResults.map(d => (
+                    <button key={d.id} onClick={() => selectDeal(d)}
+                      className="block w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-100 dark:border-gray-800 last:border-0">
+                      {d.company_name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           <div>
             <label className="text-xs text-gray-500 mb-1 block">Target equity ($M)</label>
@@ -939,9 +998,8 @@ export default function RaisesPage() {
                       ['Teaser', 'text-center'],
                       ['NDA', 'text-center'],
                       ['CIM', 'text-center'],
-                      ['Call', 'text-center'],
-                      ['Model', 'text-center'],
-                      ['Term sheet', 'text-center'],
+                      ['Term Sheet', 'text-center'],
+                      ['Call Date(s)', 'text-center'],
                       [isDebt ? 'Amount / pricing' : 'Committed', 'text-left'],
                       ['Notes / pass reason', 'min-w-[160px] text-left'],
                       ['', 'w-16'],
@@ -955,7 +1013,7 @@ export default function RaisesPage() {
                 <tbody>
                   {grouped.length === 0 ? (
                     <tr>
-                      <td colSpan={13} className="px-3 py-6 text-center text-xs text-gray-400">
+                      <td colSpan={12} className="px-3 py-6 text-center text-xs text-gray-400">
                         No participants yet.{' '}
                         <button onClick={() => setShowAddParticipant(true)} className="text-blue-500 underline">Add the first one.</button>
                       </td>
@@ -963,7 +1021,7 @@ export default function RaisesPage() {
                   ) : grouped.map(g => (
                     <>
                       <tr key={g.key} className="bg-gray-50/80 dark:bg-gray-800/50">
-                        <td colSpan={13} className="px-3 py-1.5 text-[10px] font-medium text-gray-400 uppercase tracking-wider">
+                        <td colSpan={12} className="px-3 py-1.5 text-[10px] font-medium text-gray-400 uppercase tracking-wider">
                           {g.label} <span className="font-normal opacity-60 ml-1">({g.rows.length})</span>
                         </td>
                       </tr>
@@ -980,7 +1038,7 @@ export default function RaisesPage() {
                     </>
                   ))}
                   <tr>
-                    <td colSpan={13} className="px-3 py-2">
+                    <td colSpan={12} className="px-3 py-2">
                       <button
                         onClick={() => setShowAddParticipant(true)}
                         className="text-[10px] text-blue-500 border border-dashed border-blue-300 dark:border-blue-700 rounded px-2 py-1 hover:bg-blue-50 dark:hover:bg-blue-900/20"
