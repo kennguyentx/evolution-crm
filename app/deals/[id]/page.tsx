@@ -85,6 +85,8 @@ export default function DealDetailPage() {
   const [activityForm, setActivityForm] = useState({ interaction_type: 'call', summary: '', next_steps: '' })
   const [editingInteractionId, setEditingInteractionId] = useState<string | null>(null)
   const [editingInteraction, setEditingInteraction] = useState<{ interaction_type: string; interaction_date: string; summary: string; next_steps: string } | null>(null)
+  const [editingInteractionError, setEditingInteractionError] = useState<string | null>(null)
+  const [savingInteraction, setSavingInteraction] = useState(false)
   const [detectedContacts, setDetectedContacts] = useState<any[]>([])
   const detectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -400,6 +402,7 @@ export default function DealDetailPage() {
   }
 
   const startEditInteraction = (i: Interaction) => {
+    setEditingInteractionError(null)
     setEditingInteractionId(i.id)
     setEditingInteraction({
       interaction_type: i.interaction_type || 'call',
@@ -411,21 +414,33 @@ export default function DealDetailPage() {
 
   const saveInteraction = async () => {
     if (!editingInteractionId || !editingInteraction) return
-    const payload = {
-      interaction_type: editingInteraction.interaction_type,
-      interaction_date: editingInteraction.interaction_date,
-      summary: editingInteraction.summary,
-      next_steps: editingInteraction.next_steps || null,
-    }
-    const { data, error } = await supabase.from('interactions').update(payload).eq('id', editingInteractionId).select('*, contact:contacts(first_name, last_name)').single()
-    if (error) { console.error('Save interaction error:', error); return }
-    if (data) setInteractions(prev => prev.map(i => i.id === editingInteractionId ? data : i))
+    setSavingInteraction(true)
+    setEditingInteractionError(null)
+    const res = await fetch('/api/interactions', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: editingInteractionId,
+        interaction_type: editingInteraction.interaction_type,
+        interaction_date: editingInteraction.interaction_date,
+        summary: editingInteraction.summary,
+        next_steps: editingInteraction.next_steps || null,
+      }),
+    })
+    const json = await res.json()
+    setSavingInteraction(false)
+    if (!res.ok) { setEditingInteractionError(json.error || 'Save failed'); return }
+    setInteractions(prev => prev.map(i => i.id === editingInteractionId ? json : i))
     setEditingInteractionId(null)
     setEditingInteraction(null)
   }
 
   const deleteInteraction = async (id: string) => {
-    await supabase.from('interactions').delete().eq('id', id)
+    await fetch('/api/interactions', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
     setInteractions(prev => prev.filter(i => i.id !== id))
   }
 
@@ -1123,10 +1138,15 @@ export default function DealDetailPage() {
                         <label className="label">Next Steps</label>
                         <input className="input" value={editingInteraction.next_steps} onChange={e => setEditingInteraction(p => p ? { ...p, next_steps: e.target.value } : p)} placeholder="Follow-up actions..." />
                       </div>
+                      {editingInteractionError && (
+                        <div style={{ fontSize: '12px', color: 'var(--red, #ef4444)', background: 'rgba(239,68,68,0.1)', padding: '6px 10px', borderRadius: '6px' }}>
+                          {editingInteractionError}
+                        </div>
+                      )}
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                        <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => { setEditingInteractionId(null); setEditingInteraction(null) }}>Cancel</button>
-                        <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={saveInteraction} disabled={!editingInteraction.summary.trim()}>
-                          <Check size={12} /> Save
+                        <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => { setEditingInteractionId(null); setEditingInteraction(null); setEditingInteractionError(null) }}>Cancel</button>
+                        <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={saveInteraction} disabled={!editingInteraction.summary.trim() || savingInteraction}>
+                          <Check size={12} /> {savingInteraction ? 'Saving…' : 'Save'}
                         </button>
                       </div>
                     </div>
