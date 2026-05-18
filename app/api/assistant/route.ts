@@ -217,10 +217,13 @@ const TOOLS: Anthropic.Tool[] = [
       required: ['company_name'],
     },
   },
+  {
+    name: 'list_files',
+    description: 'List files and folders at any path in the Evolution Strategy Dropbox. Use for general browsing when not looking for a specific deal or portco.',
     input_schema: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Dropbox folder path, e.g. /Evolution Strategy Partners or /Evolution Strategy Partners/Portfolio' },
+        path: { type: 'string', description: 'Dropbox folder path, e.g. /Ken Nguyen/Evolution Strategy Partners or a subfolder' },
       },
       required: ['path'],
     },
