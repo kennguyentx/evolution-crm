@@ -250,7 +250,7 @@ function DealCard({ deal, contacts, onStageChange }: {
         {/* Source contacts */}
         {contacts.length > 0 && (
           <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
-            {contacts.slice(0, 2).map((c, i) => (
+            {contacts.map((c, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: i > 0 ? '4px' : '0' }}>
                 <div style={{
                   width: '20px', height: '20px', borderRadius: '50%',
@@ -267,11 +267,6 @@ function DealCard({ deal, contacts, onStageChange }: {
                 </div>
               </div>
             ))}
-            {contacts.length > 2 && (
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px' }}>
-                +{contacts.length - 2} more
-              </div>
-            )}
           </div>
         )}
       </Link>
