@@ -28,6 +28,7 @@ interface DropboxFilesTabProps {
   companyName: string
   dropboxPath?: string | null
   onPathSaved?: (path: string) => void
+  table?: string
 }
 
 function formatSize(bytes?: number) {
@@ -51,7 +52,7 @@ function FileIcon({ icon, className }: { icon: string; className?: string }) {
 }
 
 export default function DropboxFilesTab({
-  dealId, companyName, dropboxPath: initialPath, onPathSaved,
+  dealId, companyName, dropboxPath: initialPath, onPathSaved, table = 'deals',
 }: DropboxFilesTabProps) {
   const [dropboxPath, setDropboxPath] = useState(initialPath || '')
   const [pathInput, setPathInput] = useState(initialPath || `/${companyName}`)
@@ -100,7 +101,7 @@ export default function DropboxFilesTab({
     // Save to Supabase deal record
     const { createClient } = await import('@/lib/supabase')
     const supabase = createClient()
-    await supabase.from('deals').update({ dropbox_path: path }).eq('id', dealId)
+    await supabase.from(table as any).update({ dropbox_path: path }).eq('id', dealId)
     setDropboxPath(path)
     setShowPathEdit(false)
     onPathSaved?.(path)
