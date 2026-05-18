@@ -70,8 +70,10 @@ export async function GET(req: NextRequest) {
   try {
     // ── List folder ───────────────────────────────────────────
     if (action === 'list') {
+      // Dropbox API uses empty string for root, not "/" or "."
+      const dbxPath = path === '/' || path === '.' ? '' : path
       const data = await dbxPost('/files/list_folder', {
-        path: path || '',
+        path: dbxPath,
         recursive: false,
         include_media_info: false,
         include_deleted: false,
