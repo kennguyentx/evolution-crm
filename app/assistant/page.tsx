@@ -163,7 +163,7 @@ export default function AssistantPage() {
       const data = await res.json()
 
       if (data.error) {
-        const errMsg: Message = { id: uid(), role: 'system', content: `Error: ${data.error}` }
+        const errMsg: Message = { id: uid(), role: 'system', content: `Error: ${typeof data.error === 'string' ? data.error : JSON.stringify(data.error)}` }
         const final = [...newMessages, errMsg]
         setMessages(final)
         await saveThread(threadId, final, newApiMessages)
