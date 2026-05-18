@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
-import { Plus, Search, X, Check, Phone, Mail, ChevronDown, ChevronRight } from 'lucide-react'
+import { Plus, Search, X, Check, Phone, Mail, ChevronDown, ChevronRight, UserPlus } from 'lucide-react'
 
 type Contact = {
   id: string
@@ -17,8 +17,11 @@ type Contact = {
   conf_lead: string | null
   notes: string | null
   status: string
+  crm_contact_id: string | null  // set once imported to CRM contacts
   _calls?: Call[]
   _callsLoaded?: boolean
+  _importStatus?: 'idle' | 'checking' | 'duplicate' | 'imported' | 'error'
+  _duplicateName?: string
 }
 
 type Call = {
@@ -105,7 +108,10 @@ export default function CapitalContactsPage() {
     }
 
     const { data, count } = await query
-    setContacts(data ?? [])
+    setContacts((data ?? []).map((c: any) => ({
+      ...c,
+      _importStatus: c.crm_contact_id ? 'imported' : undefined,
+    })))
     setTotal(count ?? 0)
     setLoading(false)
   }, [supabase, search, sourceFilter, statusFilter])
@@ -200,6 +206,86 @@ export default function CapitalContactsPage() {
   const setStatus = async (contactId: string, status: string) => {
     await supabase.from('capital_contacts').update({ status }).eq('id', contactId)
     setContacts(prev => prev.map(c => c.id === contactId ? { ...c, status } : c))
+  }
+
+  // Map capital contact firm_type → CRM contact_type
+  const mapContactType = (source: string, firmType: string | null): string => {
+    if (source === 'lender') return 'lender'
+    const t = (firmType ?? '').toLowerCase()
+    if (t.includes('family office') || t.includes('fam off') || t.includes('f&f') || t.includes('hnw')) return 'lp'
+    if (t.includes('pe') || t.includes('fund') || t.includes('equity') || t.includes('capital')) return 'lp'
+    if (t.includes('bank') || t.includes('mezz') || t.includes('debt')) return 'lender'
+    return 'lp'
+  }
+
+  const importToCRM = async (r: Contact) => {
+    if (!r.contact_name) return
+    // Mark as checking
+    setContacts(prev => prev.map(c => c.id === r.id ? { ...c, _importStatus: 'checking' } : c))
+
+    // Parse name
+    const parts = r.contact_name.trim().split(/\s+/)
+    const firstName = parts[0] ?? ''
+    const lastName = parts.slice(1).join(' ') || ''
+
+    // Check for duplicate by email first, then name
+    let duplicate: { id: string; first_name: string; last_name: string } | null = null
+
+    if (r.email) {
+      const { data: emailMatch } = await supabase
+        .from('contacts')
+        .select('id, first_name, last_name')
+        .eq('email', r.email)
+        .maybeSingle()
+      if (emailMatch) duplicate = emailMatch
+    }
+
+    if (!duplicate && firstName && lastName) {
+      const { data: nameMatch } = await supabase
+        .from('contacts')
+        .select('id, first_name, last_name')
+        .ilike('first_name', firstName)
+        .ilike('last_name', lastName)
+        .maybeSingle()
+      if (nameMatch) duplicate = nameMatch
+    }
+
+    if (duplicate) {
+      setContacts(prev => prev.map(c => c.id === r.id ? {
+        ...c,
+        _importStatus: 'duplicate',
+        _duplicateName: `${duplicate!.first_name} ${duplicate!.last_name}`,
+        crm_contact_id: duplicate!.id,
+      } : c))
+      // Also save the crm_contact_id link
+      await supabase.from('capital_contacts').update({ crm_contact_id: duplicate.id }).eq('id', r.id)
+      return
+    }
+
+    // No duplicate — insert into contacts
+    const { data: newContact, error } = await supabase.from('contacts').insert({
+      first_name: firstName,
+      last_name: lastName,
+      firm: r.firm,
+      title: r.title ?? null,
+      email: r.email ?? null,
+      phone: r.phone ?? null,
+      contact_type: mapContactType(r.source, r.firm_type),
+      notes: r.notes ?? null,
+    }).select('id').single()
+
+    if (error || !newContact) {
+      setContacts(prev => prev.map(c => c.id === r.id ? { ...c, _importStatus: 'error' } : c))
+      return
+    }
+
+    // Link back
+    await supabase.from('capital_contacts').update({ crm_contact_id: newContact.id }).eq('id', r.id)
+    setContacts(prev => prev.map(c => c.id === r.id ? {
+      ...c,
+      _importStatus: 'imported',
+      crm_contact_id: newContact.id,
+    } : c))
   }
 
   const addContact = async () => {
@@ -444,7 +530,7 @@ export default function CapitalContactsPage() {
                                 )}
                               </div>
                             </div>
-                            <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                            <div style={{ display: 'flex', gap: '4px', flexShrink: 0, alignItems: 'center' }}>
                               <select
                                 value={r.status}
                                 onChange={e => { e.stopPropagation(); setStatus(r.id, e.target.value) }}
@@ -461,6 +547,43 @@ export default function CapitalContactsPage() {
                               >
                                 + log call
                               </button>
+
+                              {/* Import to CRM button */}
+                              {r.contact_name && (() => {
+                                const st = r._importStatus
+                                const already = r.crm_contact_id && !st
+
+                                if (already || st === 'imported') return (
+                                  <span style={{ fontSize: '10px', color: 'var(--green)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                    <Check size={10} /> In CRM
+                                  </span>
+                                )
+                                if (st === 'duplicate') return (
+                                  <span style={{ fontSize: '10px', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '3px' }} title={`Matched: ${r._duplicateName}`}>
+                                    <Check size={10} /> Exists
+                                  </span>
+                                )
+                                if (st === 'checking') return (
+                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Checking…</span>
+                                )
+                                if (st === 'error') return (
+                                  <button
+                                    onClick={e => { e.stopPropagation(); importToCRM(r) }}
+                                    style={{ fontSize: '10px', padding: '2px 8px', border: '1px solid var(--red)', borderRadius: '4px', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}
+                                  >
+                                    Retry
+                                  </button>
+                                )
+                                return (
+                                  <button
+                                    onClick={e => { e.stopPropagation(); importToCRM(r) }}
+                                    style={{ fontSize: '10px', padding: '2px 8px', border: '1px solid var(--border)', borderRadius: '4px', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}
+                                    title="Add to CRM Contacts (checks for duplicates first)"
+                                  >
+                                    <UserPlus size={10} /> Add to CRM
+                                  </button>
+                                )
+                              })()}
                             </div>
                           </div>
 
