@@ -22,19 +22,30 @@ export default function InvestorsPage() {
   const supabase = createClient()
 
   const fetchInvestors = async () => {
-    const { data } = await supabase
-      .from('investors')
-      .select('*, investments:lp_investments(invested_amount), commitments:lp_commitments(committed_amount, status), entities:investment_entities(id, name, entity_type)')
-      .eq('status', 'Active')
-      .order('last_name')
+    const [{ data }, { data: entityData }] = await Promise.all([
+      supabase
+        .from('investors')
+        .select('*, investments:lp_investments(invested_amount), commitments:lp_commitments(committed_amount, status)')
+        .eq('status', 'Active')
+        .order('last_name'),
+      supabase
+        .from('investment_entities')
+        .select('id, name, entity_type, investor_id')
+        .order('name'),
+    ])
 
     if (data) {
+      const entitiesByInvestor: Record<string, any[]> = {}
+      ;(entityData || []).forEach((e: any) => {
+        if (!entitiesByInvestor[e.investor_id]) entitiesByInvestor[e.investor_id] = []
+        entitiesByInvestor[e.investor_id].push(e)
+      })
       const enriched = data.map(inv => ({
         ...inv,
         totalInvested: (inv.investments || []).reduce((s: number, i: any) => s + (i.invested_amount || 0), 0),
         totalCommitted: (inv.commitments || []).filter((c: any) => ['Committed','Funded'].includes(c.status)).reduce((s: number, c: any) => s + (c.committed_amount || 0), 0),
         dealCount: (inv.investments || []).length,
-        entities: inv.entities || [],
+        entities: entitiesByInvestor[inv.id] || [],
       }))
       setInvestors(enriched)
     }
