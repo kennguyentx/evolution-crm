@@ -76,7 +76,7 @@ export default function DealsPage() {
     else if (sortField==='geography') { av=a.geography||''; bv=b.geography||'' }
     else if (sortField==='ebitda') { av=a.ebitda||0; bv=b.ebitda||0 }
     else if (sortField==='revenue') { av=a.revenue||0; bv=b.revenue||0 }
-    else if (sortField==='created_at') { av=a.created_at||''; bv=b.created_at||'' }
+    else if (sortField==='created_at') { av=(a as any).sourced_date||a.created_at||''; bv=(b as any).sourced_date||b.created_at||'' }
     else { av=a.stage; bv=b.stage }
     const cmp = av>bv?1:av<bv?-1:0
     return sortDir==='asc'?cmp:-cmp
@@ -137,7 +137,7 @@ export default function DealsPage() {
               <div style={{ textAlign:'right', fontFamily:'var(--font-mono)', fontSize:'12px', color:'var(--text-secondary)', alignSelf:'center' }}>{formatCurrency(deal.revenue)}</div>
               <div style={{ alignSelf:'center', paddingLeft:'12px' }}><span className={`badge ${stageClass(deal.stage)}`}>{deal.stage}</span></div>
               <div style={{ fontSize:'11px', color:'var(--text-muted)', alignSelf:'center', fontFamily:'var(--font-mono)' }}>
-                {deal.created_at ? new Date(deal.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'2-digit' }) : '—'}
+                {(() => { const d = (deal as any).sourced_date || deal.created_at; return d ? new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'2-digit' }) : '—' })()}
               </div>
             </div>
           </Link>
