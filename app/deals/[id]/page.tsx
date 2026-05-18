@@ -41,6 +41,10 @@ export default function DealDetailPage() {
   const [capital, setCapital] = useState<DealCapitalAssignment[]>([])
   const [documents, setDocuments] = useState<any[]>([])
   const [dealRaises, setDealRaises] = useState<any[]>([])
+  const [comps, setComps] = useState<any[]>([])
+  const [compsNotes, setCompsNotes] = useState<string | null>(null)
+  const [loadingComps, setLoadingComps] = useState(false)
+  const [compsError, setCompsError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'overview'|'diligence'|'contacts'|'capital'|'activity'|'documents'>('overview')
   const [editingStage, setEditingStage] = useState(false)
@@ -252,6 +256,34 @@ export default function DealDetailPage() {
     if (data) setDiligence(data)
   }
 
+  const pullComps = async () => {
+    if (!deal) return
+    setLoadingComps(true)
+    setCompsError(null)
+    setComps([])
+    setCompsNotes(null)
+    try {
+      const res = await fetch('/api/deals/comps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_name: deal.company_name,
+          sector: deal.sector,
+          geography: deal.geography,
+          ebitda: deal.ebitda,
+          revenue: deal.revenue,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to pull comps')
+      setComps(data.comps || [])
+      setCompsNotes(data.search_notes || null)
+    } catch (e: any) {
+      setCompsError(e.message)
+    }
+    setLoadingComps(false)
+  }
+
   // Simple toggle: Pending ↔ Complete
   const toggleDiligenceStatus = async (item: DiligenceItem) => {
     const next = item.status === 'Complete' ? 'Pending' : 'Complete'
@@ -435,7 +467,8 @@ export default function DealDetailPage() {
 
         {/* OVERVIEW */}
         {activeTab === 'overview' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', maxWidth: '900px' }}>
+          <div style={{ maxWidth: '900px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
             <div className="card" style={{ padding: '20px' }}>
               <div className="label" style={{ marginBottom: '16px' }}>Deal Details</div>
               <div style={{ marginBottom: '14px' }}>
@@ -505,6 +538,116 @@ export default function DealDetailPage() {
                   <div className="label" style={{ marginBottom: '6px' }}>AI CIM Summary</div>
                   <div style={{ fontSize: '12px', color: 'var(--text-secondary)', background: 'var(--surface-2)', borderRadius: '6px', padding: '12px', lineHeight: 1.7 }}>{deal.cim_summary}</div>
                 </div>
+              )}
+            </div>
+          </div>{/* end 2-col grid */}
+
+            {/* COMPS */}
+            <div className="card" style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <div className="label">M&A Transaction Comps</div>
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize: '12px' }}
+                  onClick={pullComps}
+                  disabled={loadingComps}
+                >
+                  {loadingComps ? '⏳ Searching…' : comps.length > 0 ? '↺ Refresh comps' : '⬇ Pull comps'}
+                </button>
+              </div>
+
+              {compsError && (
+                <div style={{ fontSize: '12px', color: 'var(--red)', marginBottom: '12px' }}>{compsError}</div>
+              )}
+
+              {loadingComps && (
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  Searching public sources for {deal.sector || 'sector'} M&A transactions… this takes 15–30 seconds.
+                </div>
+              )}
+
+              {!loadingComps && comps.length === 0 && !compsError && (
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  Click "Pull comps" to search for comparable M&A transactions based on this deal's sector and size.
+                </div>
+              )}
+
+              {comps.length > 0 && (
+                <>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                          {['Target','Acquirer','Sponsor','EV','Revenue','EBITDA','EV/EBITDA','Geography','Year','Source'].map(h => (
+                            <th key={h} style={{ padding: '6px 10px', textAlign: h === 'EV' || h === 'Revenue' || h === 'EBITDA' || h === 'EV/EBITDA' ? 'right' : 'left', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {comps.map((c, i) => (
+                          <tr key={i} style={{ borderBottom: '1px solid var(--border-subtle)' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                            <td style={{ padding: '8px 10px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{c.target || '—'}</td>
+                            <td style={{ padding: '8px 10px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{c.acquirer || '—'}</td>
+                            <td style={{ padding: '8px 10px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{c.sponsor || '—'}</td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--accent)', whiteSpace: 'nowrap' }}>
+                              {c.ev ? `$${(c.ev / 1e6).toFixed(1)}M` : '—'}
+                            </td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                              {c.revenue ? `$${(c.revenue / 1e6).toFixed(1)}M` : '—'}
+                            </td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                              {c.ebitda ? `$${(c.ebitda / 1e6).toFixed(1)}M` : '—'}
+                            </td>
+                            <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600, color: c.ev_ebitda ? 'var(--accent)' : 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                              {c.ev_ebitda ? `${c.ev_ebitda.toFixed(1)}x` : '—'}
+                            </td>
+                            <td style={{ padding: '8px 10px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{c.geography || '—'}</td>
+                            <td style={{ padding: '8px 10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{c.year || '—'}</td>
+                            <td style={{ padding: '8px 10px' }}>
+                              {c.source_url ? (
+                                <a href={c.source_url} target="_blank" rel="noopener noreferrer"
+                                  style={{ fontSize: '10px', color: 'var(--accent)', textDecoration: 'none' }}
+                                  onClick={e => e.stopPropagation()}>
+                                  {c.source_name || 'Link'} ↗
+                                </a>
+                              ) : (
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{c.source_name || '—'}</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      {/* Summary row */}
+                      {comps.filter(c => c.ev_ebitda).length > 1 && (() => {
+                        const withMultiples = comps.filter(c => c.ev_ebitda)
+                        const avg = withMultiples.reduce((s, c) => s + c.ev_ebitda, 0) / withMultiples.length
+                        const min = Math.min(...withMultiples.map(c => c.ev_ebitda))
+                        const max = Math.max(...withMultiples.map(c => c.ev_ebitda))
+                        return (
+                          <tfoot>
+                            <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--surface-2)' }}>
+                              <td colSpan={6} style={{ padding: '8px 10px', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                {withMultiples.length} comps
+                              </td>
+                              <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--accent)' }}>
+                                {avg.toFixed(1)}x avg<br/>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 400 }}>{min.toFixed(1)}x – {max.toFixed(1)}x</span>
+                              </td>
+                              <td colSpan={3} />
+                            </tr>
+                          </tfoot>
+                        )
+                      })()}
+                    </table>
+                  </div>
+                  {compsNotes && (
+                    <div style={{ marginTop: '10px', fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.5 }}>
+                      {compsNotes}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
