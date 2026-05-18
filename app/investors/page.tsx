@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import { formatCurrency } from '@/types'
+import { formatCurrencyFull as formatCurrency } from '@/types'
 import { Plus, Search, X, Check } from 'lucide-react'
 import Link from 'next/link'
 
