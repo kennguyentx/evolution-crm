@@ -191,7 +191,7 @@ export async function GET(req: NextRequest) {
 
   <!-- Footer -->
   <div style="text-align:center;font-size:11px;color:#aaa;padding:8px 0 32px;">
-    Evolution Strategy CRM &nbsp;·&nbsp; Sent every Monday at 7am CT
+    Nexus &nbsp;·&nbsp; Sent every Monday at 7am CT
   </div>
 </div>
 </body>
