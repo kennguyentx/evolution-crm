@@ -13,6 +13,8 @@ type Note = {
   sentiment: string | null
   logged_by: string | null
   source: string
+  deal_id: string | null
+  contact_id: string | null
   deal_stage_updated: string | null
   raise_status_updated: string | null
   deal?: { company_name: string } | null
@@ -61,7 +63,10 @@ export default function NotesPage() {
   const [editError, setEditError] = useState<string | null>(null)
   const [detectedContacts, setDetectedContacts] = useState<{ item: any; accepted: boolean }[]>([])
   const [detectedDeals, setDetectedDeals] = useState<{ item: any; accepted: boolean }[]>([])
+  const [editDetectedContacts, setEditDetectedContacts] = useState<{ item: any; accepted: boolean }[]>([])
+  const [editDetectedDeals, setEditDetectedDeals] = useState<{ item: any; accepted: boolean }[]>([])
   const detectTimer = useRef<any>(null)
+  const editDetectTimer = useRef<any>(null)
   const searchTimer = useRef<any>(null)
 
   // Fetch deals for filter dropdown
@@ -159,6 +164,47 @@ export default function NotesPage() {
     detectTimer.current = setTimeout(() => detectMentions(text), 600)
   }
 
+  const detectEditMentions = useCallback(async (text: string) => {
+    if (!text.trim()) { setEditDetectedContacts([]); setEditDetectedDeals([]); return }
+    const lower = text.toLowerCase()
+
+    const words = text.trim().split(/\s+/).filter(w => w.length > 1)
+    const pairs = words.slice(0, -1).map((w, i) => ({ first: w, last: words[i + 1] }))
+    const foundContacts: { item: any; accepted: boolean }[] = []
+    const foundContactIds = new Set<string>()
+    for (const pair of pairs.slice(0, 10)) {
+      const { data } = await supabase
+        .from('contacts')
+        .select('id, first_name, last_name, firm, contact_type')
+        .ilike('first_name', pair.first)
+        .ilike('last_name', pair.last)
+        .limit(1)
+      if (data?.[0] && !foundContactIds.has(data[0].id)) {
+        const existing = editDetectedContacts.find(d => d.item.id === data[0].id)
+        foundContacts.push({ item: data[0], accepted: existing?.accepted ?? false })
+        foundContactIds.add(data[0].id)
+      }
+    }
+    setEditDetectedContacts(foundContacts)
+
+    const foundDeals: { item: any; accepted: boolean }[] = []
+    const foundDealIds = new Set<string>()
+    for (const deal of deals) {
+      if (deal.company_name.length > 3 && lower.includes(deal.company_name.toLowerCase()) && !foundDealIds.has(deal.id)) {
+        const existing = editDetectedDeals.find(d => d.item.id === deal.id)
+        foundDeals.push({ item: deal, accepted: existing?.accepted ?? false })
+        foundDealIds.add(deal.id)
+      }
+    }
+    setEditDetectedDeals(foundDeals)
+  }, [supabase, deals, editDetectedContacts, editDetectedDeals])
+
+  const handleEditRawTextChange = (text: string) => {
+    setEditForm(p => ({ ...p, raw_text: text }))
+    if (editDetectTimer.current) clearTimeout(editDetectTimer.current)
+    editDetectTimer.current = setTimeout(() => detectEditMentions(text), 600)
+  }
+
   const addNote = async () => {
     if (!addForm.raw_text.trim()) return
     setSaving(true)
@@ -199,6 +245,11 @@ export default function NotesPage() {
     })
     setEditError(null)
     setExpandedId(note.id)
+    // Pre-populate existing links as accepted chips
+    setEditDetectedContacts(note.contact && note.contact_id ? [{ item: { id: note.contact_id, first_name: note.contact.first_name, last_name: note.contact.last_name, firm: note.contact.firm }, accepted: true }] : [])
+    setEditDetectedDeals(note.deal && note.deal_id ? [{ item: { id: note.deal_id, company_name: note.deal.company_name }, accepted: true }] : [])
+    // Also scan text for additional mentions
+    setTimeout(() => detectEditMentions(note.raw_text), 0)
   }
 
   const saveEdit = async () => {
@@ -206,6 +257,8 @@ export default function NotesPage() {
     setEditSaving(true)
     setEditError(null)
     try {
+      const acceptedContact = editDetectedContacts.find(d => d.accepted)
+      const acceptedDeal = editDetectedDeals.find(d => d.accepted)
       const res = await fetch('/api/notes', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -216,12 +269,16 @@ export default function NotesPage() {
           summary: editForm.summary || null,
           next_steps: editForm.next_steps || null,
           logged_by: editForm.logged_by || null,
+          contact_id: acceptedContact ? acceptedContact.item.id : null,
+          deal_id: acceptedDeal ? acceptedDeal.item.id : null,
         }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Save failed')
       setNotes(prev => prev.map(n => n.id === editingNoteId ? json : n))
       setEditingNoteId(null)
+      setEditDetectedContacts([])
+      setEditDetectedDeals([])
     } catch (err: any) {
       setEditError(err.message)
     } finally {
@@ -432,11 +489,34 @@ export default function NotesPage() {
                           </div>
                           <div style={{ marginBottom: '10px' }}>
                             <label className="label">Raw Notes</label>
-                            <textarea className="input" rows={4} value={editForm.raw_text} onChange={e => setEditForm(p => ({...p, raw_text: e.target.value}))} style={{ resize: 'vertical', width: '100%' }} />
+                            <textarea className="input" rows={4} value={editForm.raw_text} onChange={e => handleEditRawTextChange(e.target.value)} style={{ resize: 'vertical', width: '100%' }} />
+                            {(editDetectedContacts.length > 0 || editDetectedDeals.length > 0) && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Detected:</span>
+                                {editDetectedDeals.map(({ item: d, accepted }) => (
+                                  <span key={d.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 6px 2px 8px', borderRadius: '999px', background: accepted ? 'var(--accent-muted)' : 'var(--surface-2)', color: accepted ? 'var(--accent)' : 'var(--text-secondary)', border: `1px solid ${accepted ? 'var(--accent)' : 'var(--border)'}` }}>
+                                    {d.company_name}
+                                    {!accepted && (
+                                      <button onClick={() => setEditDetectedDeals(p => p.map(x => x.item.id === d.id ? { ...x, accepted: true } : x))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--green)' }} title="Accept"><Check size={10} /></button>
+                                    )}
+                                    <button onClick={() => setEditDetectedDeals(p => p.filter(x => x.item.id !== d.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--text-muted)' }} title="Remove"><X size={10} /></button>
+                                  </span>
+                                ))}
+                                {editDetectedContacts.map(({ item: c, accepted }) => (
+                                  <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 6px 2px 8px', borderRadius: '999px', background: accepted ? 'var(--surface)' : 'var(--surface-2)', color: accepted ? 'var(--text-primary)' : 'var(--text-secondary)', border: `1px solid ${accepted ? 'var(--border)' : 'var(--border-subtle)'}`, fontWeight: accepted ? 500 : 400 }}>
+                                    {c.first_name} {c.last_name}{c.firm ? ` · ${c.firm}` : ''}
+                                    {!accepted && (
+                                      <button onClick={() => setEditDetectedContacts(p => p.map(x => x.item.id === c.id ? { ...x, accepted: true } : x))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--green)' }} title="Accept"><Check size={10} /></button>
+                                    )}
+                                    <button onClick={() => setEditDetectedContacts(p => p.filter(x => x.item.id !== c.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--text-muted)' }} title="Remove"><X size={10} /></button>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                           {editError && <div style={{ fontSize: '11px', color: 'var(--red)', marginBottom: '8px' }}>{editError}</div>}
                           <div style={{ display: 'flex', gap: '8px' }}>
-                            <button className="btn btn-ghost" style={{ fontSize: '11px' }} onClick={() => setEditingNoteId(null)}>Cancel</button>
+                            <button className="btn btn-ghost" style={{ fontSize: '11px' }} onClick={() => { setEditingNoteId(null); setEditDetectedContacts([]); setEditDetectedDeals([]) }}>Cancel</button>
                             <button className="btn btn-primary" style={{ fontSize: '11px' }} onClick={saveEdit} disabled={editSaving}>
                               <Check size={12} /> {editSaving ? 'Saving…' : 'Save'}
                             </button>
