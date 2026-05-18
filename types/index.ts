@@ -116,6 +116,11 @@ export function formatCurrency(value?: number | null): string {
   return `$${value.toLocaleString()}`
 }
 
+export function formatCurrencyFull(value?: number | null): string {
+  if (!value) return '—'
+  return `$${Math.round(value).toLocaleString('en-US')}`
+}
+
 export function formatMultiple(value?: number | null): string {
   if (!value) return '—'
   return `${value.toFixed(1)}x`
