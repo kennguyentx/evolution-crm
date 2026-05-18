@@ -29,7 +29,7 @@ export default function DealsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [stageFilter, setStageFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('Active')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [showNewDeal, setShowNewDeal] = useState(false)
   const [sortField, setSortField] = useState<SortField>('created_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
@@ -106,11 +106,11 @@ export default function DealsPage() {
           {ALL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <select className="select" style={{ width:'120px' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <option value="all">All Status</option>
           <option value="Active">Active</option>
           <option value="Dead">Dead</option>
           <option value="Closed">Closed</option>
-          <option value="all">All Status</option>
-        </select>
+                  </select>
       </div>
 
       <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr 100px 110px 140px 90px', padding:'8px 28px', borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--surface)' }}>
