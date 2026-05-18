@@ -2,25 +2,42 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import type { Deal, DealStage } from '@/types'
-import { formatCurrency, formatMultiple, stageClass } from '@/types'
-import { Plus, Search, SlidersHorizontal, ArrowUpDown } from 'lucide-react'
+import { formatCurrency, stageClass } from '@/types'
+import { Plus, Search, ChevronUp, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 import NewDealModal from '@/components/deals/NewDealModal'
-import { format } from 'date-fns'
+import UndoToast, { type UndoEntry } from '@/components/layout/UndoToast'
 
 const ALL_STAGES: DealStage[] = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
+type SortField = 'company_name'|'sector'|'geography'|'ebitda'|'revenue'|'stage'
+type SortDir = 'asc'|'desc'
+
+function SortHeader({ label, field, current, dir, onSort, align='left' }: {
+  label:string; field:SortField; current:SortField; dir:SortDir; onSort:(f:SortField)=>void; align?:'left'|'right'
+}) {
+  const active = current === field
+  return (
+    <div onClick={() => onSort(field)} style={{ display:'flex', alignItems:'center', gap:'4px', cursor:'pointer', userSelect:'none', justifyContent: align==='right'?'flex-end':'flex-start', color: active?'var(--accent)':'var(--text-muted)' }}>
+      {label}
+      {active ? (dir==='asc'?<ChevronUp size={11}/>:<ChevronDown size={11}/>) : <ChevronDown size={11} style={{opacity:0.3}}/>}
+    </div>
+  )
+}
 
 export default function DealsPage() {
   const [deals, setDeals] = useState<Deal[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [stageFilter, setStageFilter] = useState<string>('all')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [stageFilter, setStageFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('Active')
   const [showNewDeal, setShowNewDeal] = useState(false)
+  const [sortField, setSortField] = useState<SortField>('company_name')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [undoStack, setUndoStack] = useState<UndoEntry[]>([])
   const supabase = createClient()
 
   const fetchDeals = useCallback(async () => {
-    let query = supabase.from('deals').select('*').order('updated_at', { ascending: false })
+    let query = supabase.from('deals').select('*')
     if (statusFilter !== 'all') query = query.eq('status', statusFilter)
     if (stageFilter !== 'all') query = query.eq('stage', stageFilter)
     const { data } = await query
@@ -30,62 +47,64 @@ export default function DealsPage() {
 
   useEffect(() => { fetchDeals() }, [fetchDeals])
 
+  const handleSort = (field: SortField) => {
+    if (sortField === field) setSortDir(d => d==='asc'?'desc':'asc')
+    else { setSortField(field); setSortDir(field==='ebitda'||field==='revenue'?'desc':'asc') }
+  }
+
+  const pushUndo = (entry: Omit<UndoEntry,'id'>) => {
+    const id = Math.random().toString(36).slice(2)
+    setUndoStack(prev => [{ ...entry, id }, ...prev].slice(0,3))
+  }
+  const handleUndo = async (id: string) => {
+    const entry = undoStack.find(e => e.id===id)
+    if (entry) { await entry.undo(); fetchDeals() }
+    setUndoStack(prev => prev.filter(e => e.id!==id))
+  }
+  const handleDismiss = (id: string) => setUndoStack(prev => prev.filter(e => e.id!==id))
+
   const filtered = deals.filter(d =>
     d.company_name.toLowerCase().includes(search.toLowerCase()) ||
-    (d.sector || '').toLowerCase().includes(search.toLowerCase()) ||
-    (d.geography || '').toLowerCase().includes(search.toLowerCase())
+    (d.sector||'').toLowerCase().includes(search.toLowerCase()) ||
+    (d.geography||'').toLowerCase().includes(search.toLowerCase())
   )
 
-  const totalEbitda = filtered.reduce((s, d) => s + (d.ebitda || 0), 0)
+  const sorted = [...filtered].sort((a,b) => {
+    let av: any, bv: any
+    if (sortField==='company_name') { av=a.company_name; bv=b.company_name }
+    else if (sortField==='sector') { av=a.sector||''; bv=b.sector||'' }
+    else if (sortField==='geography') { av=a.geography||''; bv=b.geography||'' }
+    else if (sortField==='ebitda') { av=a.ebitda||0; bv=b.ebitda||0 }
+    else if (sortField==='revenue') { av=a.revenue||0; bv=b.revenue||0 }
+    else { av=a.stage; bv=b.stage }
+    const cmp = av>bv?1:av<bv?-1:0
+    return sortDir==='asc'?cmp:-cmp
+  })
+
+  const totalEbitda = filtered.reduce((s,d) => s+(d.ebitda||0), 0)
+  const hdr: React.CSSProperties = { fontSize:'11px', textTransform:'uppercase', letterSpacing:'0.06em', fontWeight:600 }
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <div style={{
-        padding: '20px 28px',
-        borderBottom: '1px solid var(--border)',
-        display: 'flex', alignItems: 'center', gap: '16px',
-        flexShrink: 0, background: 'var(--surface)',
-      }}>
-        <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Deals</h1>
-        <button className="btn btn-primary" onClick={() => setShowNewDeal(true)}>
-          <Plus size={14} /> New Deal
-        </button>
-        <div style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--text-muted)' }}>
-          {filtered.length} deal{filtered.length !== 1 ? 's' : ''}
-          {totalEbitda > 0 && ` · ${formatCurrency(totalEbitda)} total EBITDA`}
+    <div style={{ height:'100vh', display:'flex', flexDirection:'column' }}>
+      <div style={{ padding:'20px 28px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:'16px', flexShrink:0, background:'var(--surface)' }}>
+        <h1 style={{ fontSize:'20px', fontWeight:700 }}>Deals</h1>
+        <button className="btn btn-primary" onClick={() => setShowNewDeal(true)}><Plus size={14}/> New Deal</button>
+        <div style={{ marginLeft:'auto', fontSize:'12px', color:'var(--text-muted)' }}>
+          {filtered.length} deal{filtered.length!==1?'s':''}
+          {totalEbitda>0 && ` · ${formatCurrency(totalEbitda)} total EBITDA`}
         </div>
       </div>
 
-      {/* Filters */}
-      <div style={{
-        padding: '14px 28px',
-        borderBottom: '1px solid var(--border)',
-        display: 'flex',
-        gap: '12px',
-        alignItems: 'center',
-        flexShrink: 0,
-      }}>
-        <div style={{ position: 'relative', flex: '0 0 280px' }}>
-          <Search size={13} style={{
-            position: 'absolute', left: '10px', top: '50%',
-            transform: 'translateY(-50%)', color: 'var(--text-muted)'
-          }} />
-          <input
-            className="input"
-            placeholder="Search company, sector..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{ paddingLeft: '30px' }}
-          />
+      <div style={{ padding:'14px 28px', borderBottom:'1px solid var(--border)', display:'flex', gap:'12px', alignItems:'center', flexShrink:0 }}>
+        <div style={{ position:'relative', flex:'0 0 280px' }}>
+          <Search size={13} style={{ position:'absolute', left:'10px', top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)' }}/>
+          <input className="input" placeholder="Search company, sector..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft:'30px' }}/>
         </div>
-
-        <select className="select" style={{ width: '140px' }} value={stageFilter} onChange={e => setStageFilter(e.target.value)}>
+        <select className="select" style={{ width:'140px' }} value={stageFilter} onChange={e => setStageFilter(e.target.value)}>
           <option value="all">All Stages</option>
           {ALL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-
-        <select className="select" style={{ width: '120px' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+        <select className="select" style={{ width:'120px' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           <option value="Active">Active</option>
           <option value="Dead">Dead</option>
           <option value="Closed">Closed</option>
@@ -93,84 +112,36 @@ export default function DealsPage() {
         </select>
       </div>
 
-      {/* Table header */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '2fr 1fr 1fr 100px 110px 140px',
-        padding: '8px 28px',
-        fontSize: '11px',
-        color: 'var(--text-muted)',
-        textTransform: 'uppercase',
-        letterSpacing: '0.06em',
-        borderBottom: '1px solid var(--border)',
-        flexShrink: 0,
-      }}>
-        <div>Company</div>
-        <div>Sector</div>
-        <div>Geography</div>
-        <div style={{ textAlign: 'right' }}>EBITDA</div>
-        <div style={{ textAlign: 'right' }}>Revenue</div>
-        <div style={{ paddingLeft: '12px' }}>Stage</div>
+      <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr 100px 110px 140px', padding:'8px 28px', borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--surface)' }}>
+        {([['company_name','Company','left'],['sector','Sector','left'],['geography','Geography','left'],['ebitda','EBITDA','right'],['revenue','Revenue','right'],['stage','Stage','left']] as [SortField,string,'left'|'right'][]).map(([field,label,align]) => (
+          <div key={field} style={{ ...hdr, paddingLeft: field==='stage'?'12px':0 }}>
+            <SortHeader label={label} field={field} current={sortField} dir={sortDir} onSort={handleSort} align={align}/>
+          </div>
+        ))}
       </div>
 
-      {/* Table rows */}
-      <div style={{ flex: 1, overflow: 'auto' }}>
-        {loading ? (
-          <div style={{ padding: '40px 28px', color: 'var(--text-muted)' }}>Loading...</div>
-        ) : filtered.length === 0 ? (
-          <div style={{ padding: '60px 28px', textAlign: 'center', color: 'var(--text-muted)' }}>
-            No deals found.
-          </div>
-        ) : filtered.map(deal => (
-          <Link
-            key={deal.id}
-            href={`/deals/${deal.id}`}
-            style={{ textDecoration: 'none', color: 'inherit' }}
-          >
-            <div
-              className="table-row"
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '2fr 1fr 1fr 100px 110px 140px',
-                padding: '12px 28px',
-              }}
-            >
+      <div style={{ flex:1, overflow:'auto' }}>
+        {loading ? <div style={{ padding:'40px 28px', color:'var(--text-muted)' }}>Loading...</div>
+        : sorted.length===0 ? <div style={{ padding:'60px 28px', textAlign:'center', color:'var(--text-muted)' }}>No deals found.</div>
+        : sorted.map(deal => (
+          <Link key={deal.id} href={`/deals/${deal.id}`} style={{ textDecoration:'none', color:'inherit' }}>
+            <div className="table-row" style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr 100px 110px 140px', padding:'12px 28px' }}>
               <div>
-                <div style={{ fontWeight: 500, color: 'var(--text-primary)', fontSize: '13px' }}>
-                  {deal.company_name}
-                </div>
-                {deal.source_notes && (
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    {deal.source_notes}
-                  </div>
-                )}
+                <div style={{ fontWeight:500, color:'var(--text-primary)', fontSize:'13px' }}>{deal.company_name}</div>
+                {deal.source_notes && <div style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'2px' }}>{deal.source_notes}</div>}
               </div>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', alignSelf: 'center' }}>
-                {deal.sector || '—'}
-              </div>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', alignSelf: 'center' }}>
-                {deal.geography || '—'}
-              </div>
-              <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--accent)', alignSelf: 'center' }}>
-                {formatCurrency(deal.ebitda)}
-              </div>
-              <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)', alignSelf: 'center' }}>
-                {formatCurrency(deal.revenue)}
-              </div>
-              <div style={{ alignSelf: 'center', paddingLeft: '12px' }}>
-                <span className={`badge ${stageClass(deal.stage)}`}>{deal.stage}</span>
-              </div>
+              <div style={{ fontSize:'12px', color:'var(--text-secondary)', alignSelf:'center' }}>{deal.sector||'—'}</div>
+              <div style={{ fontSize:'12px', color:'var(--text-secondary)', alignSelf:'center' }}>{deal.geography||'—'}</div>
+              <div style={{ textAlign:'right', fontFamily:'var(--font-mono)', fontSize:'12px', color:'var(--accent)', alignSelf:'center' }}>{formatCurrency(deal.ebitda)}</div>
+              <div style={{ textAlign:'right', fontFamily:'var(--font-mono)', fontSize:'12px', color:'var(--text-secondary)', alignSelf:'center' }}>{formatCurrency(deal.revenue)}</div>
+              <div style={{ alignSelf:'center', paddingLeft:'12px' }}><span className={`badge ${stageClass(deal.stage)}`}>{deal.stage}</span></div>
             </div>
           </Link>
         ))}
       </div>
 
-      {showNewDeal && (
-        <NewDealModal
-          onClose={() => setShowNewDeal(false)}
-          onCreated={() => { setShowNewDeal(false); fetchDeals() }}
-        />
-      )}
+      {showNewDeal && <NewDealModal onClose={() => setShowNewDeal(false)} onCreated={() => { setShowNewDeal(false); fetchDeals() }}/>}
+      <UndoToast stack={undoStack} onUndo={handleUndo} onDismiss={handleDismiss}/>
     </div>
   )
 }
