@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { formatCurrency } from '@/types'
+import { formatCurrencyFull as formatCurrency } from '@/types'
 import { ArrowLeft, Plus, X, Check, Building2, Edit2, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -184,7 +184,6 @@ export default function InvestorPage() {
               {investor.first_name} {investor.last_name}
             </h1>
           )}
-          <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '999px', background: 'var(--surface-2)', color: 'var(--text-muted)' }}>{investor.investor_type}</span>
           <button onClick={() => setShowDeleteConfirm(true)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--red)' }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}>
@@ -262,7 +261,7 @@ export default function InvestorPage() {
                   {investments.map(inv => (
                     <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '13px', paddingBottom: '8px', borderBottom: '1px solid var(--border-subtle)' }}>
                       <div>
-                        <div style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{inv.portfolio_company?.name || inv.deal?.company_name || 'Unknown'}</div>
+                        <div style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{inv.portfolio_company?.name || inv.deal?.company_name || 'Evolution Strategy Investments, LLC'}</div>
                         {inv.entity?.name && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>via {inv.entity.name}</div>}
                       </div>
                       <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent)', fontWeight: 600 }}>{formatCurrency(inv.invested_amount)}</span>
@@ -394,7 +393,7 @@ export default function InvestorPage() {
             : investments.map(inv => (
               <div key={inv.id} className="card-2" style={{ padding: '14px 16px', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: 500 }}>{inv.portfolio_company?.name || inv.deal?.company_name || 'Unknown'}</div>
+                  <div style={{ fontSize: '13px', fontWeight: 500 }}>{inv.portfolio_company?.name || inv.deal?.company_name || 'Evolution Strategy Investments, LLC'}</div>
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
                     {inv.entity?.name ? `via ${inv.entity.name}` : 'Direct'}
                     {inv.investment_date ? ` · ${new Date(inv.investment_date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}` : ''}
@@ -426,7 +425,7 @@ export default function InvestorPage() {
               <div key={c.id} className="card-2" style={{ padding: '14px 16px', marginBottom: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div>
-                    <div style={{ fontSize: '13px', fontWeight: 500 }}>{c.raise?.name || c.raise?.deal?.company_name || 'Unknown Raise'}</div>
+                    <div style={{ fontSize: '13px', fontWeight: 500 }}>{c.raise?.name || c.raise?.deal?.company_name || 'Evolution Strategy Investments, LLC'}</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
                       {c.entity?.name ? `via ${c.entity.name}` : 'Direct'} · {c.commitment_type}
                     </div>
