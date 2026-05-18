@@ -140,7 +140,22 @@ export default function IntakePage() {
       phone: c.addForm.phone || null,
       contact_type: contactType,
     }).select().single()
-    if (data) updateContact(idx, { crmContact: data, showAddForm: false, showSearch: false })
+    if (data) {
+      updateContact(idx, { crmContact: data, showAddForm: false, showSearch: false })
+      // Sync to Constant Contact (best-effort, non-blocking)
+      fetch('/api/constant-contact/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          first_name: c.addForm.first_name,
+          last_name: c.addForm.last_name,
+          email: c.addForm.email || null,
+          phone: c.addForm.phone || null,
+          firm: c.addForm.firm || null,
+          title: c.addForm.title || null,
+        }),
+      }).catch(() => {})
+    }
   }
 
   const onDrop = useCallback(async (files: File[]) => {
@@ -151,13 +166,24 @@ export default function IntakePage() {
     setError(null)
 
     try {
-      const base64 = await fileToBase64(file)
+      // Upload directly to Supabase Storage to bypass Vercel's 4.5MB body limit
+      const storagePath = `${Date.now()}-${file.name}`
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('intake-temp')
+        .upload(storagePath, file, { contentType: 'application/pdf', upsert: false })
+      if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`)
+
+      const { data: urlData } = await supabase.storage
+        .from('intake-temp')
+        .createSignedUrl(uploadData.path, 3600)
+      if (!urlData?.signedUrl) throw new Error('Could not generate signed URL')
+
       setStage('parsing')
 
       const res = await fetch('/api/intake/parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base64, fileName: file.name }),
+        body: JSON.stringify({ url: urlData.signedUrl, storagePath: uploadData.path, fileName: file.name }),
       })
 
       if (!res.ok) throw new Error(await res.text())

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { createClient } from '@supabase/supabase-js'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -32,9 +33,24 @@ Rules:
 - For each contact, role must be exactly one of the values listed above`
 
 export async function POST(req: NextRequest) {
+  let storagePath: string | null = null
   try {
-    const { base64, fileName } = await req.json()
-    if (!base64) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
+    const body = await req.json()
+    const { url, storagePath: sp, fileName, base64: directBase64 } = body
+    storagePath = sp || null
+
+    if (!url && !directBase64) {
+      return NextResponse.json({ error: 'No file provided' }, { status: 400 })
+    }
+
+    // Fetch PDF from Supabase Storage signed URL (avoids Vercel payload limit)
+    let base64 = directBase64
+    if (url) {
+      const fileRes = await fetch(url)
+      if (!fileRes.ok) throw new Error(`Failed to fetch PDF: ${fileRes.status}`)
+      const buffer = await fileRes.arrayBuffer()
+      base64 = Buffer.from(buffer).toString('base64')
+    }
 
     const response = await anthropic.messages.create({
       model: 'claude-opus-4-7',
@@ -57,8 +73,32 @@ export async function POST(req: NextRequest) {
       .trim()
 
     const parsed = JSON.parse(text)
+
+    // Clean up temp storage file
+    if (storagePath) {
+      try {
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!
+        )
+        await supabase.storage.from('intake-temp').remove([storagePath])
+      } catch {
+        // Non-fatal — file will remain in storage but doesn't affect the result
+      }
+    }
+
     return NextResponse.json(parsed)
   } catch (err: any) {
+    // Attempt cleanup even on error
+    if (storagePath) {
+      try {
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!
+        )
+        await supabase.storage.from('intake-temp').remove([storagePath])
+      } catch { /* ignore */ }
+    }
     console.error('CIM parse error:', err)
     return NextResponse.json({ error: err.message || 'Parse failed' }, { status: 500 })
   }
