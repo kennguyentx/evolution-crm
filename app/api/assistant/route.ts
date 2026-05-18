@@ -579,11 +579,20 @@ export async function POST(req: NextRequest) {
 
       // Execute read tools in parallel
       const toolResults = await Promise.all(
-        toolUses.map(async (t: any) => ({
-          type: 'tool_result' as const,
-          tool_use_id: t.id,
-          content: JSON.stringify(await executeTool(t.name, t.input)),
-        }))
+        toolUses.map(async (t: any) => {
+          let content: string
+          try {
+            const result = await executeTool(t.name, t.input)
+            content = JSON.stringify(result)
+          } catch (err: any) {
+            content = JSON.stringify({ error: err.message })
+          }
+          return {
+            type: 'tool_result' as const,
+            tool_use_id: t.id,
+            content,
+          }
+        })
       )
 
       currentMessages = [
