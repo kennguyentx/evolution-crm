@@ -128,7 +128,6 @@ export default function NotesPage() {
     if (!text.trim()) { setDetectedContacts([]); setDetectedDeals([]); return }
     const lower = text.toLowerCase()
 
-    // Contacts: scan consecutive word pairs
     const words = text.trim().split(/\s+/).filter(w => w.length > 1)
     const pairs = words.slice(0, -1).map((w, i) => ({ first: w, last: words[i + 1] }))
     const foundContacts: { item: any; accepted: boolean }[] = []
@@ -141,25 +140,23 @@ export default function NotesPage() {
         .ilike('last_name', pair.last)
         .limit(1)
       if (data?.[0] && !foundContactIds.has(data[0].id)) {
-        // preserve accepted state if already detected
-        const existing = detectedContacts.find(d => d.item.id === data[0].id)
-        foundContacts.push({ item: data[0], accepted: existing?.accepted ?? false })
+        foundContacts.push({ item: data[0], accepted: true })
         foundContactIds.add(data[0].id)
       }
     }
     setDetectedContacts(foundContacts)
+    if (foundContacts[0]) setAddForm(p => ({ ...p, contact_id: foundContacts[0].item.id, contact_label: `${foundContacts[0].item.first_name} ${foundContacts[0].item.last_name}${foundContacts[0].item.firm ? ` · ${foundContacts[0].item.firm}` : ''}` }))
 
-    // Deals: check each active deal company name against the text
     const foundDeals: { item: any; accepted: boolean }[] = []
     const foundDealIds = new Set<string>()
     for (const deal of deals) {
       if (deal.company_name.length > 3 && lower.includes(deal.company_name.toLowerCase()) && !foundDealIds.has(deal.id)) {
-        const existing = detectedDeals.find(d => d.item.id === deal.id)
-        foundDeals.push({ item: deal, accepted: existing?.accepted ?? false })
+        foundDeals.push({ item: deal, accepted: true })
         foundDealIds.add(deal.id)
       }
     }
     setDetectedDeals(foundDeals)
+    if (foundDeals[0]) setAddForm(p => ({ ...p, deal_id: foundDeals[0].item.id }))
   }, [supabase, deals])
 
   const handleRawTextChange = (text: string) => {
@@ -184,24 +181,24 @@ export default function NotesPage() {
         .ilike('last_name', pair.last)
         .limit(1)
       if (data?.[0] && !foundContactIds.has(data[0].id)) {
-        const existing = editDetectedContacts.find(d => d.item.id === data[0].id)
-        foundContacts.push({ item: data[0], accepted: existing?.accepted ?? false })
+        foundContacts.push({ item: data[0], accepted: true })
         foundContactIds.add(data[0].id)
       }
     }
     setEditDetectedContacts(foundContacts)
+    if (foundContacts[0]) setEditForm(p => ({ ...p, contact_id: foundContacts[0].item.id, contact_label: `${foundContacts[0].item.first_name} ${foundContacts[0].item.last_name}${foundContacts[0].item.firm ? ` · ${foundContacts[0].item.firm}` : ''}` }))
 
     const foundDeals: { item: any; accepted: boolean }[] = []
     const foundDealIds = new Set<string>()
     for (const deal of deals) {
       if (deal.company_name.length > 3 && lower.includes(deal.company_name.toLowerCase()) && !foundDealIds.has(deal.id)) {
-        const existing = editDetectedDeals.find(d => d.item.id === deal.id)
-        foundDeals.push({ item: deal, accepted: existing?.accepted ?? false })
+        foundDeals.push({ item: deal, accepted: true })
         foundDealIds.add(deal.id)
       }
     }
     setEditDetectedDeals(foundDeals)
-  }, [supabase, deals, editDetectedContacts, editDetectedDeals])
+    if (foundDeals[0]) setEditForm(p => ({ ...p, deal_id: foundDeals[0].item.id }))
+  }, [supabase, deals])
 
   const handleEditRawTextChange = (text: string) => {
     setEditForm(p => ({ ...p, raw_text: text }))
@@ -330,22 +327,16 @@ export default function NotesPage() {
                 {(detectedContacts.length > 0 || detectedDeals.length > 0) && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Detected:</span>
-                    {detectedDeals.map(({ item: d, accepted }) => (
-                      <span key={d.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 6px 2px 8px', borderRadius: '999px', background: accepted ? 'var(--accent-muted)' : 'var(--surface-2)', color: accepted ? 'var(--accent)' : 'var(--text-secondary)', border: `1px solid ${accepted ? 'var(--accent)' : 'var(--border)'}` }}>
+                    {detectedDeals.map(({ item: d }) => (
+                      <span key={d.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 6px 2px 8px', borderRadius: '999px', background: 'var(--accent-muted)', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
                         {d.company_name}
-                        {!accepted && (
-                          <button onClick={() => { setDetectedDeals(p => p.map(x => x.item.id === d.id ? { ...x, accepted: true } : x)); setAddForm(p => ({ ...p, deal_id: d.id })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--green)' }} title="Accept"><Check size={10} /></button>
-                        )}
-                        <button onClick={() => { setDetectedDeals(p => p.filter(x => x.item.id !== d.id)); if (addForm.deal_id === d.id) setAddForm(p => ({ ...p, deal_id: '' })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--text-muted)' }} title="Remove"><X size={10} /></button>
+                        <button onClick={() => { setDetectedDeals(p => p.filter(x => x.item.id !== d.id)); setAddForm(p => ({ ...p, deal_id: '' })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--accent)' }} title="Remove"><X size={10} /></button>
                       </span>
                     ))}
-                    {detectedContacts.map(({ item: c, accepted }) => (
-                      <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 6px 2px 8px', borderRadius: '999px', background: accepted ? 'var(--surface)' : 'var(--surface-2)', color: accepted ? 'var(--text-primary)' : 'var(--text-secondary)', border: `1px solid ${accepted ? 'var(--border)' : 'var(--border-subtle)'}`, fontWeight: accepted ? 500 : 400 }}>
+                    {detectedContacts.map(({ item: c }) => (
+                      <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 6px 2px 8px', borderRadius: '999px', background: 'var(--surface)', color: 'var(--text-primary)', border: '1px solid var(--border)', fontWeight: 500 }}>
                         {c.first_name} {c.last_name}{c.firm ? ` · ${c.firm}` : ''}
-                        {!accepted && (
-                          <button onClick={() => { setDetectedContacts(p => p.map(x => x.item.id === c.id ? { ...x, accepted: true } : x)); setAddForm(p => ({ ...p, contact_id: c.id, contact_label: `${c.first_name} ${c.last_name}${c.firm ? ` · ${c.firm}` : ''}` })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--green)' }} title="Accept"><Check size={10} /></button>
-                        )}
-                        <button onClick={() => { setDetectedContacts(p => p.filter(x => x.item.id !== c.id)); if (addForm.contact_id === c.id) setAddForm(p => ({ ...p, contact_id: '', contact_label: '' })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--text-muted)' }} title="Remove"><X size={10} /></button>
+                        <button onClick={() => { setDetectedContacts(p => p.filter(x => x.item.id !== c.id)); setAddForm(p => ({ ...p, contact_id: '', contact_label: '' })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--text-muted)' }} title="Remove"><X size={10} /></button>
                       </span>
                     ))}
                   </div>
@@ -540,22 +531,16 @@ export default function NotesPage() {
                             {(editDetectedContacts.length > 0 || editDetectedDeals.length > 0) && (
                               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
                                 <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Detected:</span>
-                                {editDetectedDeals.map(({ item: d, accepted }) => (
-                                  <span key={d.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 6px 2px 8px', borderRadius: '999px', background: accepted ? 'var(--accent-muted)' : 'var(--surface-2)', color: accepted ? 'var(--accent)' : 'var(--text-secondary)', border: `1px solid ${accepted ? 'var(--accent)' : 'var(--border)'}` }}>
+                                {editDetectedDeals.map(({ item: d }) => (
+                                  <span key={d.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 6px 2px 8px', borderRadius: '999px', background: 'var(--accent-muted)', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
                                     {d.company_name}
-                                    {!accepted && (
-                                      <button onClick={() => { setEditDetectedDeals(p => p.map(x => x.item.id === d.id ? { ...x, accepted: true } : x)); setEditForm(p => ({ ...p, deal_id: d.id })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--green)' }} title="Accept"><Check size={10} /></button>
-                                    )}
-                                    <button onClick={() => { setEditDetectedDeals(p => p.filter(x => x.item.id !== d.id)); if (editForm.deal_id === d.id) setEditForm(p => ({ ...p, deal_id: '' })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--text-muted)' }} title="Remove"><X size={10} /></button>
+                                    <button onClick={() => { setEditDetectedDeals(p => p.filter(x => x.item.id !== d.id)); setEditForm(p => ({ ...p, deal_id: '' })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--accent)' }} title="Remove"><X size={10} /></button>
                                   </span>
                                 ))}
-                                {editDetectedContacts.map(({ item: c, accepted }) => (
-                                  <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 6px 2px 8px', borderRadius: '999px', background: accepted ? 'var(--surface)' : 'var(--surface-2)', color: accepted ? 'var(--text-primary)' : 'var(--text-secondary)', border: `1px solid ${accepted ? 'var(--border)' : 'var(--border-subtle)'}`, fontWeight: accepted ? 500 : 400 }}>
+                                {editDetectedContacts.map(({ item: c }) => (
+                                  <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 6px 2px 8px', borderRadius: '999px', background: 'var(--surface)', color: 'var(--text-primary)', border: '1px solid var(--border)', fontWeight: 500 }}>
                                     {c.first_name} {c.last_name}{c.firm ? ` · ${c.firm}` : ''}
-                                    {!accepted && (
-                                      <button onClick={() => { setEditDetectedContacts(p => p.map(x => x.item.id === c.id ? { ...x, accepted: true } : x)); setEditForm(p => ({ ...p, contact_id: c.id, contact_label: `${c.first_name} ${c.last_name}${c.firm ? ` · ${c.firm}` : ''}` })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--green)' }} title="Accept"><Check size={10} /></button>
-                                    )}
-                                    <button onClick={() => { setEditDetectedContacts(p => p.filter(x => x.item.id !== c.id)); if (editForm.contact_id === c.id) setEditForm(p => ({ ...p, contact_id: '', contact_label: '' })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--text-muted)' }} title="Remove"><X size={10} /></button>
+                                    <button onClick={() => { setEditDetectedContacts(p => p.filter(x => x.item.id !== c.id)); setEditForm(p => ({ ...p, contact_id: '', contact_label: '' })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--text-muted)' }} title="Remove"><X size={10} /></button>
                                   </span>
                                 ))}
                               </div>
