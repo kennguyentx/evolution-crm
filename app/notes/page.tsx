@@ -54,11 +54,15 @@ export default function NotesPage() {
   const [dealFilter, setDealFilter] = useState('')
   const [deals, setDeals] = useState<{ id: string; company_name: string }[]>([])
   const [showAddForm, setShowAddForm] = useState(false)
-  const [addForm, setAddForm] = useState({ note_date: new Date().toISOString().split('T')[0], raw_text: '', logged_by: 'Ken' })
+  const [addForm, setAddForm] = useState({ note_date: new Date().toISOString().split('T')[0], raw_text: '', logged_by: 'Ken', deal_id: '', contact_id: '', contact_label: '' })
+  const [addContactSearch, setAddContactSearch] = useState('')
+  const [addContactResults, setAddContactResults] = useState<any[]>([])
   const [saving, setSaving] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState<{ note_date: string; raw_text: string; summary: string; next_steps: string; logged_by: string }>({ note_date: '', raw_text: '', summary: '', next_steps: '', logged_by: '' })
+  const [editForm, setEditForm] = useState<{ note_date: string; raw_text: string; summary: string; next_steps: string; logged_by: string; deal_id: string; contact_id: string; contact_label: string }>({ note_date: '', raw_text: '', summary: '', next_steps: '', logged_by: '', deal_id: '', contact_id: '', contact_label: '' })
+  const [editContactSearch, setEditContactSearch] = useState('')
+  const [editContactResults, setEditContactResults] = useState<any[]>([])
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
   const [detectedContacts, setDetectedContacts] = useState<{ item: any; accepted: boolean }[]>([])
@@ -205,6 +209,16 @@ export default function NotesPage() {
     editDetectTimer.current = setTimeout(() => detectEditMentions(text), 600)
   }
 
+  const searchContacts = async (q: string, setter: (r: any[]) => void) => {
+    if (!q.trim()) { setter([]); return }
+    const { data } = await supabase
+      .from('contacts')
+      .select('id, first_name, last_name, firm')
+      .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,firm.ilike.%${q}%`)
+      .limit(6)
+    setter(data ?? [])
+  }
+
   const addNote = async () => {
     if (!addForm.raw_text.trim()) return
     setSaving(true)
@@ -215,14 +229,14 @@ export default function NotesPage() {
       source: 'manual',
       note_date: addForm.note_date,
     }
-    const acceptedContact = detectedContacts.find(d => d.accepted)
-    const acceptedDeal = detectedDeals.find(d => d.accepted)
-    if (acceptedContact) payload.contact_id = acceptedContact.item.id
-    if (acceptedDeal) payload.deal_id = acceptedDeal.item.id
+    if (addForm.deal_id) payload.deal_id = addForm.deal_id
+    if (addForm.contact_id) payload.contact_id = addForm.contact_id
     const { data } = await supabase.from('notes').insert(payload)
       .select(`*, deal:deals(company_name), contact:contacts(first_name, last_name, firm), raise:capital_raises(name), capital_contact:capital_contacts(firm, contact_name)`).single()
     if (data) setNotes(prev => [data, ...prev])
-    setAddForm({ note_date: new Date().toISOString().split('T')[0], raw_text: '', logged_by: 'Ken' })
+    setAddForm({ note_date: new Date().toISOString().split('T')[0], raw_text: '', logged_by: 'Ken', deal_id: '', contact_id: '', contact_label: '' })
+    setAddContactSearch('')
+    setAddContactResults([])
     setDetectedContacts([])
     setDetectedDeals([])
     setShowAddForm(false)
@@ -242,13 +256,16 @@ export default function NotesPage() {
       summary: note.summary ?? '',
       next_steps: note.next_steps ?? '',
       logged_by: note.logged_by ?? '',
+      deal_id: note.deal_id ?? '',
+      contact_id: note.contact_id ?? '',
+      contact_label: note.contact ? `${note.contact.first_name} ${note.contact.last_name}${note.contact.firm ? ` · ${note.contact.firm}` : ''}` : '',
     })
+    setEditContactSearch('')
+    setEditContactResults([])
     setEditError(null)
     setExpandedId(note.id)
-    // Pre-populate existing links as accepted chips
     setEditDetectedContacts(note.contact && note.contact_id ? [{ item: { id: note.contact_id, first_name: note.contact.first_name, last_name: note.contact.last_name, firm: note.contact.firm }, accepted: true }] : [])
     setEditDetectedDeals(note.deal && note.deal_id ? [{ item: { id: note.deal_id, company_name: note.deal.company_name }, accepted: true }] : [])
-    // Also scan text for additional mentions
     setTimeout(() => detectEditMentions(note.raw_text), 0)
   }
 
@@ -257,8 +274,6 @@ export default function NotesPage() {
     setEditSaving(true)
     setEditError(null)
     try {
-      const acceptedContact = editDetectedContacts.find(d => d.accepted)
-      const acceptedDeal = editDetectedDeals.find(d => d.accepted)
       const res = await fetch('/api/notes', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -269,8 +284,8 @@ export default function NotesPage() {
           summary: editForm.summary || null,
           next_steps: editForm.next_steps || null,
           logged_by: editForm.logged_by || null,
-          contact_id: acceptedContact ? acceptedContact.item.id : null,
-          deal_id: acceptedDeal ? acceptedDeal.item.id : null,
+          deal_id: editForm.deal_id || null,
+          contact_id: editForm.contact_id || null,
         }),
       })
       const json = await res.json()
@@ -303,7 +318,7 @@ export default function NotesPage() {
       {/* Add form */}
       {showAddForm && (
         <div style={{ padding: '16px 28px', borderBottom: '1px solid var(--border)', background: 'var(--surface-2)', flexShrink: 0 }}>
-          <div style={{ maxWidth: '700px' }}>
+          <div style={{ maxWidth: '760px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 120px', gap: '10px', marginBottom: '10px' }}>
               <div>
                 <label className="label">Date</label>
@@ -319,18 +334,18 @@ export default function NotesPage() {
                       <span key={d.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 6px 2px 8px', borderRadius: '999px', background: accepted ? 'var(--accent-muted)' : 'var(--surface-2)', color: accepted ? 'var(--accent)' : 'var(--text-secondary)', border: `1px solid ${accepted ? 'var(--accent)' : 'var(--border)'}` }}>
                         {d.company_name}
                         {!accepted && (
-                          <button onClick={() => setDetectedDeals(p => p.map(x => x.item.id === d.id ? { ...x, accepted: true } : x))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--green)' }} title="Accept"><Check size={10} /></button>
+                          <button onClick={() => { setDetectedDeals(p => p.map(x => x.item.id === d.id ? { ...x, accepted: true } : x)); setAddForm(p => ({ ...p, deal_id: d.id })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--green)' }} title="Accept"><Check size={10} /></button>
                         )}
-                        <button onClick={() => setDetectedDeals(p => p.filter(x => x.item.id !== d.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--text-muted)' }} title="Remove"><X size={10} /></button>
+                        <button onClick={() => { setDetectedDeals(p => p.filter(x => x.item.id !== d.id)); if (addForm.deal_id === d.id) setAddForm(p => ({ ...p, deal_id: '' })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--text-muted)' }} title="Remove"><X size={10} /></button>
                       </span>
                     ))}
                     {detectedContacts.map(({ item: c, accepted }) => (
                       <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 6px 2px 8px', borderRadius: '999px', background: accepted ? 'var(--surface)' : 'var(--surface-2)', color: accepted ? 'var(--text-primary)' : 'var(--text-secondary)', border: `1px solid ${accepted ? 'var(--border)' : 'var(--border-subtle)'}`, fontWeight: accepted ? 500 : 400 }}>
                         {c.first_name} {c.last_name}{c.firm ? ` · ${c.firm}` : ''}
                         {!accepted && (
-                          <button onClick={() => setDetectedContacts(p => p.map(x => x.item.id === c.id ? { ...x, accepted: true } : x))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--green)' }} title="Accept"><Check size={10} /></button>
+                          <button onClick={() => { setDetectedContacts(p => p.map(x => x.item.id === c.id ? { ...x, accepted: true } : x)); setAddForm(p => ({ ...p, contact_id: c.id, contact_label: `${c.first_name} ${c.last_name}${c.firm ? ` · ${c.firm}` : ''}` })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--green)' }} title="Accept"><Check size={10} /></button>
                         )}
-                        <button onClick={() => setDetectedContacts(p => p.filter(x => x.item.id !== c.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--text-muted)' }} title="Remove"><X size={10} /></button>
+                        <button onClick={() => { setDetectedContacts(p => p.filter(x => x.item.id !== c.id)); if (addForm.contact_id === c.id) setAddForm(p => ({ ...p, contact_id: '', contact_label: '' })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--text-muted)' }} title="Remove"><X size={10} /></button>
                       </span>
                     ))}
                   </div>
@@ -341,8 +356,40 @@ export default function NotesPage() {
                 <input className="input" value={addForm.logged_by} onChange={e => setAddForm(p => ({...p, logged_by: e.target.value}))} />
               </div>
             </div>
+            {/* Link row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+              <div>
+                <label className="label">Link to Deal</label>
+                <select className="select" style={{ width: '100%', fontSize: '12px' }} value={addForm.deal_id} onChange={e => setAddForm(p => ({ ...p, deal_id: e.target.value }))}>
+                  <option value="">— none —</option>
+                  {deals.map(d => <option key={d.id} value={d.id}>{d.company_name}</option>)}
+                </select>
+              </div>
+              <div style={{ position: 'relative' }}>
+                <label className="label">Link to Contact</label>
+                {addForm.contact_id ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-primary)', flex: 1 }}>{addForm.contact_label}</span>
+                    <button onClick={() => { setAddForm(p => ({ ...p, contact_id: '', contact_label: '' })); setAddContactSearch(''); setAddContactResults([]) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px' }}><X size={12} /></button>
+                  </div>
+                ) : (
+                  <>
+                    <input className="input" style={{ fontSize: '12px' }} placeholder="Search by name or firm…" value={addContactSearch} onChange={e => { setAddContactSearch(e.target.value); searchContacts(e.target.value, setAddContactResults) }} />
+                    {addContactResults.length > 0 && (
+                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', zIndex: 50, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                        {addContactResults.map(c => (
+                          <div key={c.id} onClick={() => { setAddForm(p => ({ ...p, contact_id: c.id, contact_label: `${c.first_name} ${c.last_name}${c.firm ? ` · ${c.firm}` : ''}` })); setAddContactSearch(''); setAddContactResults([]) }} style={{ padding: '8px 12px', fontSize: '12px', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)' }} className="table-row">
+                            <span style={{ fontWeight: 500 }}>{c.first_name} {c.last_name}</span>{c.firm && <span style={{ color: 'var(--text-muted)', marginLeft: '6px' }}>{c.firm}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="btn btn-ghost" onClick={() => { setShowAddForm(false); setDetectedContacts([]); setDetectedDeals([]) }}>Cancel</button>
+              <button className="btn btn-ghost" onClick={() => { setShowAddForm(false); setDetectedContacts([]); setDetectedDeals([]); setAddContactSearch(''); setAddContactResults([]) }}>Cancel</button>
               <button className="btn btn-primary" onClick={addNote} disabled={saving || !addForm.raw_text.trim()}>
                 <Check size={13} /> {saving ? 'Saving…' : 'Save'}
               </button>
@@ -497,26 +544,58 @@ export default function NotesPage() {
                                   <span key={d.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 6px 2px 8px', borderRadius: '999px', background: accepted ? 'var(--accent-muted)' : 'var(--surface-2)', color: accepted ? 'var(--accent)' : 'var(--text-secondary)', border: `1px solid ${accepted ? 'var(--accent)' : 'var(--border)'}` }}>
                                     {d.company_name}
                                     {!accepted && (
-                                      <button onClick={() => setEditDetectedDeals(p => p.map(x => x.item.id === d.id ? { ...x, accepted: true } : x))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--green)' }} title="Accept"><Check size={10} /></button>
+                                      <button onClick={() => { setEditDetectedDeals(p => p.map(x => x.item.id === d.id ? { ...x, accepted: true } : x)); setEditForm(p => ({ ...p, deal_id: d.id })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--green)' }} title="Accept"><Check size={10} /></button>
                                     )}
-                                    <button onClick={() => setEditDetectedDeals(p => p.filter(x => x.item.id !== d.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--text-muted)' }} title="Remove"><X size={10} /></button>
+                                    <button onClick={() => { setEditDetectedDeals(p => p.filter(x => x.item.id !== d.id)); if (editForm.deal_id === d.id) setEditForm(p => ({ ...p, deal_id: '' })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--text-muted)' }} title="Remove"><X size={10} /></button>
                                   </span>
                                 ))}
                                 {editDetectedContacts.map(({ item: c, accepted }) => (
                                   <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 6px 2px 8px', borderRadius: '999px', background: accepted ? 'var(--surface)' : 'var(--surface-2)', color: accepted ? 'var(--text-primary)' : 'var(--text-secondary)', border: `1px solid ${accepted ? 'var(--border)' : 'var(--border-subtle)'}`, fontWeight: accepted ? 500 : 400 }}>
                                     {c.first_name} {c.last_name}{c.firm ? ` · ${c.firm}` : ''}
                                     {!accepted && (
-                                      <button onClick={() => setEditDetectedContacts(p => p.map(x => x.item.id === c.id ? { ...x, accepted: true } : x))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--green)' }} title="Accept"><Check size={10} /></button>
+                                      <button onClick={() => { setEditDetectedContacts(p => p.map(x => x.item.id === c.id ? { ...x, accepted: true } : x)); setEditForm(p => ({ ...p, contact_id: c.id, contact_label: `${c.first_name} ${c.last_name}${c.firm ? ` · ${c.firm}` : ''}` })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--green)' }} title="Accept"><Check size={10} /></button>
                                     )}
-                                    <button onClick={() => setEditDetectedContacts(p => p.filter(x => x.item.id !== c.id))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--text-muted)' }} title="Remove"><X size={10} /></button>
+                                    <button onClick={() => { setEditDetectedContacts(p => p.filter(x => x.item.id !== c.id)); if (editForm.contact_id === c.id) setEditForm(p => ({ ...p, contact_id: '', contact_label: '' })) }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px', lineHeight: 1, color: 'var(--text-muted)' }} title="Remove"><X size={10} /></button>
                                   </span>
                                 ))}
                               </div>
                             )}
                           </div>
+                          {/* Link row */}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                            <div>
+                              <label className="label">Link to Deal</label>
+                              <select className="select" style={{ width: '100%', fontSize: '12px' }} value={editForm.deal_id} onChange={e => setEditForm(p => ({ ...p, deal_id: e.target.value }))}>
+                                <option value="">— none —</option>
+                                {deals.map(d => <option key={d.id} value={d.id}>{d.company_name}</option>)}
+                              </select>
+                            </div>
+                            <div style={{ position: 'relative' }}>
+                              <label className="label">Link to Contact</label>
+                              {editForm.contact_id ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ fontSize: '12px', color: 'var(--text-primary)', flex: 1 }}>{editForm.contact_label}</span>
+                                  <button onClick={() => { setEditForm(p => ({ ...p, contact_id: '', contact_label: '' })); setEditContactSearch(''); setEditContactResults([]) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px' }}><X size={12} /></button>
+                                </div>
+                              ) : (
+                                <>
+                                  <input className="input" style={{ fontSize: '12px' }} placeholder="Search by name or firm…" value={editContactSearch} onChange={e => { setEditContactSearch(e.target.value); searchContacts(e.target.value, setEditContactResults) }} />
+                                  {editContactResults.length > 0 && (
+                                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', zIndex: 50, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                                      {editContactResults.map(c => (
+                                        <div key={c.id} onClick={() => { setEditForm(p => ({ ...p, contact_id: c.id, contact_label: `${c.first_name} ${c.last_name}${c.firm ? ` · ${c.firm}` : ''}` })); setEditContactSearch(''); setEditContactResults([]) }} style={{ padding: '8px 12px', fontSize: '12px', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)' }} className="table-row">
+                                          <span style={{ fontWeight: 500 }}>{c.first_name} {c.last_name}</span>{c.firm && <span style={{ color: 'var(--text-muted)', marginLeft: '6px' }}>{c.firm}</span>}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </div>
                           {editError && <div style={{ fontSize: '11px', color: 'var(--red)', marginBottom: '8px' }}>{editError}</div>}
                           <div style={{ display: 'flex', gap: '8px' }}>
-                            <button className="btn btn-ghost" style={{ fontSize: '11px' }} onClick={() => { setEditingNoteId(null); setEditDetectedContacts([]); setEditDetectedDeals([]) }}>Cancel</button>
+                            <button className="btn btn-ghost" style={{ fontSize: '11px' }} onClick={() => { setEditingNoteId(null); setEditDetectedContacts([]); setEditDetectedDeals([]); setEditContactSearch(''); setEditContactResults([]) }}>Cancel</button>
                             <button className="btn btn-primary" style={{ fontSize: '11px' }} onClick={saveEdit} disabled={editSaving}>
                               <Check size={12} /> {editSaving ? 'Saving…' : 'Save'}
                             </button>
