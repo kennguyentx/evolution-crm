@@ -9,7 +9,7 @@ import NewDealModal from '@/components/deals/NewDealModal'
 import UndoToast, { type UndoEntry } from '@/components/layout/UndoToast'
 
 const ALL_STAGES: DealStage[] = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
-type SortField = 'company_name'|'sector'|'geography'|'ebitda'|'revenue'|'stage'
+type SortField = 'company_name'|'sector'|'geography'|'ebitda'|'revenue'|'stage'|'created_at'
 type SortDir = 'asc'|'desc'
 
 function SortHeader({ label, field, current, dir, onSort, align='left' }: {
@@ -31,8 +31,8 @@ export default function DealsPage() {
   const [stageFilter, setStageFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('Active')
   const [showNewDeal, setShowNewDeal] = useState(false)
-  const [sortField, setSortField] = useState<SortField>('company_name')
-  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [sortField, setSortField] = useState<SortField>('created_at')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([])
   const supabase = createClient()
 
@@ -76,6 +76,7 @@ export default function DealsPage() {
     else if (sortField==='geography') { av=a.geography||''; bv=b.geography||'' }
     else if (sortField==='ebitda') { av=a.ebitda||0; bv=b.ebitda||0 }
     else if (sortField==='revenue') { av=a.revenue||0; bv=b.revenue||0 }
+    else if (sortField==='created_at') { av=a.created_at||''; bv=b.created_at||'' }
     else { av=a.stage; bv=b.stage }
     const cmp = av>bv?1:av<bv?-1:0
     return sortDir==='asc'?cmp:-cmp
@@ -112,8 +113,8 @@ export default function DealsPage() {
         </select>
       </div>
 
-      <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr 100px 110px 140px', padding:'8px 28px', borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--surface)' }}>
-        {([['company_name','Company','left'],['sector','Sector','left'],['geography','Geography','left'],['ebitda','EBITDA','right'],['revenue','Revenue','right'],['stage','Stage','left']] as [SortField,string,'left'|'right'][]).map(([field,label,align]) => (
+      <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr 100px 110px 140px 90px', padding:'8px 28px', borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--surface)' }}>
+        {([['company_name','Company','left'],['sector','Sector','left'],['geography','Geography','left'],['ebitda','EBITDA','right'],['revenue','Revenue','right'],['stage','Stage','left'],['created_at','Added','left']] as [SortField,string,'left'|'right'][]).map(([field,label,align]) => (
           <div key={field} style={{ ...hdr, paddingLeft: field==='stage'?'12px':0 }}>
             <SortHeader label={label} field={field} current={sortField} dir={sortDir} onSort={handleSort} align={align}/>
           </div>
@@ -125,7 +126,7 @@ export default function DealsPage() {
         : sorted.length===0 ? <div style={{ padding:'60px 28px', textAlign:'center', color:'var(--text-muted)' }}>No deals found.</div>
         : sorted.map(deal => (
           <Link key={deal.id} href={`/deals/${deal.id}`} style={{ textDecoration:'none', color:'inherit' }}>
-            <div className="table-row" style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr 100px 110px 140px', padding:'12px 28px' }}>
+            <div className="table-row" style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr 100px 110px 140px 90px', padding:'12px 28px' }}>
               <div>
                 <div style={{ fontWeight:500, color:'var(--text-primary)', fontSize:'13px' }}>{deal.company_name}</div>
                 {deal.source_notes && <div style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'2px' }}>{deal.source_notes}</div>}
@@ -135,6 +136,9 @@ export default function DealsPage() {
               <div style={{ textAlign:'right', fontFamily:'var(--font-mono)', fontSize:'12px', color:'var(--accent)', alignSelf:'center' }}>{formatCurrency(deal.ebitda)}</div>
               <div style={{ textAlign:'right', fontFamily:'var(--font-mono)', fontSize:'12px', color:'var(--text-secondary)', alignSelf:'center' }}>{formatCurrency(deal.revenue)}</div>
               <div style={{ alignSelf:'center', paddingLeft:'12px' }}><span className={`badge ${stageClass(deal.stage)}`}>{deal.stage}</span></div>
+              <div style={{ fontSize:'11px', color:'var(--text-muted)', alignSelf:'center', fontFamily:'var(--font-mono)' }}>
+                {deal.created_at ? new Date(deal.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'2-digit' }) : '—'}
+              </div>
             </div>
           </Link>
         ))}
