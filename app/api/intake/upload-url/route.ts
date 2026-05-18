@@ -26,23 +26,14 @@ export async function POST(req: NextRequest) {
 
     const storagePath = `${Date.now()}-${fileName}`
 
-    // Signed URL for client to PUT the file directly to Supabase (no Vercel in the loop)
-    const { data: uploadData, error: uploadErr } = await supabase.storage
+    // Signed URL for the client to PUT the file directly to Supabase
+    const { data, error } = await supabase.storage
       .from(BUCKET)
       .createSignedUploadUrl(storagePath)
-    if (uploadErr) throw new Error(uploadErr.message)
 
-    // Signed URL for the parse route to download the file after upload
-    const { data: dlData, error: dlErr } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(storagePath, 3600)
-    if (dlErr) throw new Error(dlErr.message)
+    if (error) throw new Error(error.message)
 
-    return NextResponse.json({
-      signedUploadUrl: uploadData.signedUrl,
-      downloadUrl: dlData.signedUrl,
-      storagePath,
-    })
+    return NextResponse.json({ signedUploadUrl: data.signedUrl, storagePath })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
