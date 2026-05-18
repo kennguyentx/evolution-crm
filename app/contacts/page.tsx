@@ -22,8 +22,8 @@ export default function ContactsPage() {
   const [showNew, setShowNew] = useState(false)
   const [editingContact, setEditingContact] = useState<Contact | null>(null)
   const [typeCounts, setTypeCounts] = useState<Record<string, number>>({})
-  const [sortField, setSortField] = useState<'name'|'firm'|'type'>('name')
-  const [sortDir, setSortDir] = useState<'asc'|'desc'>('asc')
+  const [sortField, setSortField] = useState<'name'|'firm'|'type'|'created_at'>('created_at')
+  const [sortDir, setSortDir] = useState<'asc'|'desc'>('desc')
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([])
   const supabase = createClient()
 
@@ -115,9 +115,9 @@ export default function ContactsPage() {
   }
   const handleDismiss = (id: string) => setUndoStack(prev => prev.filter(e => e.id!==id))
 
-  const handleSort = (field: 'name'|'firm'|'type') => {
+  const handleSort = (field: 'name'|'firm'|'type'|'created_at') => {
     if (sortField === field) setSortDir(d => d==='asc'?'desc':'asc')
-    else { setSortField(field); setSortDir('asc') }
+    else { setSortField(field); setSortDir(field==='created_at'?'desc':'asc') }
   }
 
   const displayed = searchResults !== null ? searchResults : contacts
@@ -126,6 +126,7 @@ export default function ContactsPage() {
     let av: string, bv: string
     if (sortField==='name') { av=`${a.last_name} ${a.first_name}`; bv=`${b.last_name} ${b.first_name}` }
     else if (sortField==='firm') { av=a.firm||''; bv=b.firm||'' }
+    else if (sortField==='created_at') { av=a.created_at||''; bv=b.created_at||'' }
     else { av=a.contact_type||''; bv=b.contact_type||'' }
     const cmp = av.localeCompare(bv)
     return sortDir==='asc'?cmp:-cmp
@@ -174,8 +175,8 @@ export default function ContactsPage() {
       </div>
 
       {/* Table header */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 80px', padding: '8px 28px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
-        {([['name','Name'],['firm','Firm / Title'],['type','Type']] as ['name'|'firm'|'type', string][]).map(([field, label]) => (
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 90px 80px', padding: '8px 28px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+        {([['name','Name'],['firm','Firm / Title'],['type','Type'],['created_at','Added']] as ['name'|'firm'|'type'|'created_at', string][]).map(([field, label]) => (
           <div key={field} onClick={() => handleSort(field)} style={{ display:'flex', alignItems:'center', gap:'4px', cursor:'pointer', userSelect:'none', color: sortField===field?'var(--accent)':'var(--text-muted)' }}>
             {label}
             {sortField===field ? (sortDir==='asc'?<ChevronUp size={11}/>:<ChevronDown size={11}/>) : <ChevronDown size={11} style={{opacity:0.3}}/>}
@@ -196,7 +197,7 @@ export default function ContactsPage() {
               <div
                 key={contact.id}
                 className="table-row"
-                style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 80px', padding: '12px 28px', cursor: 'pointer' }}
+                style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 90px 80px', padding: '12px 28px', cursor: 'pointer' }}
                 onClick={() => setEditingContact(contact)}
               >
                 <div>
@@ -208,6 +209,9 @@ export default function ContactsPage() {
                 </div>
                 <div style={{ alignSelf: 'center' }}>
                   <span className={`badge ${contactTypeClass(contact.contact_type)}`}>{contact.contact_type}</span>
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', alignSelf: 'center', fontFamily: 'var(--font-mono)' }}>
+                  {contact.created_at ? new Date(contact.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'2-digit' }) : '—'}
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignSelf: 'center' }} onClick={e => e.stopPropagation()}>
                   {contact.email && <a href={`mailto:${contact.email}`} style={{ color: 'var(--text-muted)' }}><Mail size={13} /></a>}
