@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import type { Deal, Interaction, DiligenceItem, DealCapitalAssignment } from '@/types'
 import { formatCurrency, stageClass, contactTypeClass } from '@/types'
-import { ArrowLeft, Check, X, Plus, Phone, Mail, ChevronDown, ChevronRight, Search, Trash2, Upload, Edit2 } from 'lucide-react'
+import { ArrowLeft, Check, X, Plus, Phone, Mail, ChevronDown, ChevronRight, Search, Trash2, Upload, Pencil } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useDropzone } from 'react-dropzone'
@@ -1159,7 +1159,7 @@ export default function DealDetailPage() {
                         </div>
                         <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
                           <button onClick={() => startEditInteraction(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px 4px', borderRadius: '4px' }} title="Edit">
-                            <Edit2 size={12} />
+                            <Pencil size={12} />
                           </button>
                           <button onClick={() => deleteInteraction(i.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px 4px', borderRadius: '4px' }} title="Delete">
                             <Trash2 size={12} />
