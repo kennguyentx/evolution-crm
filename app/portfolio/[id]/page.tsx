@@ -7,6 +7,7 @@ import { ArrowLeft, Plus, TrendingUp, TrendingDown, Zap, Check, Upload, AlertCir
 import Link from 'next/link'
 import { useDropzone } from 'react-dropzone'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
+import DropboxFilesTab from '@/components/deals/DropboxFilesTab'
 
 export default function PortfolioCompanyPage() {
   const params = useParams()
@@ -16,7 +17,7 @@ export default function PortfolioCompanyPage() {
   const [company, setCompany] = useState<any>(null)
   const [financials, setFinancials] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview'|'financials'|'upload'|'analysis'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview'|'financials'|'upload'|'analysis'|'documents'>('overview')
   const [showAddPeriod, setShowAddPeriod] = useState(false)
   const [analysis, setAnalysis] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
@@ -191,6 +192,7 @@ export default function PortfolioCompanyPage() {
     { key: 'financials', label: `Financials (${financials.length})` },
     { key: 'upload', label: 'Upload Financials' },
     { key: 'analysis', label: 'AI Analysis' },
+    { key: 'documents', label: 'Documents' },
   ]
 
   const FieldInput = ({ label, fieldKey, type = 'number' }: { label: string, fieldKey: string, type?: string }) => (
@@ -537,6 +539,21 @@ export default function PortfolioCompanyPage() {
                 <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>{analysis}</div>
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === 'documents' && (
+          <div style={{ maxWidth: '700px' }}>
+            <DropboxFilesTab
+              dealId={companyId}
+              companyName={company.name}
+              dropboxPath={company.dropbox_path}
+              onPathSaved={async (path) => {
+                await supabase.from('portfolio_companies').update({ dropbox_path: path }).eq('id', companyId)
+                setCompany((prev: any) => prev ? { ...prev, dropbox_path: path } : prev)
+              }}
+              table="portfolio_companies"
+            />
           </div>
         )}
       </div>
