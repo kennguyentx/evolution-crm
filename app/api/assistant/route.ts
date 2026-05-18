@@ -205,6 +205,28 @@ const TOOLS: Anthropic.Tool[] = [
       required: ['path'],
     },
   },
+  {
+    name: 'list_files',
+    description: 'List files and folders at any path in the Evolution Strategy Dropbox. Use for browsing company files, portco documents, or any folder not tied to a specific deal. Start with a broad path and drill down.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Dropbox folder path, e.g. /Evolution Strategy Partners or /Evolution Strategy Partners/Portfolio' },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'read_file',
+    description: 'Read the contents of any file in the Evolution Strategy Dropbox. Works with PDF, Word, Excel, CSV, and text files. Always call list_files first to get the exact path.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Full Dropbox file path from list_files' },
+      },
+      required: ['path'],
+    },
+  },
 ]
 
 const WRITE_TOOLS = new Set(['update_deal_field', 'update_contact_field', 'update_raise_participant', 'log_note'])
@@ -396,6 +418,52 @@ async function executeTool(name: string, input: any): Promise<any> {
       })
       const extracted = extractResp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
       return { file: data.name, path: input.path, content: extracted }
+    }
+
+    case 'list_files': {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/dropbox?action=list&path=${encodeURIComponent(input.path)}`)
+      const data = await res.json()
+      if (data.error) return { error: data.error }
+      return { folder: input.path, items: data.items || [] }
+    }
+
+    case 'read_file': {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/dropbox?action=read&path=${encodeURIComponent(input.path)}`)
+      const data = await res.json()
+      if (data.error) return { error: data.error }
+
+      const fileExt = data.ext
+      const isText = ['.txt', '.md', '.csv'].includes(fileExt)
+
+      if (isText) {
+        const text = Buffer.from(data.base64, 'base64').toString('utf-8')
+        return { file: data.name, path: input.path, content: text.slice(0, 20000) }
+      }
+
+      let fileContent: any
+      if (fileExt === '.pdf') {
+        fileContent = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: data.base64 } }
+      } else if (['.xlsx', '.xls'].includes(fileExt)) {
+        fileContent = { type: 'document', source: { type: 'base64', media_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', data: data.base64 } }
+      } else if (fileExt === '.docx') {
+        fileContent = { type: 'document', source: { type: 'base64', media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', data: data.base64 } }
+      } else {
+        return { error: `Cannot read file type: ${fileExt}` }
+      }
+
+      const extractResp = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4000,
+        messages: [{
+          role: 'user',
+          content: [
+            fileContent,
+            { type: 'text', text: `Extract and summarize the full content of this file "${data.name}". Include all key facts, figures, dates, parties, terms, and materially important information. Be comprehensive.` },
+          ],
+        }],
+      })
+      const extracted2 = extractResp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
+      return { file: data.name, path: input.path, content: extracted2 }
     }
 
     // ─── Write tools — only called after confirmation ─────────
