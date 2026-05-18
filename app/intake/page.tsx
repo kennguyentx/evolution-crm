@@ -166,24 +166,29 @@ export default function IntakePage() {
     setError(null)
 
     try {
-      // Upload directly to Supabase Storage to bypass Vercel's 4.5MB body limit
-      const storagePath = `${Date.now()}-${file.name}`
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('intake-temp')
-        .upload(storagePath, file, { contentType: 'application/pdf', upsert: false })
-      if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`)
+      // Get signed URLs from server (auto-creates Storage bucket if needed)
+      const urlRes = await fetch('/api/intake/upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: file.name }),
+      })
+      if (!urlRes.ok) throw new Error(`Upload setup failed: ${(await urlRes.json()).error}`)
+      const { signedUploadUrl, downloadUrl, storagePath } = await urlRes.json()
 
-      const { data: urlData } = await supabase.storage
-        .from('intake-temp')
-        .createSignedUrl(uploadData.path, 3600)
-      if (!urlData?.signedUrl) throw new Error('Could not generate signed URL')
+      // PUT directly to Supabase Storage — bypasses Vercel's 4.5MB body limit
+      const uploadRes = await fetch(signedUploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/pdf' },
+        body: file,
+      })
+      if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`)
 
       setStage('parsing')
 
       const res = await fetch('/api/intake/parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: urlData.signedUrl, storagePath: uploadData.path, fileName: file.name }),
+        body: JSON.stringify({ url: downloadUrl, storagePath, fileName: file.name }),
       })
 
       if (!res.ok) throw new Error(await res.text())
