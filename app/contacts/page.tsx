@@ -44,11 +44,23 @@ export default function ContactsPage() {
     fetchCounts()
   }, [])
 
-  const fetchContacts = useCallback(async (reset = false) => {
+  const fetchContacts = useCallback(async (reset = false, field = sortField, dir = sortDir) => {
     const currentOffset = reset ? 0 : offset
     if (reset) setLoading(true)
     else setLoadingMore(true)
-    let query = supabase.from('contacts').select('*').order('last_name')
+
+    // Map sort field to DB column
+    const dbCol: Record<string, string> = {
+      name: 'last_name',
+      firm: 'firm',
+      type: 'contact_type',
+      created_at: 'created_at',
+    }
+    const col = dbCol[field] || 'last_name'
+    const asc = dir === 'asc'
+
+    let query = supabase.from('contacts').select('*')
+      .order(col, { ascending: asc, nullsFirst: false })
       .range(currentOffset, currentOffset + PAGE_SIZE - 1)
     if (typeFilter !== 'all') query = query.eq('contact_type', typeFilter)
     const { data } = await query
@@ -59,7 +71,7 @@ export default function ContactsPage() {
     }
     setLoading(false)
     setLoadingMore(false)
-  }, [supabase, typeFilter, offset])
+  }, [supabase, typeFilter, offset, sortField, sortDir])
 
   useEffect(() => { setOffset(0); fetchContacts(true) }, [typeFilter])
 
@@ -116,13 +128,18 @@ export default function ContactsPage() {
   const handleDismiss = (id: string) => setUndoStack(prev => prev.filter(e => e.id!==id))
 
   const handleSort = (field: 'name'|'firm'|'type'|'created_at') => {
-    if (sortField === field) setSortDir(d => d==='asc'?'desc':'asc')
-    else { setSortField(field); setSortDir(field==='created_at'?'desc':'asc') }
+    const newDir = sortField === field ? (sortDir === 'asc' ? 'desc' : 'asc') : (field === 'created_at' ? 'desc' : 'asc')
+    setSortField(field)
+    setSortDir(newDir)
+    setOffset(0)
+    fetchContacts(true, field, newDir)
   }
 
   const displayed = searchResults !== null ? searchResults : contacts
 
-  const sortedDisplayed = [...displayed].sort((a: any, b: any) => {
+  // Server handles ordering for non-search results
+  // For search results (client-side), apply sort
+  const sortedDisplayed = searchResults !== null ? [...displayed].sort((a: any, b: any) => {
     let av: string, bv: string
     if (sortField==='name') { av=`${a.last_name} ${a.first_name}`; bv=`${b.last_name} ${b.first_name}` }
     else if (sortField==='firm') { av=a.firm||''; bv=b.firm||'' }
@@ -130,7 +147,7 @@ export default function ContactsPage() {
     else { av=a.contact_type||''; bv=b.contact_type||'' }
     const cmp = av.localeCompare(bv)
     return sortDir==='asc'?cmp:-cmp
-  })
+  }) : displayed
 
   const displayTotal = typeFilter !== 'all' ? (typeCounts[typeFilter] || 0) : total
 
