@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
-import { Plus, Search, X, Check, Mail, MessageSquare, Edit3 } from 'lucide-react'
+import { Plus, Search, X, Check, Mail, MessageSquare, Edit3, Pencil } from 'lucide-react'
 
 type Note = {
   id: string
@@ -55,6 +55,10 @@ export default function NotesPage() {
   const [addForm, setAddForm] = useState({ note_date: new Date().toISOString().split('T')[0], raw_text: '', logged_by: 'Ken' })
   const [saving, setSaving] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<{ note_date: string; raw_text: string; summary: string; next_steps: string; logged_by: string }>({ note_date: '', raw_text: '', summary: '', next_steps: '', logged_by: '' })
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
   const searchTimer = useRef<any>(null)
 
   // Fetch deals for filter dropdown
@@ -128,6 +132,47 @@ export default function NotesPage() {
   const deleteNote = async (id: string) => {
     await supabase.from('notes').delete().eq('id', id)
     setNotes(prev => prev.filter(n => n.id !== id))
+  }
+
+  const startEdit = (note: Note) => {
+    setEditingNoteId(note.id)
+    setEditForm({
+      note_date: note.note_date,
+      raw_text: note.raw_text,
+      summary: note.summary ?? '',
+      next_steps: note.next_steps ?? '',
+      logged_by: note.logged_by ?? '',
+    })
+    setEditError(null)
+    setExpandedId(note.id)
+  }
+
+  const saveEdit = async () => {
+    if (!editingNoteId) return
+    setEditSaving(true)
+    setEditError(null)
+    try {
+      const res = await fetch('/api/notes', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingNoteId,
+          note_date: editForm.note_date,
+          raw_text: editForm.raw_text,
+          summary: editForm.summary || null,
+          next_steps: editForm.next_steps || null,
+          logged_by: editForm.logged_by || null,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Save failed')
+      setNotes(prev => prev.map(n => n.id === editingNoteId ? json : n))
+      setEditingNoteId(null)
+    } catch (err: any) {
+      setEditError(err.message)
+    } finally {
+      setEditSaving(false)
+    }
   }
 
   return (
@@ -272,28 +317,70 @@ export default function NotesPage() {
                       {note.sentiment && note.sentiment !== 'neutral' && (
                         <span style={{ fontSize: '10px', fontWeight: 600, color: sent.color }}>{sent.label}</span>
                       )}
-                      <button onClick={e => { e.stopPropagation(); deleteNote(note.id) }}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px', opacity: 0.5 }}>
-                        <X size={12} />
-                      </button>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button onClick={e => { e.stopPropagation(); startEdit(note) }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px', opacity: 0.5 }}>
+                          <Pencil size={12} />
+                        </button>
+                        <button onClick={e => { e.stopPropagation(); deleteNote(note.id) }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px', opacity: 0.5 }}>
+                          <X size={12} />
+                        </button>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Expanded raw text + next steps */}
+                  {/* Expanded section */}
                   {isExpanded && (
                     <div style={{ padding: '0 28px 16px 144px', background: 'var(--surface-2)', borderTop: '1px solid var(--border-subtle)' }}>
-                      {note.next_steps && (
+                      {editingNoteId === note.id ? (
                         <div style={{ marginTop: '12px' }}>
-                          <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>Next Steps</div>
-                          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{note.next_steps}</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '10px', marginBottom: '10px' }}>
+                            <div>
+                              <label className="label">Date</label>
+                              <input type="date" className="input" value={editForm.note_date} onChange={e => setEditForm(p => ({...p, note_date: e.target.value}))} />
+                            </div>
+                            <div>
+                              <label className="label">Logged by</label>
+                              <input className="input" value={editForm.logged_by} onChange={e => setEditForm(p => ({...p, logged_by: e.target.value}))} />
+                            </div>
+                          </div>
+                          <div style={{ marginBottom: '10px' }}>
+                            <label className="label">Summary</label>
+                            <textarea className="input" rows={2} value={editForm.summary} onChange={e => setEditForm(p => ({...p, summary: e.target.value}))} style={{ resize: 'vertical', width: '100%' }} />
+                          </div>
+                          <div style={{ marginBottom: '10px' }}>
+                            <label className="label">Next Steps</label>
+                            <textarea className="input" rows={2} value={editForm.next_steps} onChange={e => setEditForm(p => ({...p, next_steps: e.target.value}))} style={{ resize: 'vertical', width: '100%' }} />
+                          </div>
+                          <div style={{ marginBottom: '10px' }}>
+                            <label className="label">Raw Notes</label>
+                            <textarea className="input" rows={4} value={editForm.raw_text} onChange={e => setEditForm(p => ({...p, raw_text: e.target.value}))} style={{ resize: 'vertical', width: '100%' }} />
+                          </div>
+                          {editError && <div style={{ fontSize: '11px', color: 'var(--red)', marginBottom: '8px' }}>{editError}</div>}
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button className="btn btn-ghost" style={{ fontSize: '11px' }} onClick={() => setEditingNoteId(null)}>Cancel</button>
+                            <button className="btn btn-primary" style={{ fontSize: '11px' }} onClick={saveEdit} disabled={editSaving}>
+                              <Check size={12} /> {editSaving ? 'Saving…' : 'Save'}
+                            </button>
+                          </div>
                         </div>
+                      ) : (
+                        <>
+                          {note.next_steps && (
+                            <div style={{ marginTop: '12px' }}>
+                              <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>Next Steps</div>
+                              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{note.next_steps}</div>
+                            </div>
+                          )}
+                          <div style={{ marginTop: '12px' }}>
+                            <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>Raw Notes</div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.7, whiteSpace: 'pre-wrap', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', padding: '10px 12px' }}>
+                              {note.raw_text}
+                            </div>
+                          </div>
+                        </>
                       )}
-                      <div style={{ marginTop: '12px' }}>
-                        <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>Raw Notes</div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.7, whiteSpace: 'pre-wrap', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', padding: '10px 12px' }}>
-                          {note.raw_text}
-                        </div>
-                      </div>
                     </div>
                   )}
                 </div>
