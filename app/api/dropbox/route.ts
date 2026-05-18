@@ -237,7 +237,64 @@ const ALLOWED_DEAL_FIELDS = new Set(['stage','status','notes','sector','geograph
 const ALLOWED_CONTACT_FIELDS = new Set(['first_name','last_name','firm','title','email','phone','notes','contact_type','sub_type'])
 const ALLOWED_PARTICIPANT_FIELDS = new Set(['status','notes','pass_reason','committed_amount','debt_amount','pricing_notes','teaser_date','nda_date','cim_date','first_call_date','term_sheet_date'])
 
-// ─── Tool execution ───────────────────────────────────────────
+// ─── Direct Dropbox helpers (avoids internal HTTP round-trips) ───────────────
+
+let _dbxToken: string | null = null
+let _dbxTokenExpiry: number = 0
+
+async function getDbxToken(): Promise<string> {
+  const now = Date.now()
+  if (_dbxToken && now < _dbxTokenExpiry) return _dbxToken
+  const res = await fetch('https://api.dropbox.com/oauth2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: process.env.DROPBOX_REFRESH_TOKEN!,
+      client_id: process.env.DROPBOX_APP_KEY!,
+      client_secret: process.env.DROPBOX_APP_SECRET!,
+    }),
+  })
+  const data = await res.json()
+  if (!data.access_token) throw new Error(`Dropbox auth failed: ${JSON.stringify(data)}`)
+  _dbxToken = data.access_token
+  _dbxTokenExpiry = now + (data.expires_in - 1800) * 1000
+  return _dbxToken!
+}
+
+async function dbxListFolder(path: string): Promise<any[]> {
+  const token = await getDbxToken()
+  const dbxPath = path === '/' || path === '.' ? '' : path
+  const res = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: dbxPath, recursive: false, include_deleted: false }),
+  })
+  if (!res.ok) throw new Error(`Dropbox list error: ${await res.text()}`)
+  const data = await res.json()
+  return (data.entries || []).map((e: any) => ({
+    name: e.name,
+    path: e.path_lower,
+    type: e['.tag'],
+    size: e.size,
+    readable: e['.tag'] === 'file' && ['.pdf','.txt','.md','.csv','.docx','.xlsx','.xls'].includes(e.name.slice(e.name.lastIndexOf('.')).toLowerCase()),
+  }))
+}
+
+async function dbxDownload(path: string): Promise<{ base64: string; name: string; ext: string }> {
+  const token = await getDbxToken()
+  const res = await fetch('https://content.dropboxapi.com/2/files/download', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify({ path }) },
+  })
+  if (!res.ok) throw new Error(`Dropbox download error: ${await res.text()}`)
+  const buffer = await res.arrayBuffer()
+  const name = path.split('/').pop() || 'file'
+  const ext = name.slice(name.lastIndexOf('.')).toLowerCase()
+  return { base64: Buffer.from(buffer).toString('base64'), name, ext }
+}
+
+
 
 async function executeTool(name: string, input: any): Promise<any> {
   switch (name) {
@@ -365,105 +422,59 @@ async function executeTool(name: string, input: any): Promise<any> {
       const folderPath = input.subfolder || deal.dropbox_path
       if (!folderPath) return { error: `No Dropbox folder linked to ${deal.company_name}. The deal needs a dropbox_path set in Nexus.` }
 
-      const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/dropbox?action=list&path=${encodeURIComponent(folderPath)}`)
-      const data = await res.json()
-      if (data.error) return { error: data.error }
-      return {
-        company: deal.company_name,
-        folder: folderPath,
-        items: (data.items || []).map((item: any) => ({
-          name: item.name,
-          path: item.path,
-          type: item.type,
-          size: item.size,
-          readable: item.readable,
-        })),
-      }
+      const items = await dbxListFolder(folderPath)
+      return { company: deal.company_name, folder: folderPath, items }
     }
 
     case 'read_deal_file': {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/dropbox?action=read&path=${encodeURIComponent(input.path)}`)
-      const data = await res.json()
-      if (data.error) return { error: data.error }
-
-      // Pass the file to Claude for extraction
-      const fileExt = data.ext
-      const isPdf = fileExt === '.pdf'
+      const { base64, name, ext: fileExt } = await dbxDownload(input.path)
       const isText = ['.txt', '.md', '.csv'].includes(fileExt)
-
-      let fileContent: any
-      if (isPdf) {
-        fileContent = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: data.base64 } }
-      } else if (['.xlsx', '.xls'].includes(fileExt)) {
-        fileContent = { type: 'document', source: { type: 'base64', media_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', data: data.base64 } }
-      } else if (fileExt === '.docx') {
-        fileContent = { type: 'document', source: { type: 'base64', media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', data: data.base64 } }
-      } else if (isText) {
-        const text = Buffer.from(data.base64, 'base64').toString('utf-8')
-        return { file: data.name, path: input.path, content: text.slice(0, 20000) }
-      } else {
+      if (isText) {
+        return { file: name, path: input.path, content: Buffer.from(base64, 'base64').toString('utf-8').slice(0, 20000) }
+      }
+      if (!['.pdf', '.xlsx', '.xls', '.docx'].includes(fileExt)) {
         return { error: `Cannot read file type: ${fileExt}` }
       }
-
+      // Only PDFs work as base64 documents in Claude API
+      if (fileExt !== '.pdf') {
+        return { error: `File type ${fileExt} cannot be read directly. Ask the user to convert to PDF.` }
+      }
       const extractResp = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 4000,
-        messages: [{
-          role: 'user',
-          content: [
-            fileContent,
-            { type: 'text', text: `Extract and summarize the full content of this file "${data.name}". Include all key facts, figures, dates, parties, terms, and any other materially important information. Be comprehensive — this is for a PE deal team that needs to reference this document.` },
-          ],
-        }],
+        messages: [{ role: 'user', content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+          { type: 'text', text: `Extract and summarize the full content of this file "${name}". Include all key facts, figures, dates, parties, terms, and any other materially important information. Be comprehensive.` },
+        ]}],
       })
       const extracted = extractResp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
-      return { file: data.name, path: input.path, content: extracted }
+      return { file: name, path: input.path, content: extracted }
     }
 
     case 'list_files': {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/dropbox?action=list&path=${encodeURIComponent(input.path)}`)
-      const data = await res.json()
-      if (data.error) return { error: data.error }
-      return { folder: input.path, items: data.items || [] }
+      const items = await dbxListFolder(input.path || '')
+      return { folder: input.path || 'root', items }
     }
 
     case 'read_file': {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/dropbox?action=read&path=${encodeURIComponent(input.path)}`)
-      const data = await res.json()
-      if (data.error) return { error: data.error }
-
-      const fileExt = data.ext
+      const { base64, name, ext: fileExt } = await dbxDownload(input.path)
       const isText = ['.txt', '.md', '.csv'].includes(fileExt)
-
       if (isText) {
-        const text = Buffer.from(data.base64, 'base64').toString('utf-8')
-        return { file: data.name, path: input.path, content: text.slice(0, 20000) }
+        return { file: name, path: input.path, content: Buffer.from(base64, 'base64').toString('utf-8').slice(0, 20000) }
       }
-
-      let fileContent: any
-      if (fileExt === '.pdf') {
-        fileContent = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: data.base64 } }
-      } else if (['.xlsx', '.xls'].includes(fileExt)) {
-        fileContent = { type: 'document', source: { type: 'base64', media_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', data: data.base64 } }
-      } else if (fileExt === '.docx') {
-        fileContent = { type: 'document', source: { type: 'base64', media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', data: data.base64 } }
-      } else {
-        return { error: `Cannot read file type: ${fileExt}` }
+      if (fileExt !== '.pdf') {
+        return { error: `File type ${fileExt} cannot be read directly. Try a PDF or CSV version.` }
       }
-
       const extractResp = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 4000,
-        messages: [{
-          role: 'user',
-          content: [
-            fileContent,
-            { type: 'text', text: `Extract and summarize the full content of this file "${data.name}". Include all key facts, figures, dates, parties, terms, and materially important information. Be comprehensive.` },
-          ],
-        }],
+        messages: [{ role: 'user', content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+          { type: 'text', text: `Extract and summarize the full content of this file "${name}". Include all key facts, figures, dates, parties, terms, and materially important information. Be comprehensive.` },
+        ]}],
       })
       const extracted2 = extractResp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
-      return { file: data.name, path: input.path, content: extracted2 }
+      return { file: name, path: input.path, content: extracted2 }
     }
 
     // ─── Write tools — only called after confirmation ─────────
