@@ -206,8 +206,17 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
-    name: 'list_files',
-    description: 'List files and folders at any path in the Evolution Strategy Dropbox. Use for browsing company files, portco documents, or any folder not tied to a specific deal. Start with a broad path and drill down.',
+    name: 'list_portco_files',
+    description: 'List files in the Dropbox folder linked to a portfolio company. Use for accessing portco documents like credit agreements, financials, legal docs. Always use this for portfolio company file questions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        company_name: { type: 'string', description: 'Portfolio company name to look up (e.g. "DiPonio")' },
+        subfolder: { type: 'string', description: 'Optional: subfolder path to drill into' },
+      },
+      required: ['company_name'],
+    },
+  },
     input_schema: {
       type: 'object',
       properties: {
@@ -415,6 +424,19 @@ async function executeTool(name: string, input: any): Promise<any> {
       return { result: text || 'No results found.' }
     }
 
+    case 'list_portco_files': {
+      const { data: portco } = await supabase
+        .from('portfolio_companies')
+        .select('id, name, dropbox_path')
+        .ilike('name', `%${input.company_name}%`)
+        .single()
+      if (!portco) return { error: `Portfolio company "${input.company_name}" not found` }
+      const folderPath = input.subfolder || portco.dropbox_path
+      if (!folderPath) return { error: `No Dropbox folder linked to ${portco.name}. Link it in the Portfolio section → Documents tab.` }
+      const items = await dbxListFolder(folderPath)
+      return { company: portco.name, folder: folderPath, items }
+    }
+
     case 'list_deal_files': {
       // Look up the Dropbox path from the deal record
       const { data: deal } = await supabase.from('deals').select('company_name, dropbox_path').eq('id', input.deal_id).single()
@@ -584,7 +606,7 @@ RULES:
 
 Format responses cleanly: bold for key figures, bullet points for lists, tables where helpful. Be concise.
 
-DROPBOX: The Evolution Strategy Dropbox root path is "/Ken Nguyen/Evolution Strategy Partners". Subfolders: Auditors, Bankers, Best Practices, Claude, Compliance, Consultants, Dealflow, Deals, Evolution Investments, Industry Data, Investors, Lenders, Marketing, Office, Portfolio Co's. Deal files are under "/Ken Nguyen/Evolution Strategy Partners/Deals/[Company Name]". Portfolio files are under "/Ken Nguyen/Evolution Strategy Partners/Portfolio Co's/[Company Name]". Always start from these known paths — never guess. If Dropbox access fails, report what you already found in this session rather than saying you need to try again later.
+DROPBOX: The Evolution Strategy Dropbox root path is "/Ken Nguyen/Evolution Strategy Partners". Subfolders: Auditors, Bankers, Best Practices, Claude, Compliance, Consultants, Dealflow, Deals, Evolution Investments, Industry Data, Investors, Lenders, Marketing, Office, Portfolio Co's. Deal files are under "/Ken Nguyen/Evolution Strategy Partners/Deals/[Company Name]". Portfolio files are under "/Ken Nguyen/Evolution Strategy Partners/Portfolio Co's/[Company Name]". For portfolio company file questions, ALWAYS use list_portco_files first — it looks up the linked Dropbox path automatically. For deal file questions use list_deal_files. Only use list_files for general browsing. If Dropbox access fails, report what you already found in this session rather than saying you need to try again later.
 
 Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`
 
