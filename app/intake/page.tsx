@@ -11,6 +11,23 @@ const SECTORS = [
   'Environmental Services', 'Construction & Engineering', 'Other'
 ]
 
+interface ParsedContact {
+  name: string
+  firm: string | null
+  role: string
+  title?: string | null
+}
+
+interface ExtractedContact extends ParsedContact {
+  crmContact?: any       // linked CRM contact record
+  skip?: boolean         // user chose not to link
+  searchQuery?: string
+  searchResults?: any[]
+  showSearch?: boolean
+  showAddForm?: boolean
+  addForm?: { first_name: string; last_name: string; firm: string; title: string; email: string; phone: string }
+}
+
 interface ParsedDeal {
   company_name: string
   sector: string
@@ -20,8 +37,7 @@ interface ParsedDeal {
   revenue: number | null
   ebitda: number | null
   cim_summary: string
-  banker_name: string
-  banker_firm: string
+  contacts: ParsedContact[]
 }
 
 interface MissingField {
@@ -40,70 +56,7 @@ export default function IntakePage() {
   const [error, setError] = useState<string | null>(null)
   const [fileName, setFileName] = useState('')
   const [missingFields, setMissingFields] = useState<MissingField[]>([])
-
-  // Contact linking
-  const [contactSearch, setContactSearch] = useState('')
-  const [contactResults, setContactResults] = useState<any[]>([])
-  const [selectedContact, setSelectedContact] = useState<any | null>(null)
-  const [showContactSearch, setShowContactSearch] = useState(false)
-  const [showAddContact, setShowAddContact] = useState(false)
-  const [newContactForm, setNewContactForm] = useState({ first_name: '', last_name: '', firm: '', title: '', email: '', phone: '' })
-  const searchRef = useRef<HTMLDivElement>(null)
-
-  // Close search on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setShowContactSearch(false)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
-  // Contact search — searches name AND firm
-  useEffect(() => {
-    if (!contactSearch.trim()) { setContactResults([]); return }
-    const timer = setTimeout(async () => {
-      const q = contactSearch.trim()
-      const parts = q.split(' ').filter(Boolean)
-      let results: any[] = []
-
-      if (parts.length >= 2) {
-        // Multi-word: intersect first + last name
-        const [firstRes, lastRes] = await Promise.all([
-          supabase.from('contacts').select('id, first_name, last_name, firm, title').ilike('first_name', `%${parts[0]}%`).limit(100),
-          supabase.from('contacts').select('id, first_name, last_name, firm, title').ilike('last_name', `%${parts[parts.length-1]}%`).limit(100),
-        ])
-        const firstIds = new Set((firstRes.data || []).map((c: any) => c.id))
-        results = (lastRes.data || []).filter((c: any) => firstIds.has(c.id))
-        // Also add firm matches
-        const { data: firmData } = await supabase.from('contacts').select('id, first_name, last_name, firm, title').ilike('firm', `%${q}%`).limit(8)
-        const seen = new Set(results.map((c: any) => c.id))
-        ;(firmData || []).forEach((c: any) => { if (!seen.has(c.id)) { results.push(c); seen.add(c.id) } })
-      } else {
-        const { data } = await supabase.from('contacts')
-          .select('id, first_name, last_name, firm, title')
-          .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,firm.ilike.%${q}%`)
-          .limit(8)
-        results = data || []
-      }
-
-      setContactResults(results.slice(0, 8))
-
-      // If no results found, pre-fill the add contact form with what was typed
-      if (results.length === 0 && q.length > 2) {
-        const nameParts = q.split(' ')
-        setNewContactForm(prev => ({
-          ...prev,
-          first_name: nameParts.length >= 2 ? nameParts[0] : prev.first_name,
-          last_name: nameParts.length >= 2 ? nameParts.slice(1).join(' ') : prev.last_name,
-          firm: nameParts.length === 1 ? q : prev.firm, // if single word, treat as firm
-        }))
-      }
-    }, 250)
-    return () => clearTimeout(timer)
-  }, [contactSearch])
+  const [contacts, setContacts] = useState<ExtractedContact[]>([])
 
   // When parsed data arrives, check for missing fields
   useEffect(() => {
@@ -120,6 +73,75 @@ export default function IntakePage() {
     const missing = required.filter(f => !edited[f.key])
     setMissingFields(missing)
   }, [edited])
+
+  const updateContact = (idx: number, patch: Partial<ExtractedContact>) => {
+    setContacts(prev => prev.map((c, i) => i === idx ? { ...c, ...patch } : c))
+  }
+
+  const searchForContact = async (idx: number, query: string) => {
+    updateContact(idx, { searchQuery: query, showSearch: true })
+    if (!query.trim()) { updateContact(idx, { searchResults: [] }); return }
+    const parts = query.trim().split(' ').filter(Boolean)
+    let results: any[] = []
+    if (parts.length >= 2) {
+      const [firstRes, lastRes] = await Promise.all([
+        supabase.from('contacts').select('id, first_name, last_name, firm, title').ilike('first_name', `%${parts[0]}%`).limit(100),
+        supabase.from('contacts').select('id, first_name, last_name, firm, title').ilike('last_name', `%${parts[parts.length - 1]}%`).limit(100),
+      ])
+      const firstIds = new Set((firstRes.data || []).map((c: any) => c.id))
+      results = (lastRes.data || []).filter((c: any) => firstIds.has(c.id))
+      const { data: firmData } = await supabase.from('contacts').select('id, first_name, last_name, firm, title').ilike('firm', `%${query.trim()}%`).limit(8)
+      const seen = new Set(results.map((c: any) => c.id))
+      ;(firmData || []).forEach((c: any) => { if (!seen.has(c.id)) { results.push(c); seen.add(c.id) } })
+    } else {
+      const { data } = await supabase.from('contacts')
+        .select('id, first_name, last_name, firm, title')
+        .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,firm.ilike.%${query}%`)
+        .limit(8)
+      results = data || []
+    }
+    updateContact(idx, { searchResults: results.slice(0, 8) })
+  }
+
+  const autoLinkContact = async (idx: number, parsedContact: ParsedContact) => {
+    if (!parsedContact.name) return
+    const parts = parsedContact.name.split(' ')
+    const { data } = await supabase.from('contacts')
+      .select('id, first_name, last_name, firm, title')
+      .or(`first_name.ilike.%${parts[0]}%,last_name.ilike.%${parts[parts.length - 1]}%`)
+      .limit(5)
+    const nameParts = parsedContact.name.split(' ')
+    const defaultForm = {
+      first_name: nameParts[0] || '',
+      last_name: nameParts.slice(1).join(' ') || '',
+      firm: parsedContact.firm || '',
+      title: parsedContact.title || '',
+      email: '',
+      phone: '',
+    }
+    if (data && data.length === 1) {
+      updateContact(idx, { crmContact: data[0] })
+    } else if (data && data.length > 1) {
+      updateContact(idx, { searchResults: data, showSearch: true, searchQuery: parsedContact.name, addForm: defaultForm })
+    } else {
+      updateContact(idx, { showAddForm: true, addForm: defaultForm })
+    }
+  }
+
+  const addNewContact = async (idx: number, contactType: string) => {
+    const c = contacts[idx]
+    if (!c.addForm?.first_name || !c.addForm?.last_name) return
+    const { data } = await supabase.from('contacts').insert({
+      first_name: c.addForm.first_name,
+      last_name: c.addForm.last_name,
+      firm: c.addForm.firm || null,
+      title: c.addForm.title || null,
+      email: c.addForm.email || null,
+      phone: c.addForm.phone || null,
+      contact_type: contactType,
+    }).select().single()
+    if (data) updateContact(idx, { crmContact: data, showAddForm: false, showSearch: false })
+  }
 
   const onDrop = useCallback(async (files: File[]) => {
     const file = files[0]
@@ -143,32 +165,27 @@ export default function IntakePage() {
       setParsed(data)
       setEdited({ ...data, stage: data.stage || 'Teaser' })
 
-      // Auto-search for banker in DB
-      if (data.banker_name) {
-        const parts = data.banker_name.split(' ')
-        const { data: contacts } = await supabase.from('contacts')
-          .select('id, first_name, last_name, firm, title')
-          .or(`first_name.ilike.%${parts[0]}%,last_name.ilike.%${parts[parts.length-1]}%`)
-          .limit(5)
-        if (contacts && contacts.length === 1) {
-          setSelectedContact(contacts[0])
-        } else if (contacts && contacts.length > 1) {
-          setContactResults(contacts)
-          setShowContactSearch(true)
-        } else {
-          // Not found — prompt to add
-          const nameParts = data.banker_name.split(' ')
-          setNewContactForm({
-            first_name: nameParts[0] || '',
-            last_name: nameParts.slice(1).join(' ') || '',
-            firm: data.banker_firm || '',
-            title: '',
-            email: '',
-            phone: '',
-          })
-          setShowAddContact(true)
-        }
-      }
+      // Initialize contacts state
+      const parsedContacts: ParsedContact[] = Array.isArray(data.contacts) ? data.contacts : []
+      const initialContacts: ExtractedContact[] = parsedContacts.map(c => ({
+        ...c,
+        searchQuery: c.name,
+        searchResults: [],
+        showSearch: false,
+        showAddForm: false,
+        addForm: {
+          first_name: c.name.split(' ')[0] || '',
+          last_name: c.name.split(' ').slice(1).join(' ') || '',
+          firm: c.firm || '',
+          title: c.title || '',
+          email: '',
+          phone: '',
+        },
+      }))
+      setContacts(initialContacts)
+
+      // Auto-link each contact
+      initialContacts.forEach((_, i) => autoLinkContact(i, parsedContacts[i]))
 
       setStage('review')
     } catch (err: any) {
@@ -188,29 +205,9 @@ export default function IntakePage() {
     setEdited(prev => prev ? { ...prev, [key]: value } : null)
   }
 
-  const addNewContact = async () => {
-    if (!newContactForm.first_name || !newContactForm.last_name) return
-    const { data } = await supabase.from('contacts').insert({
-      first_name: newContactForm.first_name,
-      last_name: newContactForm.last_name,
-      firm: newContactForm.firm || null,
-      title: newContactForm.title || null,
-      email: newContactForm.email || null,
-      phone: newContactForm.phone || null,
-      contact_type: 'banker',
-      sub_type: 'M&A banker / intermediary',
-      relationship_strength: 'Cold',
-    }).select().single()
-    if (data) {
-      setSelectedContact(data)
-      setShowAddContact(false)
-    }
-  }
-
   const handleSave = async (force = false) => {
     if (!edited) return
 
-    // Check for duplicates unless user has confirmed
     if (!force && !ignoreDuplicate) {
       const name = edited.company_name?.trim()
       if (name) {
@@ -229,6 +226,7 @@ export default function IntakePage() {
     setDuplicateDeals([])
     setStage('saving')
 
+    const firstBanker = contacts.find(c => c.role === 'Source / Banker' && c.crmContact)
     const { data, error } = await supabase.from('deals').insert({
       company_name: edited.company_name || 'Unknown Company',
       sector: edited.sector || null,
@@ -242,7 +240,7 @@ export default function IntakePage() {
       stage: edited.stage || 'Reviewing',
       status: 'Active',
       expected_close: new Date().toISOString().split('T')[0],
-      source_notes: selectedContact?.firm || edited.banker_firm || null,
+      source_notes: firstBanker?.crmContact?.firm || contacts.find(c => c.role === 'Source / Banker')?.firm || null,
     }).select().single()
 
     if (error) {
@@ -251,13 +249,16 @@ export default function IntakePage() {
       return
     }
 
-    // Link contact to deal
-    if (selectedContact && data) {
-      await supabase.from('contact_deal_links').insert({
-        contact_id: selectedContact.id,
-        deal_id: data.id,
-        role: 'Source / Banker',
-      })
+    // Link all matched contacts to deal
+    const linkedContacts = contacts.filter(c => c.crmContact && !c.skip)
+    if (linkedContacts.length > 0 && data) {
+      await Promise.all(linkedContacts.map(c =>
+        supabase.from('contact_deal_links').insert({
+          contact_id: c.crmContact.id,
+          deal_id: data.id,
+          role: c.role,
+        })
+      ))
     }
 
     setDealId(data.id)
@@ -271,17 +272,18 @@ export default function IntakePage() {
     setDealId(null)
     setError(null)
     setFileName('')
-    setSelectedContact(null)
-    setShowAddContact(false)
-    setContactSearch('')
-    setContactResults([])
+    setContacts([])
+    setDuplicateDeals([])
+    setIgnoreDuplicate(false)
   }
+
+  const linkedCount = contacts.filter(c => c.crmContact && !c.skip).length
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Teaser / CIM Intake</h1>
+        <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>Teaser / CIM Intake</h1>
         <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Upload a PDF — AI extracts deal data automatically</div>
       </div>
 
@@ -299,7 +301,7 @@ export default function IntakePage() {
             }}
           >
             <input {...getInputProps()} />
-            <Upload size={32} style={{ color: isDragActive ? 'var(--accent)' : 'var(--text-muted)', marginBottom: '16px', display: 'block', margin: '0 auto 16px' }} />
+            <Upload size={32} style={{ color: isDragActive ? 'var(--accent)' : 'var(--text-muted)', display: 'block', margin: '0 auto 16px' }} />
             <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>
               Drop teaser or CIM here
             </div>
@@ -310,7 +312,7 @@ export default function IntakePage() {
         {/* PARSING */}
         {(stage === 'uploading' || stage === 'parsing') && (
           <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
-            <Zap size={32} style={{ color: 'var(--accent)', marginBottom: '16px' }} />
+            <Zap size={32} style={{ color: 'var(--accent)', display: 'block', margin: '0 auto 16px' }} />
             <div style={{ fontSize: '15px', fontWeight: 600, marginBottom: '8px' }}>
               {stage === 'uploading' ? `Uploading ${fileName}...` : `Parsing ${fileName}...`}
             </div>
@@ -347,12 +349,10 @@ export default function IntakePage() {
             <div className="card" style={{ padding: '24px', marginBottom: '16px' }}>
               <div className="label" style={{ marginBottom: '18px' }}>Deal Information</div>
 
-              {/* Company */}
               <IntakeField label="Company *" required={!edited.company_name}>
                 <input className="input" value={edited.company_name || ''} onChange={e => updateField('company_name', e.target.value)} placeholder="Company name" />
               </IntakeField>
 
-              {/* Sector */}
               <IntakeField label="Sector *" required={!edited.sector}>
                 <select className="select" value={edited.sector || ''} onChange={e => updateField('sector', e.target.value)}>
                   <option value="">Select sector</option>
@@ -360,12 +360,10 @@ export default function IntakePage() {
                 </select>
               </IntakeField>
 
-              {/* Geography */}
               <IntakeField label="Geography *" required={!edited.geography}>
                 <input className="input" value={edited.geography || ''} onChange={e => updateField('geography', e.target.value)} placeholder="e.g. Michigan, Texas" />
               </IntakeField>
 
-              {/* Deal Type */}
               <IntakeField label="Deal Type *" required={!edited.deal_type}>
                 <select className="select" value={edited.deal_type || ''} onChange={e => updateField('deal_type', e.target.value)}>
                   <option value="">Select type</option>
@@ -376,7 +374,6 @@ export default function IntakePage() {
                 </select>
               </IntakeField>
 
-              {/* Stage */}
               <IntakeField label="Stage *" required={!edited.stage}>
                 <select className="select" value={edited.stage || 'Reviewing'} onChange={e => updateField('stage', e.target.value)}>
                   <optgroup label="Active">
@@ -401,7 +398,6 @@ export default function IntakePage() {
                 </select>
               </IntakeField>
 
-              {/* Revenue */}
               <IntakeField label="Revenue ($M) *" required={!edited.revenue}>
                 <input className="input" type="number" step="0.1"
                   value={edited.revenue ? (edited.revenue / 1e6).toFixed(1) : ''}
@@ -409,87 +405,33 @@ export default function IntakePage() {
                   placeholder="e.g. 18.5" />
               </IntakeField>
 
-              {/* EBITDA */}
               <IntakeField label="EBITDA ($M) *" required={!edited.ebitda}>
                 <input className="input" type="number" step="0.1"
                   value={edited.ebitda ? (edited.ebitda / 1e6).toFixed(1) : ''}
                   onChange={e => updateField('ebitda', e.target.value ? parseFloat(e.target.value) * 1e6 : null)}
                   placeholder="e.g. 4.2" />
               </IntakeField>
-
-              {/* Source Contact */}
-              <IntakeField label="Source Contact">
-                {selectedContact ? (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '7px' }}>
-                    <div>
-                      <div style={{ fontSize: '13px', fontWeight: 500 }}>{selectedContact.first_name} {selectedContact.last_name}</div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{selectedContact.firm || selectedContact.title}</div>
-                    </div>
-                    <button onClick={() => { setSelectedContact(null); setContactSearch('') }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
-                      <X size={14} />
-                    </button>
-                  </div>
-                ) : (
-                  <div ref={searchRef} style={{ position: 'relative' }}>
-                    <div style={{ position: 'relative' }}>
-                      <Search size={12} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                      <input
-                        className="input"
-                        placeholder={edited.banker_name ? `Search for "${edited.banker_name}" or firm...` : 'Search by name or firm...'}
-                        value={contactSearch}
-                        onChange={e => { setContactSearch(e.target.value); setShowContactSearch(true) }}
-                        onFocus={() => setShowContactSearch(true)}
-                        style={{ paddingLeft: '30px' }}
-                      />
-                    </div>
-                    {showContactSearch && (contactResults.length > 0 || contactSearch.length > 2) && (
-                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '2px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '7px', zIndex: 50, boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }}>
-                        {contactResults.length > 0 ? contactResults.map(c => (
-                          <button key={c.id} onClick={() => { setSelectedContact(c); setShowContactSearch(false); setContactSearch('') }}
-                            style={{ display: 'block', width: '100%', padding: '9px 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid var(--border-subtle)' }}
-                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
-                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                            <div style={{ fontSize: '13px', fontWeight: 500 }}>{c.first_name} {c.last_name}</div>
-                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{c.firm || c.title}</div>
-                          </button>
-                        )) : (
-                          <div style={{ padding: '10px 12px' }}>
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>No contacts found for "{contactSearch}"</div>
-                            <button className="btn btn-ghost" onClick={() => { setShowAddContact(true); setShowContactSearch(false) }} style={{ fontSize: '11px', padding: '4px 10px' }}>
-                              <Plus size={11} /> Add as new contact
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <button className="btn btn-ghost" onClick={() => setShowAddContact(true)} style={{ fontSize: '11px', padding: '4px 10px', marginTop: '6px' }}>
-                      <Plus size={11} /> Add new contact
-                    </button>
-                  </div>
-                )}
-              </IntakeField>
             </div>
 
-            {/* Add new contact form */}
-            {showAddContact && (
-              <div className="card" style={{ padding: '20px', marginBottom: '16px', border: '1px solid var(--orange)', background: 'rgba(237,117,32,0.04)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                  <div className="label">Banker not found — add to contacts</div>
-                  <button onClick={() => setShowAddContact(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={14} /></button>
+            {/* Contacts */}
+            {contacts.length > 0 && (
+              <div className="card" style={{ padding: '24px', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                  <div className="label">Contacts Found ({contacts.length})</div>
+                  {linkedCount > 0 && <div style={{ fontSize: '11px', color: 'var(--green)' }}>{linkedCount} linked to CRM</div>}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div><label className="label">First Name *</label><input className="input" value={newContactForm.first_name} onChange={e => setNewContactForm(p => ({ ...p, first_name: e.target.value }))} /></div>
-                  <div><label className="label">Last Name *</label><input className="input" value={newContactForm.last_name} onChange={e => setNewContactForm(p => ({ ...p, last_name: e.target.value }))} /></div>
-                  <div style={{ position: 'relative' }}><label className="label">Firm</label><FirmSearch value={newContactForm.firm} onChange={v => setNewContactForm(p => ({ ...p, firm: v }))} supabase={supabase} /></div>
-                  <div><label className="label">Title</label><input className="input" value={newContactForm.title} onChange={e => setNewContactForm(p => ({ ...p, title: e.target.value }))} /></div>
-                  <div><label className="label">Email</label><input className="input" type="email" value={newContactForm.email} onChange={e => setNewContactForm(p => ({ ...p, email: e.target.value }))} /></div>
-                  <div><label className="label">Phone</label><input className="input" value={newContactForm.phone} onChange={e => setNewContactForm(p => ({ ...p, phone: e.target.value }))} /></div>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '14px' }}>
-                  <button className="btn btn-primary" onClick={addNewContact} disabled={!newContactForm.first_name || !newContactForm.last_name}>
-                    <Plus size={13} /> Add Contact
-                  </button>
-                </div>
+
+                {contacts.map((c, idx) => (
+                  <ContactRow
+                    key={idx}
+                    contact={c}
+                    onUpdate={patch => updateContact(idx, patch)}
+                    onSearch={q => searchForContact(idx, q)}
+                    onLinkCrm={crm => updateContact(idx, { crmContact: crm, showSearch: false, showAddForm: false })}
+                    onAddNew={type => addNewContact(idx, type)}
+                    supabase={supabase}
+                  />
+                ))}
               </div>
             )}
 
@@ -525,9 +467,7 @@ export default function IntakePage() {
                   </div>
                 ))}
                 <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                  <button className="btn btn-ghost" onClick={() => setDuplicateDeals([])} style={{ fontSize: '12px' }}>
-                    Cancel
-                  </button>
+                  <button className="btn btn-ghost" onClick={() => setDuplicateDeals([])} style={{ fontSize: '12px' }}>Cancel</button>
                   <button className="btn btn-primary" onClick={() => { setIgnoreDuplicate(true); handleSave(true) }} style={{ fontSize: '12px', background: 'var(--orange)' }}>
                     Save anyway — it's a different deal
                   </button>
@@ -559,11 +499,11 @@ export default function IntakePage() {
         {/* DONE */}
         {stage === 'done' && dealId && (
           <div className="card fade-in" style={{ padding: '40px', textAlign: 'center' }}>
-            <Check size={40} style={{ color: 'var(--green)', marginBottom: '16px' }} />
+            <Check size={40} style={{ color: 'var(--green)', display: 'block', margin: '0 auto 16px' }} />
             <div style={{ fontSize: '18px', fontWeight: 700, marginBottom: '8px' }}>Deal created</div>
             <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '24px' }}>
-              {edited?.company_name} added to pipeline as "Reviewing"
-              {selectedContact && ` · linked to ${selectedContact.first_name} ${selectedContact.last_name}`}
+              {edited?.company_name} added to pipeline
+              {linkedCount > 0 && ` · ${linkedCount} contact${linkedCount > 1 ? 's' : ''} linked`}
             </div>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
               <button className="btn btn-ghost" onClick={reset}>Parse another</button>
@@ -584,6 +524,167 @@ export default function IntakePage() {
     </div>
   )
 }
+
+// ── ContactRow ────────────────────────────────────────────────────────────────
+
+function ContactRow({ contact, onUpdate, onSearch, onLinkCrm, onAddNew, supabase }: {
+  contact: ExtractedContact
+  onUpdate: (patch: Partial<ExtractedContact>) => void
+  onSearch: (q: string) => void
+  onLinkCrm: (crm: any) => void
+  onAddNew: (type: string) => void
+  supabase: any
+}) {
+  const rowRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (rowRef.current && !rowRef.current.contains(e.target as Node)) {
+        onUpdate({ showSearch: false })
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const roleBadgeColor: Record<string, string> = {
+    'Source / Banker': 'var(--accent)',
+    'Management': 'var(--green)',
+    'Advisor': '#7c6fcd',
+    'Lender': '#d4a017',
+    'Other': 'var(--text-muted)',
+  }
+
+  const contactTypeForRole: Record<string, string> = {
+    'Source / Banker': 'banker',
+    'Management': 'management',
+    'Advisor': 'advisor',
+    'Lender': 'lender',
+    'Other': 'other',
+  }
+
+  if (contact.skip) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', marginBottom: '8px', opacity: 0.4, fontSize: '12px', color: 'var(--text-muted)' }}>
+        <span>{contact.name} · skipped</span>
+        <button onClick={() => onUpdate({ skip: false })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--accent)' }}>Undo</button>
+      </div>
+    )
+  }
+
+  return (
+    <div ref={rowRef} style={{ marginBottom: '12px', padding: '12px', background: 'var(--surface-2)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+      {/* Contact header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: contact.crmContact ? '0' : '10px' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>{contact.name}</span>
+            <span style={{ fontSize: '10px', fontWeight: 600, color: roleBadgeColor[contact.role] || 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              {contact.role}
+            </span>
+          </div>
+          {contact.firm && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>{contact.firm}{contact.title ? ` · ${contact.title}` : ''}</div>}
+        </div>
+        <button onClick={() => onUpdate({ skip: true })} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px', flexShrink: 0 }}>
+          <X size={13} />
+        </button>
+      </div>
+
+      {/* Linked CRM contact */}
+      {contact.crmContact ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+          <Check size={12} style={{ color: 'var(--green)', flexShrink: 0 }} />
+          <span style={{ fontSize: '12px', color: 'var(--green)' }}>
+            Linked to {contact.crmContact.first_name} {contact.crmContact.last_name}
+            {contact.crmContact.firm ? ` · ${contact.crmContact.firm}` : ''}
+          </span>
+          <button onClick={() => onUpdate({ crmContact: undefined, showSearch: false })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
+            Change
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* Search / add form */}
+          {!contact.showAddForm ? (
+            <div style={{ position: 'relative' }}>
+              <Search size={12} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', zIndex: 1 }} />
+              <input
+                className="input"
+                placeholder={`Search CRM for ${contact.name}...`}
+                value={contact.searchQuery || ''}
+                onChange={e => onSearch(e.target.value)}
+                onFocus={() => onUpdate({ showSearch: true })}
+                style={{ paddingLeft: '28px', fontSize: '12px' }}
+              />
+              {contact.showSearch && ((contact.searchResults || []).length > 0 || (contact.searchQuery || '').length > 2) && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '2px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '7px', zIndex: 50, boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }}>
+                  {(contact.searchResults || []).length > 0 ? (contact.searchResults || []).map((r: any) => (
+                    <button key={r.id} onClick={() => onLinkCrm(r)}
+                      style={{ display: 'block', width: '100%', padding: '8px 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid var(--border-subtle)' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                      <div style={{ fontSize: '12px', fontWeight: 500 }}>{r.first_name} {r.last_name}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{r.firm || r.title}</div>
+                    </button>
+                  )) : (
+                    <div style={{ padding: '10px 12px' }}>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>No results — add to CRM?</div>
+                      <button className="btn btn-ghost" onClick={() => onUpdate({ showAddForm: true, showSearch: false })} style={{ fontSize: '11px', padding: '4px 10px' }}>
+                        <Plus size={11} /> Add {contact.name}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              <button className="btn btn-ghost" onClick={() => onUpdate({ showAddForm: true })} style={{ fontSize: '11px', padding: '3px 8px', marginTop: '5px' }}>
+                <Plus size={11} /> Add to CRM
+              </button>
+            </div>
+          ) : (
+            <div style={{ marginTop: '4px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                <div>
+                  <label className="label" style={{ fontSize: '10px' }}>First *</label>
+                  <input className="input" style={{ fontSize: '12px' }} value={contact.addForm?.first_name || ''} onChange={e => onUpdate({ addForm: { ...contact.addForm!, first_name: e.target.value } })} />
+                </div>
+                <div>
+                  <label className="label" style={{ fontSize: '10px' }}>Last *</label>
+                  <input className="input" style={{ fontSize: '12px' }} value={contact.addForm?.last_name || ''} onChange={e => onUpdate({ addForm: { ...contact.addForm!, last_name: e.target.value } })} />
+                </div>
+                <div>
+                  <label className="label" style={{ fontSize: '10px' }}>Firm</label>
+                  <FirmSearch value={contact.addForm?.firm || ''} onChange={v => onUpdate({ addForm: { ...contact.addForm!, firm: v } })} supabase={supabase} />
+                </div>
+                <div>
+                  <label className="label" style={{ fontSize: '10px' }}>Title</label>
+                  <input className="input" style={{ fontSize: '12px' }} value={contact.addForm?.title || ''} onChange={e => onUpdate({ addForm: { ...contact.addForm!, title: e.target.value } })} />
+                </div>
+                <div>
+                  <label className="label" style={{ fontSize: '10px' }}>Email</label>
+                  <input className="input" style={{ fontSize: '12px' }} type="email" value={contact.addForm?.email || ''} onChange={e => onUpdate({ addForm: { ...contact.addForm!, email: e.target.value } })} />
+                </div>
+                <div>
+                  <label className="label" style={{ fontSize: '10px' }}>Phone</label>
+                  <input className="input" style={{ fontSize: '12px' }} value={contact.addForm?.phone || ''} onChange={e => onUpdate({ addForm: { ...contact.addForm!, phone: e.target.value } })} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button className="btn btn-ghost" onClick={() => onUpdate({ showAddForm: false })} style={{ fontSize: '11px', padding: '4px 10px' }}>Cancel</button>
+                <button className="btn btn-primary" onClick={() => onAddNew(contactTypeForRole[contact.role] || 'other')}
+                  disabled={!contact.addForm?.first_name || !contact.addForm?.last_name}
+                  style={{ fontSize: '11px', padding: '4px 10px' }}>
+                  <Check size={11} /> Add to CRM
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── FirmSearch ────────────────────────────────────────────────────────────────
 
 function FirmSearch({ value, onChange, supabase }: { value: string, onChange: (v: string) => void, supabase: any }) {
   const [firmSearch, setFirmSearch] = useState(value)
@@ -610,7 +711,7 @@ function FirmSearch({ value, onChange, supabase }: { value: string, onChange: (v
         .ilike('firm', `%${firmSearch}%`)
         .not('firm', 'is', null)
         .limit(50)
-      const unique = [...new Set((data || []).map((c: any) => c.firm).filter(Boolean))] as string[]
+      const unique = Array.from(new Set((data || []).map((c: any) => c.firm).filter(Boolean))) as string[]
       setFirmResults(unique.slice(0, 8))
       setShowFirmResults(true)
     }, 200)
@@ -621,8 +722,9 @@ function FirmSearch({ value, onChange, supabase }: { value: string, onChange: (v
     <div ref={firmRef} style={{ position: 'relative' }}>
       <input
         className="input"
+        style={{ fontSize: '12px' }}
         value={firmSearch}
-        placeholder="Search or type firm name..."
+        placeholder="Search or type firm..."
         onChange={e => { setFirmSearch(e.target.value); onChange(e.target.value) }}
         onFocus={() => firmSearch && setShowFirmResults(true)}
       />
@@ -650,6 +752,7 @@ function FirmSearch({ value, onChange, supabase }: { value: string, onChange: (v
   )
 }
 
+// ── IntakeField ───────────────────────────────────────────────────────────────
 
 function IntakeField({ label, children, required }: { label: string, children: React.ReactNode, required?: boolean }) {
   return (
@@ -661,6 +764,8 @@ function IntakeField({ label, children, required }: { label: string, children: R
     </div>
   )
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {

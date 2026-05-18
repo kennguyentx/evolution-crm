@@ -13,15 +13,23 @@ const SYSTEM_PROMPT = `You extract factual deal data from teasers and CIMs. Retu
   "revenue": "number in raw dollars or null — most recent annual revenue as stated",
   "ebitda": "number in raw dollars or null — most recent annual EBITDA (use adjusted/normalized if explicitly stated)",
   "cim_summary": "string — 3-5 factual sentences describing: what the company does, where it operates, its financial profile, and ownership/transaction context. State only facts from the document. No opinions, no qualitative assessments, no phrases like 'attractive', 'compelling', 'strong', 'impressive', or 'unique'.",
-  "banker_name": "string or null — full name of the investment banker or broker as stated",
-  "banker_firm": "string or null — name of the investment bank or advisory firm as stated"
+  "contacts": [
+    {
+      "name": "string — full name as stated",
+      "firm": "string or null — company or advisory firm name",
+      "role": "string — one of: Source / Banker | Management | Advisor | Lender | Other",
+      "title": "string or null — job title as stated"
+    }
+  ]
 }
 
 Rules:
 - Dollar values as raw numbers (4200000 for $4.2M)
 - If a field is not stated in the document, return null
 - Do not infer or estimate values not explicitly stated
-- The summary must be purely factual — no adjectives that express quality or opinion`
+- The summary must be purely factual — no adjectives that express quality or opinion
+- contacts: extract ALL named individuals — investment bankers/brokers, management team (CEO, CFO, COO, President, etc.), legal/financial advisors, lenders. Return [] if none found.
+- For each contact, role must be exactly one of the values listed above`
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,7 +38,7 @@ export async function POST(req: NextRequest) {
 
     const response = await anthropic.messages.create({
       model: 'claude-opus-4-7',
-      max_tokens: 1500,
+      max_tokens: 2500,
       system: SYSTEM_PROMPT,
       messages: [{
         role: 'user',
