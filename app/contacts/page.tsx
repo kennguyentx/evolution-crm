@@ -121,7 +121,6 @@ export default function ContactsPage() {
   }
 
   const displayed = searchResults !== null ? searchResults : contacts
-  const displayTotal = searchResults !== null ? searchResults.length : total
 
   const sortedDisplayed = [...displayed].sort((a: any, b: any) => {
     let av: string, bv: string
@@ -131,7 +130,6 @@ export default function ContactsPage() {
     const cmp = av.localeCompare(bv)
     return sortDir==='asc'?cmp:-cmp
   })
-  }
 
   const displayTotal = typeFilter !== 'all' ? (typeCounts[typeFilter] || 0) : total
 
