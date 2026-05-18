@@ -5,13 +5,14 @@ import Link from 'next/link'
 import { Kanban, Building2, Users, BarChart3, Zap, LogOut, TrendingUp, FileText, Menu, X } from 'lucide-react'
 
 const NAV = [
-  { href: '/pipeline',   label: 'Pipeline',       icon: Kanban },
-  { href: '/deals',      label: 'Deals',           icon: FileText },
-  { href: '/contacts',   label: 'Contacts',        icon: Users },
-  { href: '/intake',     label: 'Teaser / CIM',    icon: Zap },
-  { href: '/portfolio',  label: 'Portfolio',       icon: Building2 },
-  { href: '/investors',  label: 'Investors',       icon: Users },
-  { href: '/raises',     label: 'Capital Raises',  icon: TrendingUp },
+  { href: '/pipeline',         label: 'Pipeline',          icon: Kanban },
+  { href: '/deals',            label: 'Deals',             icon: FileText },
+  { href: '/contacts',         label: 'Contacts',          icon: Users },
+  { href: '/intake',           label: 'Teaser / CIM',      icon: Zap },
+  { href: '/portfolio',        label: 'Portfolio',         icon: Building2 },
+  { href: '/investors',        label: 'Investors',         icon: Users },
+  { href: '/raises',           label: 'Capital Raises',    icon: TrendingUp },
+  { href: '/raises/contacts',  label: 'Capital Contacts',  icon: BarChart3 },
 ]
 
 export default function Sidebar() {
