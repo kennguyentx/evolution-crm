@@ -326,9 +326,19 @@ async function executeTool(name: string, input: any): Promise<any> {
       if (input.field === 'ev_ebitda_multiple') {
         value = parseFloat(String(value).replace(/x/gi, ''))
       }
-      const { error } = await supabase.from('deals').update({ [input.field]: value }).eq('id', input.deal_id)
+      const extraUpdates: Record<string, any> = {}
+      if (input.field === 'stage') {
+        if (value === 'Closed (Platform)' || value === 'Closed (Add-On)') {
+          extraUpdates.status = 'Closed'
+        } else if (String(value).startsWith('Pass')) {
+          extraUpdates.status = 'Dead'
+        } else {
+          extraUpdates.status = 'Active'
+        }
+      }
+      const { error } = await supabase.from('deals').update({ [input.field]: value, ...extraUpdates }).eq('id', input.deal_id)
       if (error) return { error: error.message }
-      return { success: true, message: `Updated ${input.company_name} — ${input.field} set to ${input.new_value}` }
+      return { success: true, message: `Updated ${input.company_name} — ${input.field} set to ${input.new_value}${extraUpdates.status ? `, status set to ${extraUpdates.status}` : ''}` }
     }
 
     case 'update_contact_field': {
