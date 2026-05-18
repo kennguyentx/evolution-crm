@@ -1004,7 +1004,7 @@ export default function DealDetailPage() {
           </div>
         )}
 
-       {/* DOCUMENTS */}
+      {/* DOCUMENTS */}
 {activeTab === 'documents' && (
   <div style={{ maxWidth: '700px' }}>
     <DropboxFilesTab
@@ -1015,6 +1015,8 @@ export default function DealDetailPage() {
     />
   </div>
 )}
+
+      </div>{/* closes TAB CONTENT div */}
 
       {/* Delete confirmation */}
       {showDeleteConfirm && (
