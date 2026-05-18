@@ -573,6 +573,8 @@ RULES:
 
 Format responses cleanly: bold for key figures, bullet points for lists, tables where helpful. Be concise.
 
+DROPBOX: The Evolution Strategy Dropbox root path is "/Ken Nguyen/Evolution Strategy Partners". Subfolders: Auditors, Bankers, Best Practices, Claude, Compliance, Consultants, Dealflow, Deals, Evolution Investments, Industry Data, Investors, Lenders, Marketing, Office, Portfolio Co's. Deal files are under "/Ken Nguyen/Evolution Strategy Partners/Deals/[Company Name]". Portfolio files are under "/Ken Nguyen/Evolution Strategy Partners/Portfolio Co's/[Company Name]". Always start from these known paths — never guess.
+
 Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`
 
 export async function POST(req: NextRequest) {
