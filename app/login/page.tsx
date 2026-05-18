@@ -42,7 +42,7 @@ export default function LoginPage() {
             letterSpacing: '0.06em',
             textTransform: 'uppercase',
           }}>
-            Deal CRM
+            Nexus
           </div>
         </div>
 
