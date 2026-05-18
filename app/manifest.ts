@@ -2,8 +2,8 @@ import { MetadataRoute } from 'next'
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Evolution Strategy CRM',
-    short_name: 'ES CRM',
+    name: 'Nexus',
+    short_name: 'Nexus',
     description: 'Deal and portfolio management',
     start_url: '/pipeline',
     display: 'standalone',

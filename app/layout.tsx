@@ -6,13 +6,13 @@ import LayoutClient from '@/components/layout/LayoutClient'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Evolution Strategy CRM',
+  title: 'Nexus',
   description: 'Deal and portfolio management',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'ESP CRM',
+    title: 'Nexus',
   },
   icons: {
     apple: '/apple-touch-icon.png',
@@ -27,7 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="ESP CRM" />
+        <meta name="apple-mobile-web-app-title" content="Nexus" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
       </head>
       <body className={inter.className}>
