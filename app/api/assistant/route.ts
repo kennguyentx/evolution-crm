@@ -665,7 +665,7 @@ export async function POST(req: NextRequest) {
       const toolUses = resp.content.filter((b: any) => b.type === 'tool_use')
 
       // Pause for any write tool
-      const writeToolUse = toolUses.find((t: any) => WRITE_TOOLS.has(t.name))
+      const writeToolUse = toolUses.find((t: any) => WRITE_TOOLS.has(t.name)) as any
       if (writeToolUse) {
         const textSoFar = resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
         return NextResponse.json({
