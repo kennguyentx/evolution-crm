@@ -85,6 +85,8 @@ export default function DealDetailPage() {
   const [activityForm, setActivityForm] = useState({ interaction_type: 'call', summary: '', next_steps: '' })
   const [editingInteractionId, setEditingInteractionId] = useState<string | null>(null)
   const [editingInteraction, setEditingInteraction] = useState<{ interaction_type: string; interaction_date: string; summary: string; next_steps: string } | null>(null)
+  const [detectedContacts, setDetectedContacts] = useState<any[]>([])
+  const detectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const fetchAll = useCallback(async () => {
     const [dealRes, linksRes, interactionsRes, diligenceRes, capitalRes] = await Promise.all([
@@ -338,6 +340,48 @@ export default function DealDetailPage() {
     maxFiles: 1,
   })
 
+  const detectMentions = useCallback(async (text: string) => {
+    if (!text.trim()) { setDetectedContacts([]); return }
+    const lower = text.toLowerCase()
+    const found: any[] = []
+    const foundIds = new Set<string>()
+
+    // Check already-linked contacts first (no extra query)
+    for (const link of linkedContacts) {
+      const c = link.contact
+      if (!c) continue
+      const full = `${c.first_name} ${c.last_name}`.toLowerCase()
+      if (lower.includes(full) && !foundIds.has(c.id)) {
+        found.push(c)
+        foundIds.add(c.id)
+      }
+    }
+
+    // Scan consecutive word pairs against the DB for anyone not already linked
+    const words = text.trim().split(/\s+/).filter(w => w.length > 1)
+    const pairs = words.slice(0, -1).map((w, i) => ({ first: w, last: words[i + 1] }))
+    for (const pair of pairs.slice(0, 8)) {
+      const { data } = await supabase
+        .from('contacts')
+        .select('id, first_name, last_name, firm, contact_type')
+        .ilike('first_name', pair.first)
+        .ilike('last_name', pair.last)
+        .limit(1)
+      if (data?.[0] && !foundIds.has(data[0].id)) {
+        found.push(data[0])
+        foundIds.add(data[0].id)
+      }
+    }
+
+    setDetectedContacts(found)
+  }, [linkedContacts, supabase])
+
+  const handleSummaryChange = (text: string) => {
+    setActivityForm(p => ({ ...p, summary: text }))
+    if (detectTimer.current) clearTimeout(detectTimer.current)
+    detectTimer.current = setTimeout(() => detectMentions(text), 600)
+  }
+
   const addInteraction = async () => {
     if (!activityForm.summary.trim()) return
     const { data } = await supabase.from('interactions').insert({
@@ -346,10 +390,12 @@ export default function DealDetailPage() {
       summary: activityForm.summary,
       next_steps: activityForm.next_steps || null,
       interaction_date: new Date().toISOString(),
-    }).select().single()
+      contact_id: detectedContacts[0]?.id || null,
+    }).select('*, contact:contacts(first_name, last_name)').single()
     if (data) setInteractions(prev => [data, ...prev])
     setShowActivityForm(false)
     setActivityForm({ interaction_type: 'call', summary: '', next_steps: '' })
+    setDetectedContacts([])
   }
 
   const startEditInteraction = (i: Interaction) => {
@@ -1004,7 +1050,27 @@ export default function DealDetailPage() {
                   </div>
                   <div>
                     <label className="label">Summary *</label>
-                    <textarea className="input" rows={3} style={{ resize: 'vertical' }} placeholder="What happened, what was discussed..." value={activityForm.summary} onChange={e => setActivityForm(p => ({ ...p, summary: e.target.value }))} />
+                    <textarea className="input" rows={3} style={{ resize: 'vertical' }} placeholder="What happened, what was discussed..." value={activityForm.summary} onChange={e => handleSummaryChange(e.target.value)} />
+                    {detectedContacts.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Detected:</span>
+                        {detectedContacts.map(c => (
+                          <span key={c.id} style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            fontSize: '11px', padding: '2px 8px', borderRadius: '999px',
+                            background: 'var(--accent-muted)', color: 'var(--accent)',
+                            border: '1px solid var(--accent)',
+                          }}>
+                            {c.first_name} {c.last_name}
+                            {c.firm && <span style={{ opacity: 0.6 }}>· {c.firm}</span>}
+                            <button
+                              onClick={() => setDetectedContacts(prev => prev.filter(x => x.id !== c.id))}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 0 2px', color: 'inherit', lineHeight: 1 }}
+                            >×</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="label">Next Steps</label>
@@ -1012,7 +1078,7 @@ export default function DealDetailPage() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '14px' }}>
-                  <button className="btn btn-ghost" onClick={() => setShowActivityForm(false)}>Cancel</button>
+                  <button className="btn btn-ghost" onClick={() => { setShowActivityForm(false); setDetectedContacts([]) }}>Cancel</button>
                   <button className="btn btn-primary" onClick={addInteraction} disabled={!activityForm.summary.trim()}>
                     <Check size={13} /> Save
                   </button>
