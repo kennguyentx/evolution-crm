@@ -10,7 +10,7 @@
 //   onPathSaved   — callback after user saves a Dropbox path
 
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { Upload, Download, Folder, File, FileText, Sheet, Presentation,
+import { Upload, Download, Folder, File, FileText, Table2, Monitor,
          Image, Archive, Loader2, ExternalLink, RefreshCw, Link, Check } from 'lucide-react'
 
 interface DropboxItem {
@@ -42,9 +42,9 @@ function FileIcon({ icon, className }: { icon: string; className?: string }) {
   switch (icon) {
     case 'folder':      return <Folder className={cls} />
     case 'pdf':         return <FileText className={`${cls} text-red-400`} />
-    case 'spreadsheet': return <Sheet className={`${cls} text-green-400`} />
+    case 'spreadsheet': return <Table2 className={`${cls} text-green-400`} />
     case 'word':        return <FileText className={`${cls} text-blue-400`} />
-    case 'slides':      return <Presentation className={`${cls} text-orange-400`} />
+    case 'slides':      return <Monitor className={`${cls} text-orange-400`} />
     case 'image':       return <Image className={`${cls} text-purple-400`} />
     case 'archive':     return <Archive className={cls} />
     default:            return <File className={cls} />
