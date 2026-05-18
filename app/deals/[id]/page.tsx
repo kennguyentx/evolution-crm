@@ -384,14 +384,15 @@ export default function DealDetailPage() {
 
   const addInteraction = async () => {
     if (!activityForm.summary.trim()) return
-    const { data } = await supabase.from('interactions').insert({
+    const insertPayload: any = {
       deal_id: dealId,
       interaction_type: activityForm.interaction_type,
       summary: activityForm.summary,
       next_steps: activityForm.next_steps || null,
       interaction_date: new Date().toISOString(),
-      contact_id: detectedContacts[0]?.id || null,
-    }).select('*, contact:contacts(first_name, last_name)').single()
+    }
+    if (detectedContacts[0]?.id) insertPayload.contact_id = detectedContacts[0].id
+    const { data } = await supabase.from('interactions').insert(insertPayload).select('*, contact:contacts(first_name, last_name)').single()
     if (data) setInteractions(prev => [data, ...prev])
     setShowActivityForm(false)
     setActivityForm({ interaction_type: 'call', summary: '', next_steps: '' })
@@ -416,7 +417,8 @@ export default function DealDetailPage() {
       summary: editingInteraction.summary,
       next_steps: editingInteraction.next_steps || null,
     }
-    const { data } = await supabase.from('interactions').update(payload).eq('id', editingInteractionId).select('*, contact:contacts(first_name, last_name)').single()
+    const { data, error } = await supabase.from('interactions').update(payload).eq('id', editingInteractionId).select('*, contact:contacts(first_name, last_name)').single()
+    if (error) { console.error('Save interaction error:', error); return }
     if (data) setInteractions(prev => prev.map(i => i.id === editingInteractionId ? data : i))
     setEditingInteractionId(null)
     setEditingInteraction(null)

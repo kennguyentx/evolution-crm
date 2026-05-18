@@ -15,7 +15,7 @@ export type DealStatus = 'Active' | 'Dead' | 'Closed'
 
 export type ContactType = 'banker' | 'lp' | 'lender' | 'advisor' | 'management' | 'other'
 
-export type InteractionType = 'call' | 'email' | 'meeting' | 'loi-submission' | 'lender-call' | 'other'
+export type InteractionType = 'call' | 'email' | 'meeting' | 'note' | 'site visit' | 'loi-submission' | 'lender-call' | 'other'
 
 export interface Deal {
   id: string
