@@ -335,6 +335,17 @@ async function executeTool(name: string, input: any): Promise<any> {
         } else {
           extraUpdates.status = 'Active'
         }
+      } else if (input.field === 'status') {
+        if (value === 'Closed') {
+          extraUpdates.stage = 'Closed (Platform)'
+        } else if (value === 'Dead') {
+          const { data: current } = await supabase.from('deals').select('stage').eq('id', input.deal_id).single()
+          extraUpdates.stage = current?.stage?.startsWith('Pass') ? current.stage : 'Pass (Pre-LOI)'
+        } else if (value === 'Active') {
+          const { data: current } = await supabase.from('deals').select('stage').eq('id', input.deal_id).single()
+          const s = current?.stage || ''
+          extraUpdates.stage = (s.startsWith('Pass') || s.startsWith('Closed')) ? 'Reviewing' : s
+        }
       }
       const { error } = await supabase.from('deals').update({ [input.field]: value, ...extraUpdates }).eq('id', input.deal_id)
       if (error) return { error: error.message }
