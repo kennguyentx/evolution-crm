@@ -68,7 +68,7 @@ export default function CapitalContactsPage() {
   const [search, setSearch] = useState('')
   const [sourceFilter, setSourceFilter] = useState<'all' | 'equity' | 'lender'>('all')
   const [statusFilter, setStatusFilter] = useState<'active' | 'all'>('active')
-  const [expandedFirms, setExpandedFirms] = useState<Set<string>>(new Set())
+  const [expandedFirm, setExpandedFirm] = useState<string | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [addingCallFor, setAddingCallFor] = useState<string | null>(null) // contact id
   const [newCallForm, setNewCallForm] = useState<NewCallForm>({
@@ -87,20 +87,22 @@ export default function CapitalContactsPage() {
   const [editingNote, setEditingNote] = useState<string | null>(null)
   const [noteDraft, setNoteDraft] = useState('')
   const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
 
   const PAGE = 100
 
-  const load = useCallback(async (q = search, src = sourceFilter, st = statusFilter) => {
-    setLoading(true)
+  const load = useCallback(async (q = search, src = sourceFilter, st = statusFilter, off = 0, append = false) => {
+    if (append) setLoadingMore(true)
+    else setLoading(true)
     let query = supabase
       .from('capital_contacts')
       .select('*', { count: 'exact' })
       .order('firm')
-      .limit(PAGE)
+      .range(off, off + PAGE - 1)
 
     if (st !== 'all') query = query.eq('status', st)
     if (src !== 'all') query = query.eq('source', src)
-
     if (q.trim()) {
       query = query.or(
         `firm.ilike.%${q}%,contact_name.ilike.%${q}%,firm_type.ilike.%${q}%,notes.ilike.%${q}%`
@@ -108,12 +110,16 @@ export default function CapitalContactsPage() {
     }
 
     const { data, count } = await query
-    setContacts((data ?? []).map((c: any) => ({
+    const mapped = (data ?? []).map((c: any) => ({
       ...c,
       _importStatus: c.crm_contact_id ? 'imported' : undefined,
-    })))
+    }))
+    if (append) setContacts(prev => [...prev, ...mapped])
+    else setContacts(mapped)
     setTotal(count ?? 0)
+    setOffset(off + (data?.length ?? 0))
     setLoading(false)
+    setLoadingMore(false)
   }, [supabase, search, sourceFilter, statusFilter])
 
   useEffect(() => { load() }, [])
@@ -122,48 +128,50 @@ export default function CapitalContactsPage() {
   const searchTimer = useRef<any>(null)
   const handleSearch = (v: string) => {
     setSearch(v)
+    setOffset(0)
     clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(() => load(v, sourceFilter, statusFilter), 300)
+    searchTimer.current = setTimeout(() => load(v, sourceFilter, statusFilter, 0, false), 300)
   }
 
   const handleSourceFilter = (v: typeof sourceFilter) => {
     setSourceFilter(v)
-    load(search, v, statusFilter)
+    setOffset(0)
+    load(search, v, statusFilter, 0, false)
   }
 
   const handleStatusFilter = (v: typeof statusFilter) => {
     setStatusFilter(v)
-    load(search, sourceFilter, v)
+    setOffset(0)
+    load(search, sourceFilter, v, 0, false)
   }
 
   const toggleFirm = async (firm: string, rows: Contact[]) => {
-    const next = new Set(expandedFirms)
-    if (next.has(firm)) {
-      next.delete(firm)
-    } else {
-      next.add(firm)
-      // Load calls for all contacts in this firm that haven't been loaded
-      const toLoad = rows.filter(r => !r._callsLoaded)
-      if (toLoad.length > 0) {
-        const ids = toLoad.map(r => r.id)
-        const { data } = await supabase
-          .from('capital_contact_calls')
-          .select('*')
-          .in('contact_id', ids)
-          .order('call_date', { ascending: false })
-        const callsByContact: Record<string, Call[]> = {}
-        for (const call of data ?? []) {
-          if (!callsByContact[call.contact_id]) callsByContact[call.contact_id] = []
-          callsByContact[call.contact_id].push(call)
-        }
-        setContacts(prev => prev.map(c =>
-          ids.includes(c.id)
-            ? { ...c, _calls: callsByContact[c.id] ?? [], _callsLoaded: true }
-            : c
-        ))
-      }
+    // Close if already open (accordion — only one open at a time)
+    if (expandedFirm === firm) {
+      setExpandedFirm(null)
+      return
     }
-    setExpandedFirms(next)
+    setExpandedFirm(firm)
+    // Load calls for contacts in this firm that haven't been loaded yet
+    const toLoad = rows.filter(r => !r._callsLoaded)
+    if (toLoad.length > 0) {
+      const ids = toLoad.map(r => r.id)
+      const { data } = await supabase
+        .from('capital_contact_calls')
+        .select('*')
+        .in('contact_id', ids)
+        .order('call_date', { ascending: false })
+      const callsByContact: Record<string, Call[]> = {}
+      for (const call of data ?? []) {
+        if (!callsByContact[call.contact_id]) callsByContact[call.contact_id] = []
+        callsByContact[call.contact_id].push(call)
+      }
+      setContacts(prev => prev.map(c =>
+        ids.includes(c.id)
+          ? { ...c, _calls: callsByContact[c.id] ?? [], _callsLoaded: true }
+          : c
+      ))
+    }
   }
 
   const saveCall = async (contactId: string) => {
@@ -438,7 +446,7 @@ export default function CapitalContactsPage() {
           </div>
         ) : grouped.map(({ firm, rows }) => {
           const first = rows[0]
-          const isExpanded = expandedFirms.has(firm)
+          const isExpanded = expandedFirm === firm
           const allCalls = rows.flatMap(r => r._calls ?? []).sort((a, b) => b.call_date.localeCompare(a.call_date))
           const firstNotes = rows.map(r => r.notes).filter(Boolean).join(' | ')
 
@@ -548,14 +556,14 @@ export default function CapitalContactsPage() {
                                 + log call
                               </button>
 
-                              {/* Import to CRM button */}
+                              {/* Import to Nexus button */}
                               {r.contact_name && (() => {
                                 const st = r._importStatus
                                 const already = r.crm_contact_id && !st
 
                                 if (already || st === 'imported') return (
                                   <span style={{ fontSize: '10px', color: 'var(--green)', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                    <Check size={10} /> In CRM
+                                    <Check size={10} /> In Nexus
                                   </span>
                                 )
                                 if (st === 'duplicate') return (
@@ -578,9 +586,9 @@ export default function CapitalContactsPage() {
                                   <button
                                     onClick={e => { e.stopPropagation(); importToCRM(r) }}
                                     style={{ fontSize: '10px', padding: '2px 8px', border: '1px solid var(--border)', borderRadius: '4px', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}
-                                    title="Add to CRM Contacts (checks for duplicates first)"
+                                    title="Add to Nexus Contacts (checks for duplicates first)"
                                   >
-                                    <UserPlus size={10} /> Add to CRM
+                                    <UserPlus size={10} /> Add to Nexus
                                   </button>
                                 )
                               })()}
@@ -694,10 +702,17 @@ export default function CapitalContactsPage() {
           )
         })}
 
-        {/* Load more hint */}
-        {total > PAGE && (
-          <div style={{ padding: '16px 28px', fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center' }}>
-            Showing {contacts.length} of {total.toLocaleString()} — use search to narrow results
+        {/* Load more */}
+        {contacts.length < total && (
+          <div style={{ padding: '20px 28px', textAlign: 'center' }}>
+            <button
+              className="btn btn-ghost"
+              onClick={() => load(search, sourceFilter, statusFilter, offset, true)}
+              disabled={loadingMore}
+              style={{ fontSize: '12px' }}
+            >
+              {loadingMore ? 'Loading…' : `Load more (${contacts.length.toLocaleString()} of ${total.toLocaleString()})`}
+            </button>
           </div>
         )}
       </div>
