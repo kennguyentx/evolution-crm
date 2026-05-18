@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation'
 import { useDropzone } from 'react-dropzone'
 import { format } from 'date-fns'
 import DocumentsTab from '@/components/deals/DocumentsTab'
+import NewContactModal from '@/components/contacts/NewContactModal'
 
 const STAGES = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
 
@@ -43,6 +44,7 @@ export default function DealDetailPage() {
   const [activeTab, setActiveTab] = useState<'overview'|'diligence'|'contacts'|'capital'|'activity'|'documents'>('overview')
   const [editingStage, setEditingStage] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [editingContact, setEditingContact] = useState<any>(null)
   const [portfolioCompanies, setPortfolioCompanies] = useState<any[]>([])
 
   // Contact search
@@ -422,7 +424,12 @@ export default function DealDetailPage() {
                   return (
                   <div key={link.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: 'var(--surface-2)', borderRadius: '6px', marginBottom: '6px', border: '1px solid var(--border)' }}>
                     <div>
-                      <div style={{ fontSize: '13px', fontWeight: 500 }}>{link.contact.first_name} {link.contact.last_name}</div>
+                      <button
+                        onClick={() => setEditingContact(link.contact)}
+                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
+                      >
+                        <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--accent)', textDecoration: 'underline', textDecorationStyle: 'dotted' }}>{link.contact.first_name} {link.contact.last_name}</div>
+                      </button>
                       <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>{link.contact.firm || link.contact.title || '—'}</div>
                     </div>
                     <button onClick={() => unlinkContact(link.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px' }}><X size={13} /></button>
@@ -584,7 +591,12 @@ export default function DealDetailPage() {
               return (
                 <div key={link.id} className="card-2" style={{ padding: '14px 16px', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div>
-                    <div style={{ fontWeight: 500, fontSize: '13px' }}>{c.first_name} {c.last_name}</div>
+                    <button
+                      onClick={() => setEditingContact(c)}
+                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
+                    >
+                      <div style={{ fontWeight: 500, fontSize: '13px', color: 'var(--accent)', textDecoration: 'underline', textDecorationStyle: 'dotted' }}>{c.first_name} {c.last_name}</div>
+                    </button>
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{c.title}{c.firm ? ` · ${c.firm}` : ''}{link.role ? ` · ${link.role}` : ''}</div>
                   </div>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -845,6 +857,15 @@ export default function DealDetailPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Contact edit modal */}
+      {editingContact && (
+        <NewContactModal
+          contact={editingContact}
+          onClose={() => setEditingContact(null)}
+          onCreated={() => { setEditingContact(null); fetchAll() }}
+        />
       )}
     </div>
   )
