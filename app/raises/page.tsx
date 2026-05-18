@@ -551,6 +551,98 @@ function ParticipantRow({
   )
 }
 
+// ─── Edit raise modal ─────────────────────────────────────────
+
+function EditRaiseModal({
+  raise, deals, onClose, onSaved
+}: {
+  raise: Raise; deals: { id: string; company_name: string }[]; onClose: () => void; onSaved: (updates: Partial<Raise>) => void
+}) {
+  const [form, setForm] = useState({
+    name: raise.name ?? '',
+    deal_id: raise.deal_id ?? '',
+    target_equity: raise.target_equity ? String(raise.target_equity / 1e6) : '',
+    target_debt: raise.target_debt ? String(raise.target_debt / 1e6) : '',
+    close_date: raise.close_date ?? '',
+    status: raise.status ?? 'Open',
+    notes: raise.notes ?? '',
+  })
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    setSaving(true)
+    const updates: any = {
+      name: form.name,
+      deal_id: form.deal_id || null,
+      close_date: form.close_date || null,
+      status: form.status,
+      notes: form.notes || null,
+      target_equity: form.target_equity ? Number(form.target_equity) * 1e6 : null,
+      target_debt: form.target_debt ? Number(form.target_debt) * 1e6 : null,
+    }
+    setSaving(false)
+    onSaved(updates)
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-5 w-full max-w-lg shadow-xl" onClick={e => e.stopPropagation()}>
+        <h3 className="text-sm font-medium mb-4">Edit raise</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className="text-xs text-gray-500 mb-1 block">Name</label>
+            <input value={form.name} onChange={e => setForm({...form, name: e.target.value})}
+              className="w-full text-xs border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 bg-transparent outline-none focus:border-blue-400" />
+          </div>
+          <div className="col-span-2">
+            <label className="text-xs text-gray-500 mb-1 block">Linked deal</label>
+            <select value={form.deal_id} onChange={e => setForm({...form, deal_id: e.target.value})}
+              className="w-full text-xs border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 bg-white dark:bg-gray-900 outline-none focus:border-blue-400">
+              <option value="">— None —</option>
+              {deals.map(d => <option key={d.id} value={d.id}>{d.company_name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Target equity ($M)</label>
+            <input type="number" step="0.1" value={form.target_equity} onChange={e => setForm({...form, target_equity: e.target.value})}
+              className="w-full text-xs border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 bg-transparent outline-none focus:border-blue-400" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Target debt ($M)</label>
+            <input type="number" step="0.1" value={form.target_debt} onChange={e => setForm({...form, target_debt: e.target.value})}
+              className="w-full text-xs border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 bg-transparent outline-none focus:border-blue-400" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Target close date</label>
+            <input type="date" value={form.close_date} onChange={e => setForm({...form, close_date: e.target.value})}
+              className="w-full text-xs border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 bg-transparent outline-none focus:border-blue-400" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Status</label>
+            <select value={form.status} onChange={e => setForm({...form, status: e.target.value})}
+              className="w-full text-xs border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 bg-white dark:bg-gray-900 outline-none focus:border-blue-400">
+              <option value="Open">Open</option>
+              <option value="Closed">Closed</option>
+            </select>
+          </div>
+          <div className="col-span-2">
+            <label className="text-xs text-gray-500 mb-1 block">Notes</label>
+            <input value={form.notes} onChange={e => setForm({...form, notes: e.target.value})}
+              className="w-full text-xs border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 bg-transparent outline-none focus:border-blue-400" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} className="text-xs px-3 py-1.5 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">Cancel</button>
+          <button onClick={save} disabled={saving} className="text-xs px-3 py-1.5 rounded bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-medium hover:opacity-90 disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── New raise modal ──────────────────────────────────────────
 
 function NewRaiseModal({
@@ -646,6 +738,7 @@ export default function RaisesPage() {
   const [showPassed, setShowPassed] = useState(false)
   const [showAddParticipant, setShowAddParticipant] = useState(false)
   const [showNewRaise, setShowNewRaise] = useState(false)
+  const [showEditRaise, setShowEditRaise] = useState(false)
 
   // Load raises + deals
   useEffect(() => {
@@ -681,6 +774,24 @@ export default function RaisesPage() {
     const { data } = await supabase.from('capital_raises').select('*, deal:deals(company_name)').order('created_at', { ascending: false })
     setRaises(data ?? [])
     if (data && data.length > 0 && !selectedRaise) setSelectedRaise(data[0])
+  }
+
+  const deleteRaise = async () => {
+    if (!selectedRaise) return
+    if (!confirm(`Delete "${selectedRaise.name}"? This will also remove all participants and activity. This cannot be undone.`)) return
+    await supabase.from('capital_raises').delete().eq('id', selectedRaise.id)
+    const updated = raises.filter(r => r.id !== selectedRaise.id)
+    setRaises(updated)
+    setSelectedRaise(updated[0] ?? null)
+    setParticipants([])
+  }
+
+  const saveRaiseEdits = async (updates: Partial<Raise>) => {
+    if (!selectedRaise) return
+    await supabase.from('capital_raises').update(updates).eq('id', selectedRaise.id)
+    const updatedRaise = { ...selectedRaise, ...updates }
+    setRaises(prev => prev.map(r => r.id === selectedRaise.id ? updatedRaise : r))
+    setSelectedRaise(updatedRaise)
   }
 
   const updateParticipant = async (id: string, field: string, value: any) => {
@@ -760,6 +871,22 @@ export default function RaisesPage() {
 
         {selectedRaise && (
           <>
+            {/* Raise-level actions */}
+            <div className="flex items-center gap-2 mb-4">
+              <button
+                onClick={() => setShowEditRaise(true)}
+                className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 hover:border-gray-400 hover:text-gray-700"
+              >
+                Edit raise
+              </button>
+              <button
+                onClick={deleteRaise}
+                className="text-xs px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-900 text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+              >
+                Delete raise
+              </button>
+            </div>
+
             {/* Metrics */}
             <div className="grid grid-cols-6 gap-2 mb-5">
               {[
@@ -877,6 +1004,15 @@ export default function RaisesPage() {
           </div>
         )}
       </div>
+
+      {showEditRaise && selectedRaise && (
+        <EditRaiseModal
+          raise={selectedRaise}
+          deals={deals}
+          onClose={() => setShowEditRaise(false)}
+          onSaved={saveRaiseEdits}
+        />
+      )}
 
       {showAddParticipant && selectedRaise && (
         <AddParticipantModal
