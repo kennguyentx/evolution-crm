@@ -44,6 +44,8 @@ type Participant = {
   pricing_notes: string | null
   notes: string | null
   sort_order: number
+  capital_contact_id: string | null
+  capital_contact?: { id: string; firm: string; contact_name: string | null }
 }
 
 type Activity = {
@@ -363,6 +365,39 @@ function ParticipantRow({
   const [activities, setActivities] = useState<Activity[]>([])
   const [showAddActivity, setShowAddActivity] = useState(false)
   const [loadingAct, setLoadingAct] = useState(false)
+  const [capContactSearch, setCapContactSearch] = useState('')
+  const [capContactResults, setCapContactResults] = useState<{ id: string; firm: string; contact_name: string | null }[]>([])
+  const capSearchTimer = useRef<any>(null)
+
+  const searchCapContacts = (q: string) => {
+    setCapContactSearch(q)
+    clearTimeout(capSearchTimer.current)
+    if (!q.trim()) { setCapContactResults([]); return }
+    capSearchTimer.current = setTimeout(async () => {
+      const { data } = await supabase.from('capital_contacts')
+        .select('id, firm, contact_name')
+        .or(`firm.ilike.%${q}%,contact_name.ilike.%${q}%`)
+        .eq('status', 'active')
+        .limit(8)
+      setCapContactResults(data ?? [])
+    }, 300)
+  }
+
+  const [localCapContact, setLocalCapContact] = useState<{ id: string; firm: string; contact_name: string | null } | null>(p.capital_contact ?? null)
+
+  const linkCapContact = async (cc: { id: string; firm: string; contact_name: string | null }) => {
+    await supabase.from('raise_participants').update({ capital_contact_id: cc.id }).eq('id', p.id)
+    onUpdate(p.id, 'capital_contact_id', cc.id)
+    setLocalCapContact(cc)
+    setCapContactSearch('')
+    setCapContactResults([])
+  }
+
+  const unlinkCapContact = async () => {
+    await supabase.from('raise_participants').update({ capital_contact_id: null }).eq('id', p.id)
+    onUpdate(p.id, 'capital_contact_id', null)
+    setLocalCapContact(null)
+  }
 
   const loadActivities = async () => {
     setLoadingAct(true)
@@ -514,6 +549,38 @@ function ParticipantRow({
                   + add entry
                 </button>
               </div>
+              {/* Capital contact link */}
+              <div className="mb-3 pb-3 border-b border-gray-200 dark:border-gray-700">
+                <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1.5">Capital Contact</div>
+                {localCapContact ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px]">{localCapContact.firm}</span>
+                    {localCapContact.contact_name && <span className="text-[10px] text-gray-400">— {localCapContact.contact_name}</span>}
+                    <button onClick={unlinkCapContact} className="text-[9px] text-gray-300 dark:text-gray-600 hover:text-red-400 border border-gray-200 dark:border-gray-700 rounded px-1 py-0.5 ml-1">unlink</button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <input
+                      value={capContactSearch}
+                      onChange={e => searchCapContacts(e.target.value)}
+                      placeholder="Search capital contacts to link…"
+                      className="text-[11px] px-2 py-1 rounded border border-dashed border-gray-300 dark:border-gray-700 bg-transparent outline-none focus:border-blue-400 w-64"
+                    />
+                    {capContactResults.length > 0 && (
+                      <div className="absolute top-full left-0 mt-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 w-64">
+                        {capContactResults.map(cc => (
+                          <button key={cc.id} onClick={() => linkCapContact(cc)}
+                            className="block w-full text-left px-3 py-1.5 text-[11px] hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-100 dark:border-gray-800 last:border-0">
+                            {cc.firm}
+                            {cc.contact_name && <span className="text-gray-400 ml-1.5 text-[10px]">{cc.contact_name}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {loadingAct ? (
                 <p className="text-[10px] text-gray-400">Loading…</p>
               ) : activities.length === 0 ? (
@@ -823,7 +890,7 @@ export default function RaisesPage() {
     if (!selectedRaise) return
     const { data } = await supabase
       .from('raise_participants')
-      .select('*')
+      .select('*, capital_contact:capital_contacts(id, firm, contact_name)')
       .eq('raise_id', selectedRaise.id)
       .order('sort_order', { ascending: true })
     setParticipants(data ?? [])

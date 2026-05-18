@@ -89,6 +89,9 @@ export default function CapitalContactsPage() {
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [linkingCrmFor, setLinkingCrmFor] = useState<string | null>(null)
+  const [crmLinkQuery, setCrmLinkQuery] = useState('')
+  const [crmLinkResults, setCrmLinkResults] = useState<{ id: string; first_name: string; last_name: string; firm: string | null }[]>([])
 
   const PAGE = 100
 
@@ -125,6 +128,28 @@ export default function CapitalContactsPage() {
   useEffect(() => { load() }, [])
 
   // Debounced search
+  const crmLinkTimer = useRef<any>(null)
+  const searchCrmContacts = (q: string) => {
+    setCrmLinkQuery(q)
+    clearTimeout(crmLinkTimer.current)
+    if (!q.trim()) { setCrmLinkResults([]); return }
+    crmLinkTimer.current = setTimeout(async () => {
+      const { data } = await supabase.from('contacts')
+        .select('id, first_name, last_name, firm')
+        .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,firm.ilike.%${q}%`)
+        .limit(8)
+      setCrmLinkResults(data ?? [])
+    }, 300)
+  }
+
+  const linkToCrm = async (capitalContactId: string, crmContactId: string) => {
+    await supabase.from('capital_contacts').update({ crm_contact_id: crmContactId }).eq('id', capitalContactId)
+    setContacts(prev => prev.map(c => c.id === capitalContactId ? { ...c, crm_contact_id: crmContactId, _importStatus: 'imported' } : c))
+    setLinkingCrmFor(null)
+    setCrmLinkQuery('')
+    setCrmLinkResults([])
+  }
+
   const searchTimer = useRef<any>(null)
   const handleSearch = (v: string) => {
     setSearch(v)
@@ -556,19 +581,14 @@ export default function CapitalContactsPage() {
                                 + log call
                               </button>
 
-                              {/* Import to Nexus button */}
+                              {/* Import / link to Nexus */}
                               {r.contact_name && (() => {
                                 const st = r._importStatus
                                 const already = r.crm_contact_id && !st
 
-                                if (already || st === 'imported') return (
-                                  <span style={{ fontSize: '10px', color: 'var(--green)', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                if (already || st === 'imported' || st === 'duplicate') return (
+                                  <span style={{ fontSize: '10px', color: 'var(--green)', display: 'flex', alignItems: 'center', gap: '3px' }} title={st === 'duplicate' ? `Matched: ${r._duplicateName}` : undefined}>
                                     <Check size={10} /> In Nexus
-                                  </span>
-                                )
-                                if (st === 'duplicate') return (
-                                  <span style={{ fontSize: '10px', color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '3px' }} title={`Matched: ${r._duplicateName}`}>
-                                    <Check size={10} /> Exists
                                   </span>
                                 )
                                 if (st === 'checking') return (
@@ -583,15 +603,60 @@ export default function CapitalContactsPage() {
                                   </button>
                                 )
                                 return (
-                                  <button
-                                    onClick={e => { e.stopPropagation(); importToCRM(r) }}
-                                    style={{ fontSize: '10px', padding: '2px 8px', border: '1px solid var(--border)', borderRadius: '4px', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}
-                                    title="Add to Nexus Contacts (checks for duplicates first)"
-                                  >
-                                    <UserPlus size={10} /> Add to Nexus
-                                  </button>
+                                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+                                    <button
+                                      onClick={e => { e.stopPropagation(); importToCRM(r) }}
+                                      style={{ fontSize: '10px', padding: '2px 8px', border: '1px solid var(--border)', borderRadius: '4px', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}
+                                      title="Create new Nexus contact (checks for duplicates)"
+                                    >
+                                      <UserPlus size={10} /> Add to Nexus
+                                    </button>
+                                    <button
+                                      onClick={e => { e.stopPropagation(); setLinkingCrmFor(r.id); setCrmLinkQuery(''); setCrmLinkResults([]) }}
+                                      style={{ fontSize: '10px', padding: '2px 8px', border: '1px dashed var(--border)', borderRadius: '4px', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}
+                                      title="Link to an existing Nexus contact"
+                                    >
+                                      Link existing
+                                    </button>
+                                  </div>
                                 )
                               })()}
+                              {/* Inline CRM contact link search */}
+                              {linkingCrmFor === r.id && (
+                                <div style={{ marginTop: '8px', padding: '8px', background: 'var(--surface-2)', borderRadius: '6px', border: '1px dashed var(--accent)' }} onClick={e => e.stopPropagation()}>
+                                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>Search Nexus contacts to link:</div>
+                                  <div style={{ position: 'relative' }}>
+                                    <input
+                                      className="input"
+                                      placeholder="Name or firm…"
+                                      value={crmLinkQuery}
+                                      onChange={e => searchCrmContacts(e.target.value)}
+                                      autoFocus
+                                      style={{ fontSize: '11px', width: '100%' }}
+                                    />
+                                    {crmLinkResults.length > 0 && (
+                                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', marginTop: '2px', zIndex: 50, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                                        {crmLinkResults.map(cr => (
+                                          <button
+                                            key={cr.id}
+                                            onClick={() => linkToCrm(r.id, cr.id)}
+                                            style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', fontSize: '11px', background: 'none', border: 'none', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)' }}
+                                          >
+                                            {cr.first_name} {cr.last_name}
+                                            {cr.firm && <span style={{ color: 'var(--text-muted)', marginLeft: '6px', fontSize: '10px' }}>{cr.firm}</span>}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <button
+                                    onClick={() => { setLinkingCrmFor(null); setCrmLinkQuery(''); setCrmLinkResults([]) }}
+                                    style={{ marginTop: '4px', fontSize: '10px', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           </div>
 

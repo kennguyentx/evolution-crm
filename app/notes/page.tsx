@@ -15,6 +15,7 @@ type Note = {
   source: string
   deal_id: string | null
   contact_id: string | null
+  capital_contact_id: string | null
   deal_stage_updated: string | null
   raise_status_updated: string | null
   deal?: { company_name: string } | null
@@ -54,15 +55,19 @@ export default function NotesPage() {
   const [dealFilter, setDealFilter] = useState('')
   const [deals, setDeals] = useState<{ id: string; company_name: string }[]>([])
   const [showAddForm, setShowAddForm] = useState(false)
-  const [addForm, setAddForm] = useState({ note_date: new Date().toISOString().split('T')[0], raw_text: '', logged_by: 'Ken', deal_id: '', contact_id: '', contact_label: '' })
+  const [addForm, setAddForm] = useState({ note_date: new Date().toISOString().split('T')[0], raw_text: '', logged_by: 'Ken', deal_id: '', contact_id: '', contact_label: '', capital_contact_id: '', capital_contact_label: '' })
   const [addContactSearch, setAddContactSearch] = useState('')
   const [addContactResults, setAddContactResults] = useState<any[]>([])
+  const [addCapContactSearch, setAddCapContactSearch] = useState('')
+  const [addCapContactResults, setAddCapContactResults] = useState<any[]>([])
   const [saving, setSaving] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState<{ note_date: string; raw_text: string; summary: string; next_steps: string; logged_by: string; deal_id: string; contact_id: string; contact_label: string }>({ note_date: '', raw_text: '', summary: '', next_steps: '', logged_by: '', deal_id: '', contact_id: '', contact_label: '' })
+  const [editForm, setEditForm] = useState<{ note_date: string; raw_text: string; summary: string; next_steps: string; logged_by: string; deal_id: string; contact_id: string; contact_label: string; capital_contact_id: string; capital_contact_label: string }>({ note_date: '', raw_text: '', summary: '', next_steps: '', logged_by: '', deal_id: '', contact_id: '', contact_label: '', capital_contact_id: '', capital_contact_label: '' })
   const [editContactSearch, setEditContactSearch] = useState('')
   const [editContactResults, setEditContactResults] = useState<any[]>([])
+  const [editCapContactSearch, setEditCapContactSearch] = useState('')
+  const [editCapContactResults, setEditCapContactResults] = useState<any[]>([])
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
   const [detectedContacts, setDetectedContacts] = useState<{ item: any; accepted: boolean }[]>([])
@@ -216,6 +221,16 @@ export default function NotesPage() {
     setter(data ?? [])
   }
 
+  const searchCapContacts = async (q: string, setter: (r: any[]) => void) => {
+    if (!q.trim()) { setter([]); return }
+    const { data } = await supabase
+      .from('capital_contacts')
+      .select('id, firm, contact_name')
+      .or(`firm.ilike.%${q}%,contact_name.ilike.%${q}%`)
+      .limit(6)
+    setter(data ?? [])
+  }
+
   const addNote = async () => {
     if (!addForm.raw_text.trim()) return
     setSaving(true)
@@ -228,12 +243,15 @@ export default function NotesPage() {
     }
     if (addForm.deal_id) payload.deal_id = addForm.deal_id
     if (addForm.contact_id) payload.contact_id = addForm.contact_id
+    if (addForm.capital_contact_id) payload.capital_contact_id = addForm.capital_contact_id
     const { data } = await supabase.from('notes').insert(payload)
       .select(`*, deal:deals(company_name), contact:contacts(first_name, last_name, firm), raise:capital_raises(name), capital_contact:capital_contacts(firm, contact_name)`).single()
     if (data) setNotes(prev => [data, ...prev])
-    setAddForm({ note_date: new Date().toISOString().split('T')[0], raw_text: '', logged_by: 'Ken', deal_id: '', contact_id: '', contact_label: '' })
+    setAddForm({ note_date: new Date().toISOString().split('T')[0], raw_text: '', logged_by: 'Ken', deal_id: '', contact_id: '', contact_label: '', capital_contact_id: '', capital_contact_label: '' })
     setAddContactSearch('')
     setAddContactResults([])
+    setAddCapContactSearch('')
+    setAddCapContactResults([])
     setDetectedContacts([])
     setDetectedDeals([])
     setShowAddForm(false)
@@ -256,9 +274,13 @@ export default function NotesPage() {
       deal_id: note.deal_id ?? '',
       contact_id: note.contact_id ?? '',
       contact_label: note.contact ? `${note.contact.first_name} ${note.contact.last_name}${note.contact.firm ? ` · ${note.contact.firm}` : ''}` : '',
+      capital_contact_id: (note as any).capital_contact_id ?? '',
+      capital_contact_label: note.capital_contact ? `${note.capital_contact.firm}${note.capital_contact.contact_name ? ` · ${note.capital_contact.contact_name}` : ''}` : '',
     })
     setEditContactSearch('')
     setEditContactResults([])
+    setEditCapContactSearch('')
+    setEditCapContactResults([])
     setEditError(null)
     setExpandedId(note.id)
     setEditDetectedContacts(note.contact && note.contact_id ? [{ item: { id: note.contact_id, first_name: note.contact.first_name, last_name: note.contact.last_name, firm: note.contact.firm }, accepted: true }] : [])
@@ -283,6 +305,7 @@ export default function NotesPage() {
           logged_by: editForm.logged_by || null,
           deal_id: editForm.deal_id || null,
           contact_id: editForm.contact_id || null,
+          capital_contact_id: editForm.capital_contact_id || null,
         }),
       })
       const json = await res.json()
@@ -348,7 +371,7 @@ export default function NotesPage() {
               </div>
             </div>
             {/* Link row */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '10px' }}>
               <div>
                 <label className="label">Link to Deal</label>
                 <select className="select" style={{ width: '100%', fontSize: '12px' }} value={addForm.deal_id} onChange={e => setAddForm(p => ({ ...p, deal_id: e.target.value }))}>
@@ -378,9 +401,31 @@ export default function NotesPage() {
                   </>
                 )}
               </div>
+              <div style={{ position: 'relative' }}>
+                <label className="label">Link to Capital Contact</label>
+                {addForm.capital_contact_id ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-primary)', flex: 1 }}>{addForm.capital_contact_label}</span>
+                    <button onClick={() => { setAddForm(p => ({ ...p, capital_contact_id: '', capital_contact_label: '' })); setAddCapContactSearch(''); setAddCapContactResults([]) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px' }}><X size={12} /></button>
+                  </div>
+                ) : (
+                  <>
+                    <input className="input" style={{ fontSize: '12px' }} placeholder="Search firm or contact…" value={addCapContactSearch} onChange={e => { setAddCapContactSearch(e.target.value); searchCapContacts(e.target.value, setAddCapContactResults) }} />
+                    {addCapContactResults.length > 0 && (
+                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', zIndex: 50, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                        {addCapContactResults.map(c => (
+                          <div key={c.id} onClick={() => { setAddForm(p => ({ ...p, capital_contact_id: c.id, capital_contact_label: `${c.firm}${c.contact_name ? ` · ${c.contact_name}` : ''}` })); setAddCapContactSearch(''); setAddCapContactResults([]) }} style={{ padding: '8px 12px', fontSize: '12px', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)' }} className="table-row">
+                            <span style={{ fontWeight: 500 }}>{c.firm}</span>{c.contact_name && <span style={{ color: 'var(--text-muted)', marginLeft: '6px' }}>{c.contact_name}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="btn btn-ghost" onClick={() => { setShowAddForm(false); setDetectedContacts([]); setDetectedDeals([]); setAddContactSearch(''); setAddContactResults([]) }}>Cancel</button>
+              <button className="btn btn-ghost" onClick={() => { setShowAddForm(false); setDetectedContacts([]); setDetectedDeals([]); setAddContactSearch(''); setAddContactResults([]); setAddCapContactSearch(''); setAddCapContactResults([]) }}>Cancel</button>
               <button className="btn btn-primary" onClick={addNote} disabled={saving || !addForm.raw_text.trim()}>
                 <Check size={13} /> {saving ? 'Saving…' : 'Save'}
               </button>
@@ -547,7 +592,7 @@ export default function NotesPage() {
                             )}
                           </div>
                           {/* Link row */}
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '10px' }}>
                             <div>
                               <label className="label">Link to Deal</label>
                               <select className="select" style={{ width: '100%', fontSize: '12px' }} value={editForm.deal_id} onChange={e => setEditForm(p => ({ ...p, deal_id: e.target.value }))}>
@@ -570,6 +615,28 @@ export default function NotesPage() {
                                       {editContactResults.map(c => (
                                         <div key={c.id} onClick={() => { setEditForm(p => ({ ...p, contact_id: c.id, contact_label: `${c.first_name} ${c.last_name}${c.firm ? ` · ${c.firm}` : ''}` })); setEditContactSearch(''); setEditContactResults([]) }} style={{ padding: '8px 12px', fontSize: '12px', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)' }} className="table-row">
                                           <span style={{ fontWeight: 500 }}>{c.first_name} {c.last_name}</span>{c.firm && <span style={{ color: 'var(--text-muted)', marginLeft: '6px' }}>{c.firm}</span>}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                            <div style={{ position: 'relative' }}>
+                              <label className="label">Link to Capital Contact</label>
+                              {editForm.capital_contact_id ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ fontSize: '12px', color: 'var(--text-primary)', flex: 1 }}>{editForm.capital_contact_label}</span>
+                                  <button onClick={() => { setEditForm(p => ({ ...p, capital_contact_id: '', capital_contact_label: '' })); setEditCapContactSearch(''); setEditCapContactResults([]) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px' }}><X size={12} /></button>
+                                </div>
+                              ) : (
+                                <>
+                                  <input className="input" style={{ fontSize: '12px' }} placeholder="Search firm or contact…" value={editCapContactSearch} onChange={e => { setEditCapContactSearch(e.target.value); searchCapContacts(e.target.value, setEditCapContactResults) }} />
+                                  {editCapContactResults.length > 0 && (
+                                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', zIndex: 50, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                                      {editCapContactResults.map(c => (
+                                        <div key={c.id} onClick={() => { setEditForm(p => ({ ...p, capital_contact_id: c.id, capital_contact_label: `${c.firm}${c.contact_name ? ` · ${c.contact_name}` : ''}` })); setEditCapContactSearch(''); setEditCapContactResults([]) }} style={{ padding: '8px 12px', fontSize: '12px', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)' }} className="table-row">
+                                          <span style={{ fontWeight: 500 }}>{c.firm}</span>{c.contact_name && <span style={{ color: 'var(--text-muted)', marginLeft: '6px' }}>{c.contact_name}</span>}
                                         </div>
                                       ))}
                                     </div>

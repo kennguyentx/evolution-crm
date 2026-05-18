@@ -82,9 +82,9 @@ export default function DealDetailPage() {
 
   // Activity form
   const [showActivityForm, setShowActivityForm] = useState(false)
-  const [activityForm, setActivityForm] = useState({ interaction_type: 'call', summary: '', next_steps: '' })
+  const [activityForm, setActivityForm] = useState({ interaction_type: 'call', summary: '', next_steps: '', raise_id: '' })
   const [editingInteractionId, setEditingInteractionId] = useState<string | null>(null)
-  const [editingInteraction, setEditingInteraction] = useState<{ interaction_type: string; interaction_date: string; summary: string; next_steps: string } | null>(null)
+  const [editingInteraction, setEditingInteraction] = useState<{ interaction_type: string; interaction_date: string; summary: string; next_steps: string; raise_id: string } | null>(null)
   const [editingInteractionError, setEditingInteractionError] = useState<string | null>(null)
   const [savingInteraction, setSavingInteraction] = useState(false)
   const [detectedContacts, setDetectedContacts] = useState<any[]>([])
@@ -94,7 +94,7 @@ export default function DealDetailPage() {
     const [dealRes, linksRes, interactionsRes, diligenceRes, capitalRes] = await Promise.all([
       supabase.from('deals').select('*').eq('id', dealId).single(),
       supabase.from('contact_deal_links').select('*, contact:contacts(*)').eq('deal_id', dealId),
-      supabase.from('interactions').select('*, contact:contacts(first_name, last_name)').eq('deal_id', dealId).order('interaction_date', { ascending: false }),
+      supabase.from('interactions').select('*, contact:contacts(first_name, last_name), raise:capital_raises(id,name)').eq('deal_id', dealId).order('interaction_date', { ascending: false }),
       supabase.from('diligence_items').select('*').eq('deal_id', dealId).order('category'),
       supabase.from('deal_capital_assignments').select('*, contact:contacts(first_name, last_name, firm)').eq('deal_id', dealId),
     ])
@@ -394,10 +394,11 @@ export default function DealDetailPage() {
       interaction_date: new Date().toISOString(),
     }
     if (detectedContacts[0]?.id) insertPayload.contact_id = detectedContacts[0].id
-    const { data } = await supabase.from('interactions').insert(insertPayload).select('*, contact:contacts(first_name, last_name)').single()
+    if (activityForm.raise_id) insertPayload.raise_id = activityForm.raise_id
+    const { data } = await supabase.from('interactions').insert(insertPayload).select('*, contact:contacts(first_name, last_name), raise:capital_raises(id,name)').single()
     if (data) setInteractions(prev => [data, ...prev])
     setShowActivityForm(false)
-    setActivityForm({ interaction_type: 'call', summary: '', next_steps: '' })
+    setActivityForm({ interaction_type: 'call', summary: '', next_steps: '', raise_id: '' })
     setDetectedContacts([])
   }
 
@@ -409,6 +410,7 @@ export default function DealDetailPage() {
       interaction_date: i.interaction_date ? i.interaction_date.split('T')[0] : new Date().toISOString().split('T')[0],
       summary: i.summary || '',
       next_steps: i.next_steps || '',
+      raise_id: i.raise_id || '',
     })
   }
 
@@ -425,6 +427,7 @@ export default function DealDetailPage() {
         interaction_date: editingInteraction.interaction_date,
         summary: editingInteraction.summary,
         next_steps: editingInteraction.next_steps || null,
+        raise_id: editingInteraction.raise_id || null,
       }),
     })
     const json = await res.json()
@@ -1093,6 +1096,15 @@ export default function DealDetailPage() {
                     <label className="label">Next Steps</label>
                     <input className="input" placeholder="Follow-up actions..." value={activityForm.next_steps} onChange={e => setActivityForm(p => ({ ...p, next_steps: e.target.value }))} />
                   </div>
+                  {dealRaises.length > 0 && (
+                    <div>
+                      <label className="label">Link to Raise</label>
+                      <select className="select" value={activityForm.raise_id} onChange={e => setActivityForm(p => ({ ...p, raise_id: e.target.value }))}>
+                        <option value="">— none —</option>
+                        {dealRaises.map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      </select>
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '14px' }}>
                   <button className="btn btn-ghost" onClick={() => { setShowActivityForm(false); setDetectedContacts([]) }}>Cancel</button>
@@ -1138,6 +1150,15 @@ export default function DealDetailPage() {
                         <label className="label">Next Steps</label>
                         <input className="input" value={editingInteraction.next_steps} onChange={e => setEditingInteraction(p => p ? { ...p, next_steps: e.target.value } : p)} placeholder="Follow-up actions..." />
                       </div>
+                      {dealRaises.length > 0 && (
+                        <div>
+                          <label className="label">Link to Raise</label>
+                          <select className="select" value={editingInteraction.raise_id} onChange={e => setEditingInteraction(p => p ? { ...p, raise_id: e.target.value } : p)}>
+                            <option value="">— none —</option>
+                            {dealRaises.map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                          </select>
+                        </div>
+                      )}
                       {editingInteractionError && (
                         <div style={{ fontSize: '12px', color: 'var(--red, #ef4444)', background: 'rgba(239,68,68,0.1)', padding: '6px 10px', borderRadius: '6px' }}>
                           {editingInteractionError}
@@ -1156,6 +1177,7 @@ export default function DealDetailPage() {
                         <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                           {i.interaction_type} · {format(new Date(i.interaction_date), 'MMM d, yyyy')}
                           {(i as any).contact && ` · ${(i as any).contact.first_name} ${(i as any).contact.last_name}`}
+                          {i.raise && <span style={{ marginLeft: '6px', fontSize: '10px', padding: '1px 6px', background: 'var(--accent-muted)', color: 'var(--accent)', borderRadius: '4px' }}>{i.raise.name}</span>}
                         </div>
                         <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
                           <button onClick={() => startEditInteraction(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px 4px', borderRadius: '4px' }} title="Edit">

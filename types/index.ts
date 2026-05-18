@@ -70,6 +70,7 @@ export interface Interaction {
   created_at: string
   contact_id: string
   deal_id?: string
+  raise_id?: string
   interaction_type?: InteractionType
   interaction_date: string
   summary?: string
@@ -77,6 +78,7 @@ export interface Interaction {
   logged_by?: string
   contact?: Contact
   deal?: Deal
+  raise?: { id: string; name: string }
 }
 
 export interface DiligenceItem {
