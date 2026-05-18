@@ -687,6 +687,7 @@ export async function POST(req: NextRequest) {
 
   } catch (err: any) {
     console.error('Assistant error:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    const msg = typeof err === 'string' ? err : err?.message || JSON.stringify(err)
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
