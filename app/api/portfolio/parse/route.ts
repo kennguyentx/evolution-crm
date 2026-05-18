@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
       parsed = JSON.parse(jsonStr)
     } catch {
       // Last resort: try to extract just valid objects
-      const objects = [...jsonStr.matchAll(/\{[^{}]*\}/g)].map(m => {
+      const objects = Array.from(jsonStr.matchAll(/\{[^{}]*\}/g)).map(m => {
         try { return JSON.parse(repairJson(m[0])) } catch { return null }
       }).filter(Boolean)
       if (!objects.length) throw new Error('Could not parse financial data from document')
