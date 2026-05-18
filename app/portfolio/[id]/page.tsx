@@ -198,7 +198,7 @@ export default function PortfolioCompanyPage() {
   const FieldInput = ({ label, fieldKey, type = 'number' }: { label: string, fieldKey: string, type?: string }) => (
     <div>
       <label className="label">{label}</label>
-      <input className="input" type={type} step="0.01" placeholder={type === 'number' ? '0.00' : ''} value={editedData?.[fieldKey] || ''} onChange={e => setEditedData((p: any) => ({ ...p, [fieldKey]: e.target.value }))} />
+      <input className="input" type={type} step="0.01" placeholder={type === 'number' ? '0.00' : ''} value={(editedData as any)?.[fieldKey] || ''} onChange={e => setEditedData((p: any) => ({ ...p, [fieldKey]: e.target.value }))} />
     </div>
   )
 
