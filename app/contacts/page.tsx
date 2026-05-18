@@ -3,8 +3,9 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import type { Contact } from '@/types'
 import { contactTypeClass } from '@/types'
-import { Plus, Search, Phone, Mail } from 'lucide-react'
+import { Plus, Search, Phone, Mail, ChevronUp, ChevronDown } from 'lucide-react'
 import NewContactModal from '@/components/contacts/NewContactModal'
+import UndoToast, { type UndoEntry } from '@/components/layout/UndoToast'
 
 const CONTACT_TYPES = ['banker', 'lp', 'lender', 'advisor', 'management', 'other']
 const PAGE_SIZE = 100
@@ -21,6 +22,9 @@ export default function ContactsPage() {
   const [showNew, setShowNew] = useState(false)
   const [editingContact, setEditingContact] = useState<Contact | null>(null)
   const [typeCounts, setTypeCounts] = useState<Record<string, number>>({})
+  const [sortField, setSortField] = useState<'name'|'firm'|'type'>('name')
+  const [sortDir, setSortDir] = useState<'asc'|'desc'>('asc')
+  const [undoStack, setUndoStack] = useState<UndoEntry[]>([])
   const supabase = createClient()
 
   useEffect(() => {
@@ -100,7 +104,35 @@ export default function ContactsPage() {
     fetchContacts(true)
   }
 
+  const pushUndo = (entry: Omit<UndoEntry,'id'>) => {
+    const id = Math.random().toString(36).slice(2)
+    setUndoStack(prev => [{ ...entry, id }, ...prev].slice(0,3))
+  }
+  const handleUndo = async (id: string) => {
+    const entry = undoStack.find(e => e.id===id)
+    if (entry) { await entry.undo(); fetchContacts(true) }
+    setUndoStack(prev => prev.filter(e => e.id!==id))
+  }
+  const handleDismiss = (id: string) => setUndoStack(prev => prev.filter(e => e.id!==id))
+
+  const handleSort = (field: 'name'|'firm'|'type') => {
+    if (sortField === field) setSortDir(d => d==='asc'?'desc':'asc')
+    else { setSortField(field); setSortDir('asc') }
+  }
+
   const displayed = searchResults !== null ? searchResults : contacts
+  const displayTotal = searchResults !== null ? searchResults.length : total
+
+  const sortedDisplayed = [...displayed].sort((a: any, b: any) => {
+    let av: string, bv: string
+    if (sortField==='name') { av=`${a.last_name} ${a.first_name}`; bv=`${b.last_name} ${b.first_name}` }
+    else if (sortField==='firm') { av=a.firm||''; bv=b.firm||'' }
+    else { av=a.contact_type||''; bv=b.contact_type||'' }
+    const cmp = av.localeCompare(bv)
+    return sortDir==='asc'?cmp:-cmp
+  })
+  }
+
   const displayTotal = typeFilter !== 'all' ? (typeCounts[typeFilter] || 0) : total
 
   return (
@@ -144,8 +176,14 @@ export default function ContactsPage() {
       </div>
 
       {/* Table header */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 80px', padding: '8px 28px', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
-        <div>Name</div><div>Firm / Title</div><div>Type</div><div>Contact</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 80px', padding: '8px 28px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+        {([['name','Name'],['firm','Firm / Title'],['type','Type']] as ['name'|'firm'|'type', string][]).map(([field, label]) => (
+          <div key={field} onClick={() => handleSort(field)} style={{ display:'flex', alignItems:'center', gap:'4px', cursor:'pointer', userSelect:'none', color: sortField===field?'var(--accent)':'var(--text-muted)' }}>
+            {label}
+            {sortField===field ? (sortDir==='asc'?<ChevronUp size={11}/>:<ChevronDown size={11}/>) : <ChevronDown size={11} style={{opacity:0.3}}/>}
+          </div>
+        ))}
+        <div style={{ color:'var(--text-muted)' }}>Contact</div>
       </div>
 
       {/* Contacts list */}
@@ -156,7 +194,7 @@ export default function ContactsPage() {
           <div style={{ padding: '60px 28px', textAlign: 'center', color: 'var(--text-muted)' }}>No contacts found.</div>
         ) : (
           <>
-            {displayed.map(contact => (
+            {sortedDisplayed.map(contact => (
               <div
                 key={contact.id}
                 className="table-row"
@@ -179,10 +217,10 @@ export default function ContactsPage() {
                 </div>
               </div>
             ))}
-            {searchResults === null && displayed.length < displayTotal && (
+            {searchResults === null && sortedDisplayed.length < displayTotal && (
               <div style={{ padding: '20px 28px', textAlign: 'center' }}>
                 <button className="btn btn-ghost" onClick={() => fetchContacts(false)} disabled={loadingMore}>
-                  {loadingMore ? 'Loading...' : `Load more (${displayed.length.toLocaleString()} of ${displayTotal.toLocaleString()})`}
+                  {loadingMore ? 'Loading...' : `Load more (${sortedDisplayed.length.toLocaleString()} of ${displayTotal.toLocaleString()})`}
                 </button>
               </div>
             )}
@@ -203,6 +241,7 @@ export default function ContactsPage() {
           contact={editingContact}
         />
       )}
+      <UndoToast stack={undoStack} onUndo={handleUndo} onDismiss={handleDismiss}/>
     </div>
   )
 }
