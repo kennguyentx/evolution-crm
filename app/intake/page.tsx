@@ -16,6 +16,8 @@ interface ParsedContact {
   firm: string | null
   role: string
   title?: string | null
+  email?: string | null
+  phone?: string | null
 }
 
 interface ExtractedContact extends ParsedContact {
@@ -116,8 +118,8 @@ export default function IntakePage() {
       last_name: nameParts.slice(1).join(' ') || '',
       firm: parsedContact.firm || '',
       title: parsedContact.title || '',
-      email: '',
-      phone: '',
+      email: parsedContact.email || '',
+      phone: parsedContact.phone || '',
     }
     if (data && data.length === 1) {
       updateContact(idx, { crmContact: data[0] })
@@ -209,8 +211,8 @@ export default function IntakePage() {
           last_name: c.name.split(' ').slice(1).join(' ') || '',
           firm: c.firm || '',
           title: c.title || '',
-          email: '',
-          phone: '',
+          email: c.email || '',
+          phone: c.phone || '',
         },
       }))
       setContacts(initialContacts)

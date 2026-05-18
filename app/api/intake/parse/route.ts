@@ -27,7 +27,9 @@ const SYSTEM_PROMPT = `You extract factual deal data from teasers and CIMs. Retu
       "name": "string — full name as stated",
       "firm": "string or null — company or advisory firm name",
       "role": "string — one of: Source / Banker | Management | Advisor | Lender | Other",
-      "title": "string or null — job title as stated"
+      "title": "string or null — job title as stated",
+      "email": "string or null — email address as stated",
+      "phone": "string or null — phone number as stated"
     }
   ]
 }
@@ -38,7 +40,8 @@ Rules:
 - Do not infer or estimate values not explicitly stated
 - The summary must be purely factual — no adjectives that express quality or opinion
 - contacts: extract ALL named individuals — investment bankers/brokers, management team (CEO, CFO, COO, President, etc.), legal/financial advisors, lenders. Return [] if none found.
-- For each contact, role must be exactly one of the values listed above`
+- For each contact, role must be exactly one of the values listed above
+- For email and phone: only extract values explicitly shown next to or under that contact's name`
 
 export async function POST(req: NextRequest) {
   let storagePath: string | null = null
