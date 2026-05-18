@@ -24,10 +24,10 @@ export default function PipelinePage() {
 
   const fetchDeals = useCallback(async () => {
     const { data } = await supabase
-      .from('deals')
-      .select('*')
-      .eq('status', 'Active')
-      .order('updated_at', { ascending: false })
+  .from('deals')
+  .select('*')
+  .in('stage', ['Teaser', 'Reviewing', 'Pre-LOI', 'LOI Submitted', 'Exclusivity'])
+  .order('updated_at', { ascending: false })
     if (data) {
       setDeals(data)
       const ids = data.map((d: Deal) => d.id)
