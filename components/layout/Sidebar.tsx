@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { Kanban, Building2, Users, BarChart3, Zap, LogOut, TrendingUp, FileText, Menu, X } from 'lucide-react'
+import { Kanban, Building2, Users, BarChart3, Zap, LogOut, TrendingUp, FileText, Menu, X, StickyNote } from 'lucide-react'
 
 const NAV = [
   { href: '/pipeline',         label: 'Pipeline',          icon: Kanban },
@@ -13,6 +13,7 @@ const NAV = [
   { href: '/raises/contacts',  label: 'Capital Contacts',  icon: BarChart3 },
   { href: '/investors',        label: 'Investors',         icon: Users },
   { href: '/portfolio',        label: 'Portfolio',         icon: Building2 },
+  { href: '/notes',            label: 'Notes',             icon: StickyNote },
 ]
 
 export default function Sidebar() {
