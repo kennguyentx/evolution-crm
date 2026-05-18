@@ -9,9 +9,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useDropzone } from 'react-dropzone'
 import { format } from 'date-fns'
-import DocumentsTab from '@/components/deals/DocumentsTab'
+import DropboxFilesTab from '@/components/deals/DropboxFilesTab'
 import NewContactModal from '@/components/contacts/NewContactModal'
 import UndoToast, { type UndoEntry } from '@/components/layout/UndoToast'
+
 
 const STAGES = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
 
@@ -1003,13 +1004,17 @@ export default function DealDetailPage() {
           </div>
         )}
 
-        {/* DOCUMENTS */}
-        {activeTab === 'documents' && (
-          <div style={{ maxWidth: '700px' }}>
-            <DocumentsTab dealId={dealId} />
-          </div>
-        )}
-      </div>
+       {/* DOCUMENTS */}
+{activeTab === 'documents' && (
+  <div style={{ maxWidth: '700px' }}>
+    <DropboxFilesTab
+      dealId={dealId}
+      companyName={deal.company_name}
+      dropboxPath={deal.dropbox_path}
+      onPathSaved={(path) => setDeal(prev => prev ? { ...prev, dropbox_path: path } : prev)}
+    />
+  </div>
+)}
 
       {/* Delete confirmation */}
       {showDeleteConfirm && (
