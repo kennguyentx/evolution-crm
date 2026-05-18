@@ -11,6 +11,7 @@ import { useDropzone } from 'react-dropzone'
 import { format } from 'date-fns'
 import DocumentsTab from '@/components/deals/DocumentsTab'
 import NewContactModal from '@/components/contacts/NewContactModal'
+import UndoToast, { type UndoEntry } from '@/components/layout/UndoToast'
 
 const STAGES = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
 
@@ -45,6 +46,18 @@ export default function DealDetailPage() {
   const [editingStage, setEditingStage] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [editingContact, setEditingContact] = useState<any>(null)
+  const [undoStack, setUndoStack] = useState<UndoEntry[]>([])
+
+  const pushUndo = (entry: Omit<UndoEntry,'id'>) => {
+    const id = Math.random().toString(36).slice(2)
+    setUndoStack(prev => [{ ...entry, id }, ...prev].slice(0,3))
+  }
+  const handleUndo = async (id: string) => {
+    const entry = undoStack.find(e => e.id===id)
+    if (entry) { await entry.undo(); fetchAll() }
+    setUndoStack(prev => prev.filter(e => e.id!==id))
+  }
+  const handleDismiss = (id: string) => setUndoStack(prev => prev.filter(e => e.id!==id))
   const [portfolioCompanies, setPortfolioCompanies] = useState<any[]>([])
 
   // Contact search
@@ -202,8 +215,18 @@ export default function DealDetailPage() {
   }
 
   const unlinkContact = async (linkId: string) => {
+    const link = linkedContacts.find(l => l.id === linkId)
     await supabase.from('contact_deal_links').delete().eq('id', linkId)
     setLinkedContacts(prev => prev.filter(l => l.id !== linkId))
+    if (link) {
+      const name = `${link.contact?.first_name ?? ''} ${link.contact?.last_name ?? ''}`.trim()
+      pushUndo({
+        label: `Unlinked ${name || 'contact'}`,
+        undo: async () => {
+          await supabase.from('contact_deal_links').insert({ contact_id: link.contact_id, deal_id: dealId, role: link.role })
+        }
+      })
+    }
   }
 
   const deleteDeal = async () => {
@@ -867,6 +890,8 @@ export default function DealDetailPage() {
           onCreated={() => { setEditingContact(null); fetchAll() }}
         />
       )}
+
+      <UndoToast stack={undoStack} onUndo={handleUndo} onDismiss={handleDismiss}/>
     </div>
   )
 }
