@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         content,
-        username: 'Evolution CRM',
+        username: 'Nexus',
         avatar_url: 'https://api.dicebear.com/7.x/initials/svg?seed=ES&backgroundColor=c9a96e',
       }),
     })
