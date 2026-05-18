@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Bot, User, AlertTriangle, Check, X, RefreshCw, Sparkles } from 'lucide-react'
+import { Send, Bot, User, AlertTriangle, Check, X, RefreshCw, Star } from 'lucide-react'
 
 type Message = {
   id: string
@@ -175,7 +175,7 @@ export default function AssistantPage() {
 
       {/* Header */}
       <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <Sparkles size={18} style={{ color: 'var(--accent)' }} />
+        <Star size={18} style={{ color: 'var(--accent)' }} />
         <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Nexus Assistant</h1>
         <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '4px' }}>
           Ask anything about your deals, contacts, raises, and portfolio — or the market
