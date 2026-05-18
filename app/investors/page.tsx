@@ -24,7 +24,7 @@ export default function InvestorsPage() {
   const fetchInvestors = async () => {
     const { data } = await supabase
       .from('investors')
-      .select('*, investments:lp_investments(invested_amount), commitments:lp_commitments(committed_amount, status)')
+      .select('*, investments:lp_investments(invested_amount), commitments:lp_commitments(committed_amount, status), entities:investment_entities(id, name, entity_type)')
       .eq('status', 'Active')
       .order('last_name')
 
@@ -34,6 +34,7 @@ export default function InvestorsPage() {
         totalInvested: (inv.investments || []).reduce((s: number, i: any) => s + (i.invested_amount || 0), 0),
         totalCommitted: (inv.commitments || []).filter((c: any) => ['Committed','Funded'].includes(c.status)).reduce((s: number, c: any) => s + (c.committed_amount || 0), 0),
         dealCount: (inv.investments || []).length,
+        entities: inv.entities || [],
       }))
       setInvestors(enriched)
     }
@@ -169,10 +170,18 @@ export default function InvestorsPage() {
                 <div className="table-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '8px 28px', alignItems: 'center' }}>
                   <div>
                     <div style={{ fontWeight: 500, fontSize: '13px' }}>{inv.first_name} {inv.last_name}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>
-                      {inv.firm && <span>{inv.firm} · </span>}
-                      <span>{inv.investor_type}</span>
-                    </div>
+                    {inv.firm && (
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>{inv.firm}</div>
+                    )}
+                    {inv.entities && inv.entities.length > 0 && (
+                      <div style={{ marginTop: '3px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {inv.entities.map((e: any) => (
+                          <span key={e.id} style={{ fontSize: '10px', color: 'var(--text-muted)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '4px', padding: '1px 6px' }}>
+                            {e.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '12px', color: inv.totalInvested > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>{inv.totalInvested > 0 ? formatCurrency(inv.totalInvested) : '—'}</div>
                   <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)' }}>{inv.totalCommitted > 0 ? formatCurrency(inv.totalCommitted) : '—'}</div>
