@@ -44,6 +44,8 @@ export interface Deal {
   cim_summary?: string
   notes?: string
   pass_reason?: string
+  parent_company_id?: string | null
+  dropbox_path?: string | null
 }
 
 export interface Contact {
