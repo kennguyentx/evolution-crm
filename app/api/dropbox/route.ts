@@ -7,11 +7,17 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 
-const DBX_TOKEN = process.env.DROPBOX_ACCESS_TOKEN!
 const DBX_API  = 'https://api.dropboxapi.com/2'
 const DBX_CONTENT = 'https://content.dropboxapi.com/2'
 
+// Cache the access token — Dropbox tokens last 4 hours, refresh 30min before expiry
+let cachedToken: string | null = null
+let tokenExpiry: number = 0
+
 async function getDropboxToken(): Promise<string> {
+  const now = Date.now()
+  if (cachedToken && now < tokenExpiry) return cachedToken
+
   const res = await fetch('https://api.dropbox.com/oauth2/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -23,7 +29,10 @@ async function getDropboxToken(): Promise<string> {
     }),
   })
   const data = await res.json()
-  return data.access_token
+  if (!data.access_token) throw new Error(`Failed to refresh Dropbox token: ${JSON.stringify(data)}`)
+  cachedToken = data.access_token
+  tokenExpiry = now + (data.expires_in - 1800) * 1000 // refresh 30min early
+  return cachedToken!
 }
 
 // File types the assistant can read
