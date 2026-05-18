@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     if (!base64) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
 
     const response = await anthropic.messages.create({
-      model: 'claude-opus-4-5',
+      model: 'claude-opus-4-7',
       max_tokens: 1500,
       system: SYSTEM_PROMPT,
       messages: [{
