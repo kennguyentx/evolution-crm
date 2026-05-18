@@ -182,6 +182,29 @@ const TOOLS: Anthropic.Tool[] = [
       required: ['query'],
     },
   },
+  {
+    name: 'list_deal_files',
+    description: 'List files in the Dropbox folder linked to a deal. Use before read_deal_file to find the right file name and path. Returns folder contents with file names, types, and full paths.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        deal_id: { type: 'string', description: 'Deal UUID to look up the linked Dropbox folder path' },
+        subfolder: { type: 'string', description: 'Optional: drill into a subfolder path returned by a previous list_deal_files call' },
+      },
+      required: ['deal_id'],
+    },
+  },
+  {
+    name: 'read_deal_file',
+    description: 'Read the contents of a file from the deal Dropbox folder. Works with PDF, Word, Excel, CSV, and text files. Use to answer questions about credit agreements, NDAs, financials, diligence docs, or any file in the deal room. Always call list_deal_files first to get the exact path.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Full Dropbox file path from list_deal_files (e.g. /deals/diponio/credit agreement.pdf)' },
+      },
+      required: ['path'],
+    },
+  },
 ]
 
 const WRITE_TOOLS = new Set(['update_deal_field', 'update_contact_field', 'update_raise_participant', 'log_note'])
@@ -311,6 +334,68 @@ async function executeTool(name: string, input: any): Promise<any> {
       })
       const text = resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
       return { result: text || 'No results found.' }
+    }
+
+    case 'list_deal_files': {
+      // Look up the Dropbox path from the deal record
+      const { data: deal } = await supabase.from('deals').select('company_name, dropbox_path').eq('id', input.deal_id).single()
+      if (!deal) return { error: 'Deal not found' }
+      const folderPath = input.subfolder || deal.dropbox_path
+      if (!folderPath) return { error: `No Dropbox folder linked to ${deal.company_name}. The deal needs a dropbox_path set in Nexus.` }
+
+      const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/dropbox?action=list&path=${encodeURIComponent(folderPath)}`)
+      const data = await res.json()
+      if (data.error) return { error: data.error }
+      return {
+        company: deal.company_name,
+        folder: folderPath,
+        items: (data.items || []).map((item: any) => ({
+          name: item.name,
+          path: item.path,
+          type: item.type,
+          size: item.size,
+          readable: item.readable,
+        })),
+      }
+    }
+
+    case 'read_deal_file': {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/dropbox?action=read&path=${encodeURIComponent(input.path)}`)
+      const data = await res.json()
+      if (data.error) return { error: data.error }
+
+      // Pass the file to Claude for extraction
+      const fileExt = data.ext
+      const isPdf = fileExt === '.pdf'
+      const isText = ['.txt', '.md', '.csv'].includes(fileExt)
+
+      let fileContent: any
+      if (isPdf) {
+        fileContent = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: data.base64 } }
+      } else if (['.xlsx', '.xls'].includes(fileExt)) {
+        fileContent = { type: 'document', source: { type: 'base64', media_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', data: data.base64 } }
+      } else if (fileExt === '.docx') {
+        fileContent = { type: 'document', source: { type: 'base64', media_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', data: data.base64 } }
+      } else if (isText) {
+        const text = Buffer.from(data.base64, 'base64').toString('utf-8')
+        return { file: data.name, path: input.path, content: text.slice(0, 20000) }
+      } else {
+        return { error: `Cannot read file type: ${fileExt}` }
+      }
+
+      const extractResp = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4000,
+        messages: [{
+          role: 'user',
+          content: [
+            fileContent,
+            { type: 'text', text: `Extract and summarize the full content of this file "${data.name}". Include all key facts, figures, dates, parties, terms, and any other materially important information. Be comprehensive — this is for a PE deal team that needs to reference this document.` },
+          ],
+        }],
+      })
+      const extracted = extractResp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
+      return { file: data.name, path: input.path, content: extracted }
     }
 
     // ─── Write tools — only called after confirmation ─────────
