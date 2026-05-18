@@ -417,7 +417,9 @@ export default function DealDetailPage() {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                   <div className="label">Source Contact(s)</div>
                 </div>
-                {sourceContacts.map(link => (
+                {sourceContacts.map(link => {
+                  if (!link.contact) return null
+                  return (
                   <div key={link.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: 'var(--surface-2)', borderRadius: '6px', marginBottom: '6px', border: '1px solid var(--border)' }}>
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: 500 }}>{link.contact.first_name} {link.contact.last_name}</div>
@@ -425,7 +427,8 @@ export default function DealDetailPage() {
                     </div>
                     <button onClick={() => unlinkContact(link.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px' }}><X size={13} /></button>
                   </div>
-                ))}
+                  )
+                })}
                 <div ref={searchRef} style={{ position: 'relative', marginTop: '4px' }}>
                   {showContactSearch ? (
                     <div>
@@ -577,6 +580,7 @@ export default function DealDetailPage() {
               <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>No contacts linked to this deal.</div>
             ) : linkedContacts.map(link => {
               const c = link.contact
+              if (!c) return null
               return (
                 <div key={link.id} className="card-2" style={{ padding: '14px 16px', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div>
@@ -584,10 +588,9 @@ export default function DealDetailPage() {
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{c.title}{c.firm ? ` · ${c.firm}` : ''}{link.role ? ` · ${link.role}` : ''}</div>
                   </div>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span className={`badge type-${c.contact_type}`}>{c.contact_type}</span>
+                    {c.contact_type && <span className={`badge type-${c.contact_type}`}>{c.contact_type}</span>}
                     {c.email && <a href={`mailto:${c.email}`} style={{ color: 'var(--text-muted)' }}><Mail size={13} /></a>}
                     {c.phone && <a href={`tel:${c.phone}`} style={{ color: 'var(--text-muted)' }}><Phone size={13} /></a>}
-                    <Link href={`/contacts/${c.id}`} style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }} title="Edit contact"><ChevronRight size={13} /></Link>
                     <button onClick={() => unlinkContact(link.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px' }}><X size={13} /></button>
                   </div>
                 </div>
