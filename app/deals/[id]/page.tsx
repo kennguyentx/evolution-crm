@@ -14,16 +14,16 @@ import DocumentsTab from '@/components/deals/DocumentsTab'
 const STAGES = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
 
 const DEFAULT_DILIGENCE = [
-  { category: 'financial', item: 'Audited financials (3 years)' },
-  { category: 'financial', item: 'QoE / quality of earnings review' },
-  { category: 'financial', item: 'Working capital analysis' },
-  { category: 'legal', item: 'Corporate structure & ownership' },
-  { category: 'legal', item: 'Material contracts review' },
-  { category: 'legal', item: 'Litigation / contingent liabilities' },
-  { category: 'operational', item: 'Customer concentration' },
-  { category: 'operational', item: 'Backlog & pipeline review' },
-  { category: 'operational', item: 'Key personnel / management assessment' },
-  { category: 'operational', item: 'Equipment & fleet inventory' },
+  { category: 'financial', item: 'Monthly P&L' },
+  { category: 'financial', item: 'Monthly Balance Sheet' },
+  { category: 'financial', item: 'Audited Financials (3 years)' },
+  { category: 'legal', item: 'Corporate Structure & Ownership' },
+  { category: 'legal', item: 'Material Contracts Review' },
+  { category: 'legal', item: 'Litigation / Contingent Liabilities' },
+  { category: 'operational', item: 'Customer Concentration' },
+  { category: 'operational', item: 'Backlog & Pipeline Review' },
+  { category: 'operational', item: 'Employee Chart' },
+  { category: 'operational', item: 'Equipment & Fleet Inventory' },
 ]
 
 export default function DealDetailPage() {
@@ -38,6 +38,7 @@ export default function DealDetailPage() {
   const [diligence, setDiligence] = useState<DiligenceItem[]>([])
   const [capital, setCapital] = useState<DealCapitalAssignment[]>([])
   const [documents, setDocuments] = useState<any[]>([])
+  const [dealRaises, setDealRaises] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'overview'|'diligence'|'contacts'|'capital'|'activity'|'documents'>('overview')
   const [editingStage, setEditingStage] = useState(false)
@@ -80,6 +81,13 @@ export default function DealDetailPage() {
     // Fetch portfolio companies for parent linking
     const { data: pcos } = await supabase.from('portfolio_companies').select('id, name').eq('status', 'Active').order('name')
     if (pcos) setPortfolioCompanies(pcos)
+    // Fetch capital raises linked to this deal
+    const { data: raises } = await supabase
+      .from('capital_raises')
+      .select('*, participants:raise_participants(*)')
+      .eq('deal_id', dealId)
+      .order('created_at', { ascending: false })
+    if (raises) setDealRaises(raises)
   }, [supabase, dealId])
 
   useEffect(() => { fetchAll() }, [fetchAll])
@@ -209,6 +217,14 @@ export default function DealDetailPage() {
     const items = DEFAULT_DILIGENCE.map(d => ({ ...d, deal_id: dealId, status: 'Pending' }))
     const { data } = await supabase.from('diligence_items').insert(items).select()
     if (data) setDiligence(prev => [...prev, ...data])
+  }
+
+  const resetDiligence = async () => {
+    if (!confirm('Reset checklist to defaults? This will delete all current items.')) return
+    await supabase.from('diligence_items').delete().eq('deal_id', dealId)
+    const items = DEFAULT_DILIGENCE.map(d => ({ ...d, deal_id: dealId, status: 'Pending' }))
+    const { data } = await supabase.from('diligence_items').insert(items).select()
+    if (data) setDiligence(data)
   }
 
   // Simple toggle: Pending ↔ Complete
@@ -466,6 +482,7 @@ export default function DealDetailPage() {
           <div style={{ maxWidth: '700px' }}>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
               {diligence.length === 0 && <button className="btn btn-ghost" onClick={seedDiligence} style={{ fontSize: '12px' }}>Load default checklist</button>}
+              {diligence.length > 0 && <button className="btn btn-ghost" onClick={resetDiligence} style={{ fontSize: '12px', color: 'var(--text-muted)' }}>↺ Reset to defaults</button>}
               <div {...getDiligenceDropProps()} style={{ border: `1.5px dashed ${isDiligenceDrag ? 'var(--accent)' : 'var(--border)'}`, borderRadius: '7px', padding: '6px 14px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', background: isDiligenceDrag ? 'var(--accent-muted)' : 'transparent' }}>
                 <input {...getDiligenceInputProps()} />
                 <Upload size={12} /> Upload Excel/CSV checklist
@@ -570,6 +587,7 @@ export default function DealDetailPage() {
                     <span className={`badge type-${c.contact_type}`}>{c.contact_type}</span>
                     {c.email && <a href={`mailto:${c.email}`} style={{ color: 'var(--text-muted)' }}><Mail size={13} /></a>}
                     {c.phone && <a href={`tel:${c.phone}`} style={{ color: 'var(--text-muted)' }}><Phone size={13} /></a>}
+                    <Link href={`/contacts/${c.id}`} style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }} title="Edit contact"><ChevronRight size={13} /></Link>
                     <button onClick={() => unlinkContact(link.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px' }}><X size={13} /></button>
                   </div>
                 </div>
@@ -580,11 +598,84 @@ export default function DealDetailPage() {
 
         {/* CAPITAL */}
         {activeTab === 'capital' && (
-          <div style={{ maxWidth: '700px' }}>
-            <div style={{ marginBottom: '16px' }}>
-              <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={() => setShowCapitalForm(!showCapitalForm)}>
-                <Plus size={12} /> Add LP / Lender
-              </button>
+          <div style={{ maxWidth: '800px' }}>
+
+            {/* Linked Capital Raises */}
+            {dealRaises.length > 0 ? (
+              <div style={{ marginBottom: '28px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                  <div className="label">Capital Raises</div>
+                  <Link href="/raises" style={{ fontSize: '11px', color: 'var(--accent)', textDecoration: 'none' }}>View all raises →</Link>
+                </div>
+                {dealRaises.map(raise => {
+                  const participants = raise.participants || []
+                  const isDebt = /debt/i.test(raise.name)
+                  const invested = participants.filter((p: any) => ['invested','confirmed'].includes(p.status))
+                  const active = participants.filter((p: any) => !['pass','no_response','invested','confirmed'].includes(p.status))
+                  const passed = participants.filter((p: any) => ['pass','no_response'].includes(p.status))
+                  const totalCommitted = invested.reduce((s: number, p: any) => s + (p.committed_amount ?? p.debt_amount ?? 0), 0)
+                  const target = isDebt ? raise.target_debt : raise.target_equity
+                  return (
+                    <div key={raise.id} className="card" style={{ padding: '16px 20px', marginBottom: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: '14px' }}>{raise.name}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            {raise.status} · {participants.length} participant{participants.length !== 1 ? 's' : ''}
+                            {raise.close_date ? ` · Target close ${new Date(raise.close_date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}` : ''}
+                          </div>
+                        </div>
+                        <Link href="/raises" style={{ fontSize: '11px', color: 'var(--text-muted)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          Open tracker <ChevronRight size={11} />
+                        </Link>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: participants.length > 0 ? '14px' : '0' }}>
+                        {[
+                          { label: 'Target', val: target ? `$${(target/1e6).toFixed(1)}M` : '—' },
+                          { label: 'Committed', val: totalCommitted > 0 ? `$${(totalCommitted/1e6).toFixed(1)}M` : '—', accent: true },
+                          { label: isDebt ? 'Lenders active' : 'Investors active', val: String(active.length) },
+                          { label: 'Passed', val: String(passed.length) },
+                        ].map(m => (
+                          <div key={m.label} style={{ background: 'var(--surface-2)', borderRadius: '6px', padding: '8px 10px' }}>
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{m.label}</div>
+                            <div style={{ fontSize: '14px', fontWeight: 600, marginTop: '2px', fontFamily: 'var(--font-mono)', color: (m as any).accent ? 'var(--accent)' : 'var(--text-primary)' }}>{m.val}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {invested.length > 0 && (
+                        <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }}>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>✓ Committed / Invested</div>
+                          {invested.map((p: any) => (
+                            <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '3px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                              <span style={{ color: 'var(--text-primary)' }}>{p.firm_name}{p.contact_name ? ` · ${p.contact_name}` : ''}</span>
+                              <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent)', fontWeight: 600 }}>
+                                {(p.committed_amount ?? p.debt_amount) ? `$${((p.committed_amount ?? p.debt_amount)/1e6).toFixed(1)}M` : '—'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div style={{ marginBottom: '20px', padding: '16px', background: 'var(--surface-2)', borderRadius: '8px', border: '1px dashed var(--border)' }}>
+                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                  No capital raises linked to this deal yet.{' '}
+                  <Link href="/raises" style={{ color: 'var(--accent)', textDecoration: 'none' }}>Go to Capital Raises →</Link>
+                </div>
+              </div>
+            )}
+
+            {/* Legacy LP/Lender Assignments */}
+            <div style={{ marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                <div className="label">Direct Assignments</div>
+                <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={() => setShowCapitalForm(!showCapitalForm)}>
+                  <Plus size={12} /> Add LP / Lender
+                </button>
+              </div>
             </div>
 
             {showCapitalForm && (
@@ -660,7 +751,7 @@ export default function DealDetailPage() {
             )}
 
             {capital.length === 0 && !showCapitalForm ? (
-              <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>No LP or lender assignments yet.</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>No direct LP or lender assignments yet.</div>
             ) : capital.map(a => (
               <div key={a.id} className="card-2" style={{ padding: '14px 16px', marginBottom: '8px', display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', alignItems: 'center', gap: '12px' }}>
                 <div>
