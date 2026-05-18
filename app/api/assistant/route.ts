@@ -12,7 +12,7 @@ const supabase = createClient(
 
 // ─── Tool definitions ─────────────────────────────────────────
 
-const TOOLS: Anthropic.Tool[] = [
+const TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: 'search_deals',
     description: 'Search ALL deals (active, dead, closed) by company name, sector, geography, stage, status, or year. Default returns ALL statuses — never filter to Active only unless explicitly asked. Use year filter for historical counting questions.',
