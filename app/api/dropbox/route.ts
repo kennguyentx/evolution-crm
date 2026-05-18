@@ -11,6 +11,21 @@ const DBX_TOKEN = process.env.DROPBOX_ACCESS_TOKEN!
 const DBX_API  = 'https://api.dropboxapi.com/2'
 const DBX_CONTENT = 'https://content.dropboxapi.com/2'
 
+async function getDropboxToken(): Promise<string> {
+  const res = await fetch('https://api.dropbox.com/oauth2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: process.env.DROPBOX_REFRESH_TOKEN!,
+      client_id: process.env.DROPBOX_APP_KEY!,
+      client_secret: process.env.DROPBOX_APP_SECRET!,
+    }),
+  })
+  const data = await res.json()
+  return data.access_token
+}
+
 // File types the assistant can read
 const READABLE_TYPES = new Set(['.pdf', '.txt', '.md', '.csv', '.docx', '.xlsx', '.xls'])
 
@@ -30,10 +45,11 @@ function fileIcon(name: string): string {
 }
 
 async function dbxPost(endpoint: string, body: any, contentHeaders?: Record<string, string>) {
+  const token = await getDropboxToken()
   const res = await fetch(`${DBX_API}${endpoint}`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${DBX_TOKEN}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
       ...contentHeaders,
     },
@@ -95,10 +111,11 @@ export async function GET(req: NextRequest) {
       }
 
       // Download the file bytes
+      const token = await getDropboxToken()
       const downloadRes = await fetch(`${DBX_CONTENT}/files/download`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${DBX_TOKEN}`,
+          Authorization: `Bearer ${token}`,
           'Dropbox-API-Arg': JSON.stringify({ path }),
         },
       })
@@ -137,11 +154,11 @@ export async function POST(req: NextRequest) {
 
     const fullPath = `${path.replace(/\/$/, '')}/${name}`
     const fileBuffer = Buffer.from(base64, 'base64')
-
+    const uploadToken = await getDropboxToken()
     const uploadRes = await fetch(`${DBX_CONTENT}/files/upload`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${DBX_TOKEN}`,
+        Authorization: `Bearer ${uploadToken}`,
         'Content-Type': 'application/octet-stream',
         'Dropbox-API-Arg': JSON.stringify({
           path: fullPath,
