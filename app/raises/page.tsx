@@ -892,18 +892,16 @@ export default function RaisesPage() {
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Capital Raises</h1>
-          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Click any cell to edit · Expand row for activity log</p>
-        </div>
+      <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Capital Raises</h1>
         <button
           onClick={() => setShowNewRaise(true)}
-          className="text-xs px-3 py-1.5 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-medium hover:opacity-90"
+          className="btn btn-primary"
           style={{ fontSize: '12px' }}
         >
           + New raise
         </button>
+        <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto' }}>Click any cell to edit · Expand row for activity log</p>
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '20px 28px' }}>
