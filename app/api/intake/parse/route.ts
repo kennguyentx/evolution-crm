@@ -56,9 +56,9 @@ export async function POST(req: NextRequest) {
       .from(BUCKET)
       .download(storagePath)
 
-    if (dlError) throw new Error(`Download failed: ${dlError.message}`)
+    if (dlError || !fileData) throw new Error(`Download failed: ${dlError?.message ?? 'no data'}`)
 
-    const buffer = await fileData.arrayBuffer()
+    const buffer = await (fileData as Blob).arrayBuffer()
     const base64 = Buffer.from(buffer).toString('base64')
 
     const response = await anthropic.messages.create({
