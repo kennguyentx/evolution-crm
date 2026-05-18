@@ -96,7 +96,7 @@ Use null for any field not found. Only include comps where you found at least th
       return NextResponse.json({ error: 'No response from AI' }, { status: 500 })
     }
 
-    const raw = textBlocks[textBlocks.length - 1].text.trim()
+    const raw = (textBlocks[textBlocks.length - 1] as any).text.trim()
 
     // Parse JSON — strip any markdown fences
     const clean = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
