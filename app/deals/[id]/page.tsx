@@ -48,6 +48,7 @@ export default function DealDetailPage() {
   const [contactSearch, setContactSearch] = useState('')
   const [contactResults, setContactResults] = useState<any[]>([])
   const [showContactSearch, setShowContactSearch] = useState(false)
+  const [pendingContactRole, setPendingContactRole] = useState('Contact')
   const searchRef = useRef<HTMLDivElement>(null)
 
   // Capital form
@@ -141,6 +142,28 @@ export default function DealDetailPage() {
     await supabase.from('deals').update({ stage }).eq('id', dealId)
     setDeal(prev => prev ? { ...prev, stage: stage as any } : null)
     setEditingStage(false)
+
+    // Auto-create portfolio card on close
+    if (stage === 'Closed (Platform)' || stage === 'Closed (Add-On)') {
+      const currentDeal = deal
+      if (!currentDeal) return
+      // Check if a portfolio company already exists for this deal
+      const { data: existing } = await supabase
+        .from('portfolio_companies')
+        .select('id')
+        .eq('deal_id', dealId)
+        .maybeSingle()
+      if (!existing) {
+        await supabase.from('portfolio_companies').insert({
+          deal_id: dealId,
+          name: currentDeal.company_name,
+          sector: currentDeal.sector ?? null,
+          geography: currentDeal.geography ?? null,
+          status: 'Active',
+          platform_type: stage === 'Closed (Platform)' ? 'Platform' : 'Add-On',
+        })
+      }
+    }
   }
 
   const updateField = async (field: string, value: any) => {
@@ -148,10 +171,20 @@ export default function DealDetailPage() {
     setDeal(prev => prev ? { ...prev, [field]: value } : null)
   }
 
-  const linkContact = async (contact: any) => {
+  const linkSourceContact = async (contact: any) => {
+    const alreadyLinked = linkedContacts.find(l => l.contact_id === contact.id && l.role === 'Source / Banker')
+    if (alreadyLinked) { setShowContactSearch(false); return }
+    const { data } = await supabase.from('contact_deal_links').insert({ contact_id: contact.id, deal_id: dealId, role: 'Source / Banker' }).select('*, contact:contacts(*)').single()
+    if (data) setLinkedContacts(prev => [...prev, data])
+    setShowContactSearch(false)
+    setContactSearch('')
+    setContactResults([])
+  }
+
+  const linkContact = async (contact: any, role: string) => {
     const alreadyLinked = linkedContacts.find(l => l.contact_id === contact.id)
     if (alreadyLinked) { setShowContactSearch(false); return }
-    const { data } = await supabase.from('contact_deal_links').insert({ contact_id: contact.id, deal_id: dealId, role: 'Contact' }).select('*, contact:contacts(*)').single()
+    const { data } = await supabase.from('contact_deal_links').insert({ contact_id: contact.id, deal_id: dealId, role }).select('*, contact:contacts(*)').single()
     if (data) setLinkedContacts(prev => [...prev, data])
     setShowContactSearch(false)
     setContactSearch('')
@@ -215,9 +248,11 @@ export default function DealDetailPage() {
         ).filter(i => i.item)
       }
       if (items.length === 0) { alert('No items found in file. Columns: Category, Item'); return }
+      // Replace existing checklist with uploaded items
+      await supabase.from('diligence_items').delete().eq('deal_id', dealId)
       const payload = items.map(i => ({ ...i, deal_id: dealId, status: 'Pending' }))
       const { data } = await supabase.from('diligence_items').insert(payload).select()
-      if (data) setDiligence(prev => [...prev, ...data])
+      if (data) setDiligence(data)
     } catch (e: any) { alert('Error reading file: ' + e.message) }
   }, [dealId, supabase])
 
@@ -279,9 +314,15 @@ export default function DealDetailPage() {
 
       {/* HEADER */}
       <div style={{ padding: '16px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
-        <Link href="/deals" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '12px', textDecoration: 'none', marginBottom: '10px' }}>
-          <ArrowLeft size={12} /> Back to deals
-        </Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
+          <Link href="/deals" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '12px', textDecoration: 'none' }}>
+            <ArrowLeft size={12} /> Deals
+          </Link>
+          <span style={{ color: 'var(--border)', fontSize: '12px' }}>·</span>
+          <Link href="/pipeline" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '12px', textDecoration: 'none' }}>
+            <ArrowLeft size={12} /> Pipeline
+          </Link>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
           <EditableInline value={deal.company_name} onSave={v => updateField('company_name', v)} style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' }} />
           <div style={{ position: 'relative' }}>
@@ -357,7 +398,9 @@ export default function DealDetailPage() {
             <div className="card" style={{ padding: '20px' }}>
               <div className="label" style={{ marginBottom: '16px' }}>Deal Details</div>
               <div style={{ marginBottom: '14px' }}>
-                <div className="label" style={{ marginBottom: '8px' }}>Source Contact(s)</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <div className="label">Source Contact(s)</div>
+                </div>
                 {sourceContacts.map(link => (
                   <div key={link.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: 'var(--surface-2)', borderRadius: '6px', marginBottom: '6px', border: '1px solid var(--border)' }}>
                     <div>
@@ -367,6 +410,37 @@ export default function DealDetailPage() {
                     <button onClick={() => unlinkContact(link.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px' }}><X size={13} /></button>
                   </div>
                 ))}
+                <div ref={searchRef} style={{ position: 'relative', marginTop: '4px' }}>
+                  {showContactSearch ? (
+                    <div>
+                      <div style={{ position: 'relative' }}>
+                        <Search size={12} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                        <input className="input" autoFocus placeholder="Search by name or firm..." value={contactSearch} onChange={e => setContactSearch(e.target.value)} style={{ paddingLeft: '28px', width: '100%', fontSize: '12px' }} />
+                      </div>
+                      {contactResults.length > 0 && (
+                        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '2px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '7px', zIndex: 50, boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }}>
+                          {contactResults.map(c => (
+                            <button key={c.id} onClick={() => linkSourceContact(c)} style={{ display: 'block', width: '100%', padding: '9px 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid var(--border-subtle)' }}
+                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                              <div style={{ fontSize: '13px', fontWeight: 500 }}>{c.first_name} {c.last_name}</div>
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{c.firm || c.title || c.contact_type}</div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {contactSearch.length > 1 && contactResults.length === 0 && (
+                        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '2px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '7px', zIndex: 50, padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                          No contacts found for "{contactSearch}"
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <button className="btn btn-ghost" style={{ fontSize: '11px', padding: '4px 10px' }} onClick={() => setShowContactSearch(true)}>
+                      <Plus size={11} /> Add source contact
+                    </button>
+                  )}
+                </div>
               </div>
               <EditableField label="LOI Date"   value={deal.loi_date || ''}      onSave={v => updateField('loi_date', v)}       type="date" />
               <EditableField label="Entry Date"  value={deal.expected_close || ''} onSave={v => updateField('expected_close', v)} type="date" />
@@ -411,7 +485,7 @@ export default function DealDetailPage() {
                 <div style={{ height: '100%', width: `${diligencePct}%`, background: 'var(--accent)', borderRadius: '2px', transition: 'width 0.3s' }} />
               </div>
             )}
-            {['financial','legal','operational','management',''].map(category => {
+            {['financial','legal','operational','management','other',''].map(category => {
               const items = diligence.filter(d => (d.category || '') === category)
               if (!items.length) return null
               return (
@@ -437,31 +511,43 @@ export default function DealDetailPage() {
         {/* CONTACTS */}
         {activeTab === 'contacts' && (
           <div style={{ maxWidth: '700px' }}>
-            <div style={{ display: 'flex', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'center' }}>
               <div ref={searchRef} style={{ position: 'relative' }}>
                 {showContactSearch ? (
-                  <div>
-                    <div style={{ position: 'relative' }}>
-                      <Search size={12} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                      <input className="input" autoFocus placeholder="Search by name or firm..." value={contactSearch} onChange={e => setContactSearch(e.target.value)} style={{ paddingLeft: '28px', width: '260px', fontSize: '12px' }} />
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
+                    <div>
+                      <div style={{ position: 'relative' }}>
+                        <Search size={12} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                        <input className="input" autoFocus placeholder="Search by name or firm..." value={contactSearch} onChange={e => setContactSearch(e.target.value)} style={{ paddingLeft: '28px', width: '260px', fontSize: '12px' }} />
+                      </div>
+                      {contactResults.length > 0 && (
+                        <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '2px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '7px', zIndex: 50, boxShadow: '0 4px 16px rgba(0,0,0,0.1)', minWidth: '280px' }}>
+                          {contactResults.map(c => (
+                            <button key={c.id} onClick={() => linkContact(c, pendingContactRole)} style={{ display: 'block', width: '100%', padding: '9px 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid var(--border-subtle)' }}
+                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                              <div style={{ fontSize: '13px', fontWeight: 500 }}>{c.first_name} {c.last_name}</div>
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{c.firm || c.title || c.contact_type}</div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {contactSearch.length > 1 && contactResults.length === 0 && (
+                        <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '2px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '7px', zIndex: 50, padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                          No contacts found for "{contactSearch}"
+                        </div>
+                      )}
                     </div>
-                    {contactResults.length > 0 && (
-                      <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '2px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '7px', zIndex: 50, boxShadow: '0 4px 16px rgba(0,0,0,0.1)', minWidth: '280px' }}>
-                        {contactResults.map(c => (
-                          <button key={c.id} onClick={() => linkContact(c)} style={{ display: 'block', width: '100%', padding: '9px 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid var(--border-subtle)' }}
-                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
-                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                            <div style={{ fontSize: '13px', fontWeight: 500 }}>{c.first_name} {c.last_name}</div>
-                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{c.firm || c.title || c.contact_type}</div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {contactSearch.length > 1 && contactResults.length === 0 && (
-                      <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '2px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '7px', zIndex: 50, padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>
-                        No contacts found for "{contactSearch}"
-                      </div>
-                    )}
+                    <select
+                      value={pendingContactRole}
+                      onChange={e => setPendingContactRole(e.target.value)}
+                      className="input"
+                      style={{ fontSize: '12px', padding: '6px 8px', height: '34px' }}
+                    >
+                      {['Source / Banker','Advisor','Management','LP','Lender','Contact'].map(r => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
                   </div>
                 ) : (
                   <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={() => setShowContactSearch(true)}>
