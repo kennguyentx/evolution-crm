@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
       .from(BUCKET)
       .createSignedUploadUrl(storagePath)
 
-    if (error) throw new Error(error.message)
+    if (error || !data) throw new Error(error?.message ?? 'No signed URL returned')
 
     return NextResponse.json({ signedUploadUrl: data.signedUrl, storagePath })
   } catch (err: any) {
