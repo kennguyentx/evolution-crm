@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import type { Deal, Interaction, DiligenceItem, DealCapitalAssignment } from '@/types'
 import { formatCurrency, stageClass, contactTypeClass } from '@/types'
-import { ArrowLeft, Check, X, Plus, Phone, Mail, ChevronDown, ChevronRight, Search, Trash2, Upload } from 'lucide-react'
+import { ArrowLeft, Check, X, Plus, Phone, Mail, ChevronDown, ChevronRight, Search, Trash2, Upload, Edit2 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useDropzone } from 'react-dropzone'
@@ -83,6 +83,8 @@ export default function DealDetailPage() {
   // Activity form
   const [showActivityForm, setShowActivityForm] = useState(false)
   const [activityForm, setActivityForm] = useState({ interaction_type: 'call', summary: '', next_steps: '' })
+  const [editingInteractionId, setEditingInteractionId] = useState<string | null>(null)
+  const [editingInteraction, setEditingInteraction] = useState<{ interaction_type: string; interaction_date: string; summary: string; next_steps: string } | null>(null)
 
   const fetchAll = useCallback(async () => {
     const [dealRes, linksRes, interactionsRes, diligenceRes, capitalRes] = await Promise.all([
@@ -348,6 +350,35 @@ export default function DealDetailPage() {
     if (data) setInteractions(prev => [data, ...prev])
     setShowActivityForm(false)
     setActivityForm({ interaction_type: 'call', summary: '', next_steps: '' })
+  }
+
+  const startEditInteraction = (i: Interaction) => {
+    setEditingInteractionId(i.id)
+    setEditingInteraction({
+      interaction_type: i.interaction_type || 'call',
+      interaction_date: i.interaction_date ? i.interaction_date.split('T')[0] : new Date().toISOString().split('T')[0],
+      summary: i.summary || '',
+      next_steps: i.next_steps || '',
+    })
+  }
+
+  const saveInteraction = async () => {
+    if (!editingInteractionId || !editingInteraction) return
+    const payload = {
+      interaction_type: editingInteraction.interaction_type,
+      interaction_date: editingInteraction.interaction_date,
+      summary: editingInteraction.summary,
+      next_steps: editingInteraction.next_steps || null,
+    }
+    const { data } = await supabase.from('interactions').update(payload).eq('id', editingInteractionId).select('*, contact:contacts(first_name, last_name)').single()
+    if (data) setInteractions(prev => prev.map(i => i.id === editingInteractionId ? data : i))
+    setEditingInteractionId(null)
+    setEditingInteraction(null)
+  }
+
+  const deleteInteraction = async (id: string) => {
+    await supabase.from('interactions').delete().eq('id', id)
+    setInteractions(prev => prev.filter(i => i.id !== id))
   }
 
   const addCapital = async () => {
@@ -991,16 +1022,69 @@ export default function DealDetailPage() {
 
             {interactions.length === 0 && !showActivityForm ? (
               <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>No interactions logged yet.</div>
-            ) : interactions.map(i => (
-              <div key={i.id} className="card-2" style={{ padding: '14px 16px', marginBottom: '8px' }}>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  {i.interaction_type} · {format(new Date(i.interaction_date), 'MMM d, yyyy')}
-                  {(i as any).contact && ` · ${(i as any).contact.first_name} ${(i as any).contact.last_name}`}
+            ) : interactions.map(i => {
+              const isEditing = editingInteractionId === i.id
+              return (
+                <div key={i.id} className="card-2" style={{ padding: '14px 16px', marginBottom: '8px' }}>
+                  {isEditing && editingInteraction ? (
+                    <div style={{ display: 'grid', gap: '10px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                        <div>
+                          <label className="label">Type</label>
+                          <select className="select" value={editingInteraction.interaction_type} onChange={e => setEditingInteraction(p => p ? { ...p, interaction_type: e.target.value } : p)}>
+                            <option value="call">Call</option>
+                            <option value="meeting">Meeting</option>
+                            <option value="email">Email</option>
+                            <option value="note">Note</option>
+                            <option value="site visit">Site Visit</option>
+                            <option value="loi-submission">LOI Submission</option>
+                            <option value="lender-call">Lender Call</option>
+                            <option value="other">Other</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="label">Date</label>
+                          <input className="input" type="date" value={editingInteraction.interaction_date} onChange={e => setEditingInteraction(p => p ? { ...p, interaction_date: e.target.value } : p)} />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="label">Summary</label>
+                        <textarea className="input" rows={3} style={{ resize: 'vertical' }} value={editingInteraction.summary} onChange={e => setEditingInteraction(p => p ? { ...p, summary: e.target.value } : p)} />
+                      </div>
+                      <div>
+                        <label className="label">Next Steps</label>
+                        <input className="input" value={editingInteraction.next_steps} onChange={e => setEditingInteraction(p => p ? { ...p, next_steps: e.target.value } : p)} placeholder="Follow-up actions..." />
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => { setEditingInteractionId(null); setEditingInteraction(null) }}>Cancel</button>
+                        <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={saveInteraction} disabled={!editingInteraction.summary.trim()}>
+                          <Check size={12} /> Save
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                          {i.interaction_type} · {format(new Date(i.interaction_date), 'MMM d, yyyy')}
+                          {(i as any).contact && ` · ${(i as any).contact.first_name} ${(i as any).contact.last_name}`}
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                          <button onClick={() => startEditInteraction(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px 4px', borderRadius: '4px' }} title="Edit">
+                            <Edit2 size={12} />
+                          </button>
+                          <button onClick={() => deleteInteraction(i.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px 4px', borderRadius: '4px' }} title="Delete">
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                      {i.summary && <div style={{ fontSize: '13px', color: 'var(--text-primary)', marginTop: '6px' }}>{i.summary}</div>}
+                      {i.next_steps && <div style={{ fontSize: '12px', color: 'var(--accent)', marginTop: '6px' }}>→ {i.next_steps}</div>}
+                    </>
+                  )}
                 </div>
-                {i.summary && <div style={{ fontSize: '13px', color: 'var(--text-primary)', marginTop: '6px' }}>{i.summary}</div>}
-                {i.next_steps && <div style={{ fontSize: '12px', color: 'var(--accent)', marginTop: '6px' }}>→ {i.next_steps}</div>}
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
 
