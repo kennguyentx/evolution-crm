@@ -25,6 +25,15 @@ Rules:
 - If nothing is present for a field, use null or []`
 
 export async function POST(req: NextRequest) {
+  // Verify webhook token if one is configured
+  const webhookToken = process.env.POSTMARK_WEBHOOK_TOKEN
+  if (webhookToken) {
+    const provided = req.nextUrl.searchParams.get('token') ?? req.headers.get('x-webhook-token')
+    if (provided !== webhookToken) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+  }
+
   try {
     const body = await req.json()
 
