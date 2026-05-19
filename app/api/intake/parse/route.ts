@@ -92,18 +92,24 @@ export async function POST(req: NextRequest) {
 
     // Upload to Dropbox (best-effort — doesn't fail the parse if Dropbox is unavailable)
     let dropbox_folder: string | null = null
-    if (dropboxConfigured() && parsed.company_name) {
+    let dropbox_error: string | null = null
+    const dbx_configured = dropboxConfigured()
+
+    if (dbx_configured && parsed.company_name) {
       try {
         const safeName = parsed.company_name.replace(/[<>:"/\\|?*]/g, '_')
         const folderPath = `/Deals/${safeName}`
         await dropboxUpload(folderPath, fileName, Buffer.from(buffer))
         dropbox_folder = folderPath
-      } catch (dbxErr) {
-        console.warn('Dropbox upload skipped:', (dbxErr as Error).message)
+      } catch (dbxErr: any) {
+        dropbox_error = dbxErr.message ?? 'Unknown Dropbox error'
+        console.warn('Dropbox upload failed:', dropbox_error)
       }
+    } else if (!dbx_configured) {
+      dropbox_error = 'Dropbox is not configured (missing env vars)'
     }
 
-    return NextResponse.json({ ...parsed, dropbox_folder })
+    return NextResponse.json({ ...parsed, dropbox_folder, dropbox_error, dbx_configured })
   } catch (err: any) {
     // Attempt cleanup even on error
     if (storagePath) {

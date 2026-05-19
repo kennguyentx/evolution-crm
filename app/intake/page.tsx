@@ -60,6 +60,9 @@ export default function IntakePage() {
   const [missingFields, setMissingFields] = useState<MissingField[]>([])
   const [contacts, setContacts] = useState<ExtractedContact[]>([])
   const [dropboxFolder, setDropboxFolder] = useState<string | null>(null)
+  const [dropboxError, setDropboxError] = useState<string | null>(null)
+  const [extraFiles, setExtraFiles] = useState<{ name: string; status: 'uploading' | 'done' | 'error'; error?: string }[]>([])
+  const extraFileRef = useRef<HTMLInputElement>(null)
 
   // When parsed data arrives, check for missing fields
   useEffect(() => {
@@ -199,6 +202,7 @@ export default function IntakePage() {
       setParsed(data)
       setEdited({ ...data, stage: data.stage || 'Teaser' })
       if (data.dropbox_folder) setDropboxFolder(data.dropbox_folder)
+      if (data.dropbox_error) setDropboxError(data.dropbox_error)
 
       // Initialize contacts state
       const parsedContacts: ParsedContact[] = Array.isArray(data.contacts) ? data.contacts : []
@@ -228,6 +232,35 @@ export default function IntakePage() {
       setStage('idle')
     }
   }, [supabase])
+
+  const uploadExtraFiles = async (files: FileList | null) => {
+    if (!files || !dropboxFolder) return
+    const newFiles = Array.from(files).map(f => ({ name: f.name, status: 'uploading' as const }))
+    setExtraFiles(prev => [...prev, ...newFiles])
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const idx = extraFiles.length + i
+      try {
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve((reader.result as string).split(',')[1])
+          reader.onerror = reject
+          reader.readAsDataURL(file)
+        })
+        const res = await fetch('/api/dropbox', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: dropboxFolder, name: file.name, base64 }),
+        })
+        const data = await res.json()
+        if (data.error) throw new Error(data.error)
+        setExtraFiles(prev => prev.map((f, j) => j === idx ? { ...f, status: 'done' } : f))
+      } catch (err: any) {
+        setExtraFiles(prev => prev.map((f, j) => j === idx ? { ...f, status: 'error', error: err.message } : f))
+      }
+    }
+    if (extraFileRef.current) extraFileRef.current.value = ''
+  }
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -312,6 +345,8 @@ export default function IntakePage() {
     setDuplicateDeals([])
     setIgnoreDuplicate(false)
     setDropboxFolder(null)
+    setDropboxError(null)
+    setExtraFiles([])
   }
 
   const linkedCount = contacts.filter(c => c.crmContact && !c.skip).length
@@ -373,11 +408,41 @@ export default function IntakePage() {
         {stage === 'review' && edited && (
           <div className="fade-in">
 
-            {/* Dropbox confirmation */}
+            {/* Dropbox status */}
             {dropboxFolder && (
-              <div style={{ display: 'flex', gap: '10px', padding: '10px 14px', background: 'rgba(5,150,105,0.07)', border: '1px solid rgba(5,150,105,0.25)', borderRadius: '8px', marginBottom: '14px', fontSize: '12px', color: 'var(--green)' }}>
-                <Check size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
-                PDF saved to Dropbox at <strong style={{ marginLeft: '4px' }}>{dropboxFolder}</strong>
+              <div style={{ padding: '12px 14px', background: 'rgba(5,150,105,0.07)', border: '1px solid rgba(5,150,105,0.25)', borderRadius: '8px', marginBottom: '14px', fontSize: '12px' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', color: 'var(--green)', marginBottom: extraFiles.length > 0 ? '10px' : '8px' }}>
+                  <Check size={14} style={{ flexShrink: 0 }} />
+                  Teaser saved to Dropbox · <strong>{dropboxFolder}</strong>
+                </div>
+                {/* Additional files already uploaded */}
+                {extraFiles.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' }}>
+                    {extraFiles.map((f, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: f.status === 'done' ? 'var(--green)' : f.status === 'error' ? 'var(--red, #ef4444)' : 'var(--text-muted)' }}>
+                        {f.status === 'done' ? <Check size={11} /> : f.status === 'error' ? <X size={11} /> : <span style={{ width: 11 }}>⋯</span>}
+                        {f.name}{f.error ? ` — ${f.error}` : ''}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Upload additional files */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input ref={extraFileRef} type="file" multiple style={{ display: 'none' }} onChange={e => uploadExtraFiles(e.target.files)} />
+                  <button
+                    onClick={() => extraFileRef.current?.click()}
+                    style={{ fontSize: '11px', padding: '4px 10px', border: '1px solid rgba(5,150,105,0.4)', borderRadius: '5px', background: 'transparent', cursor: 'pointer', color: 'var(--green)', display: 'flex', alignItems: 'center', gap: '5px' }}
+                  >
+                    <Plus size={11} /> Attach files to Dropbox
+                  </button>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>NDA, LOI, financials, etc.</span>
+                </div>
+              </div>
+            )}
+            {dropboxError && !dropboxFolder && (
+              <div style={{ display: 'flex', gap: '10px', padding: '10px 14px', background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.2)', borderRadius: '8px', marginBottom: '14px', fontSize: '12px', color: 'var(--red, #ef4444)' }}>
+                <AlertCircle size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
+                Dropbox upload failed: {dropboxError}. You can upload files manually from the deal page once saved.
               </div>
             )}
 
