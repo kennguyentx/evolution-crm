@@ -6,6 +6,7 @@ import { formatCurrency, stageClass } from '@/types'
 import { Plus, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import NewDealModal from '@/components/deals/NewDealModal'
+import { moveDropboxOnStageChange } from '@/lib/dropbox-stage-move'
 
 const STAGES: { name: DealStage; label: string }[] = [
   { name: 'Exclusivity',   label: 'Exclusivity' },
@@ -59,6 +60,8 @@ export default function PipelinePage() {
   const updateStage = async (dealId: string, stage: DealStage) => {
     setDeals(prev => prev.map(d => d.id === dealId ? { ...d, stage } : d))
     await supabase.from('deals').update({ stage }).eq('id', dealId)
+    const deal = deals.find(d => d.id === dealId)
+    if (deal) moveDropboxOnStageChange(supabase, dealId, deal.company_name, (deal as any).dropbox_path, stage)
   }
 
   if (loading) return <div style={{ padding: '40px', color: 'var(--text-muted)' }}>Loading...</div>

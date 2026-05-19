@@ -12,6 +12,7 @@ import { format } from 'date-fns'
 import DropboxFilesTab from '@/components/deals/DropboxFilesTab'
 import NewContactModal from '@/components/contacts/NewContactModal'
 import UndoToast, { type UndoEntry } from '@/components/layout/UndoToast'
+import { moveDropboxOnStageChange } from '@/lib/dropbox-stage-move'
 
 
 const STAGES = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
@@ -176,6 +177,10 @@ export default function DealDetailPage() {
     await supabase.from('deals').update({ stage }).eq('id', dealId)
     setDeal(prev => prev ? { ...prev, stage: stage as any } : null)
     setEditingStage(false)
+    if (deal) {
+      const newPath = await moveDropboxOnStageChange(supabase, dealId, deal.company_name, deal.dropbox_path, stage)
+      if (newPath && newPath !== deal.dropbox_path) setDeal(prev => prev ? { ...prev, dropbox_path: newPath } : null)
+    }
 
     // Auto-create portfolio card on close
     if (stage === 'Closed (Platform)' || stage === 'Closed (Add-On)') {

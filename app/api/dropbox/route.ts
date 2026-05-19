@@ -6,7 +6,7 @@
 //   POST { path, file (base64), name }        — upload a file
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getDropboxToken } from '@/lib/dropbox'
+import { getDropboxToken, dropboxMove } from '@/lib/dropbox'
 
 const DBX_API  = 'https://api.dropboxapi.com/2'
 const DBX_CONTENT = 'https://content.dropboxapi.com/2'
@@ -167,6 +167,18 @@ export async function POST(req: NextRequest) {
 
   } catch (err: any) {
     console.error('Dropbox upload error:', err)
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const { from_path, to_path } = await req.json()
+    if (!from_path || !to_path) return NextResponse.json({ error: 'from_path and to_path required' }, { status: 400 })
+    const newPath = await dropboxMove(from_path, to_path)
+    return NextResponse.json({ success: true, path: newPath })
+  } catch (err: any) {
+    console.error('Dropbox move error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }

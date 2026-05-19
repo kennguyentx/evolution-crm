@@ -49,6 +49,30 @@ export async function dropboxUpload(folderPath: string, fileName: string, buffer
   return result.path_lower as string
 }
 
+export async function dropboxMove(fromPath: string, toPath: string): Promise<string> {
+  const token = await getDropboxToken()
+  const res = await fetch(`${DBX_API}/files/move_v2`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ from_path: fromPath, to_path: toPath, autorename: true }),
+  })
+  if (!res.ok) throw new Error(`Dropbox move failed: ${await res.text()}`)
+  const result = await res.json()
+  return (result.metadata?.path_lower ?? toPath.toLowerCase()) as string
+}
+
 export function dropboxConfigured(): boolean {
   return !!(process.env.DROPBOX_REFRESH_TOKEN && process.env.DROPBOX_APP_KEY && process.env.DROPBOX_APP_SECRET)
+}
+
+const PASS_STAGES = ['Pass (DOA)', 'Pass (Pre-LOI)', 'Pass (Post-LOI)']
+const ACTIVE_STAGES = ['Teaser', 'Reviewing', 'Pre-LOI', 'LOI Submitted', 'Exclusivity']
+
+export function expectedDropboxFolder(companyName: string, stage: string): string {
+  const safe = companyName.replace(/[<>:"/\\|?*]/g, '_')
+  if (PASS_STAGES.includes(stage)) return `/Deals/Passed/${safe}`
+  return `/Deals/${safe}`
 }
