@@ -180,38 +180,50 @@ export default function DealDetailPage() {
   }
 
   const updateStage = async (stage: string) => {
+    // Snapshot deal before any async state updates
+    const currentDeal = deal
     const status = stageToStatus(stage)
     await supabase.from('deals').update({ stage, status }).eq('id', dealId)
     setDeal(prev => prev ? { ...prev, stage: stage as any, status } : null)
     setEditingStage(false)
-    if (deal) {
-      const { path: newPath, error: moveErr } = await moveDropboxOnStageChange(supabase, dealId, deal.company_name, deal.dropbox_path, stage)
+
+    // Move Dropbox folder and track the resolved path
+    let resolvedDropboxPath = currentDeal?.dropbox_path ?? null
+    if (currentDeal) {
+      const { path: newPath, error: moveErr } = await moveDropboxOnStageChange(
+        supabase, dealId, currentDeal.company_name, currentDeal.dropbox_path, stage,
+      )
       if (moveErr) {
         console.error('[Dropbox stage move]', moveErr)
         alert(`Stage updated, but Dropbox folder move failed:\n${moveErr}`)
-      } else if (newPath && newPath !== deal.dropbox_path) {
-        setDeal(prev => prev ? { ...prev, dropbox_path: newPath } : null)
+      } else if (newPath) {
+        if (newPath !== currentDeal.dropbox_path) {
+          setDeal(prev => prev ? { ...prev, dropbox_path: newPath } : null)
+        }
+        resolvedDropboxPath = newPath
       }
     }
 
-    // Auto-create portfolio card on close
-    if (stage === 'Closed (Platform)' || stage === 'Closed (Add-On)') {
-      const currentDeal = deal
-      if (!currentDeal) return
-      // Check if a portfolio company already exists for this deal
+    // Auto-create portfolio company on close
+    if ((stage === 'Closed (Platform)' || stage === 'Closed (Add-On)') && currentDeal) {
+      // Dedup by company name (case-insensitive)
       const { data: existing } = await supabase
         .from('portfolio_companies')
         .select('id')
-        .eq('deal_id', dealId)
+        .ilike('name', currentDeal.company_name)
         .maybeSingle()
       if (!existing) {
         await supabase.from('portfolio_companies').insert({
-          deal_id: dealId,
           name: currentDeal.company_name,
           sector: currentDeal.sector ?? null,
           geography: currentDeal.geography ?? null,
+          deal_type: stage === 'Closed (Platform)' ? 'Platform' : 'Add-On',
           status: 'Active',
-          platform_type: stage === 'Closed (Platform)' ? 'Platform' : 'Add-On',
+          acquisition_date: currentDeal.expected_close ?? new Date().toISOString().split('T')[0],
+          acquisition_revenue: currentDeal.revenue ?? null,
+          acquisition_ebitda: currentDeal.ebitda ?? null,
+          acquisition_ev: currentDeal.asking_price ?? null,
+          dropbox_path: resolvedDropboxPath,
         })
       }
     }

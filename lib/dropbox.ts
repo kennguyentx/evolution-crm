@@ -84,11 +84,18 @@ export function dropboxConfigured(): boolean {
   return !!(process.env.DROPBOX_REFRESH_TOKEN && process.env.DROPBOX_APP_KEY && process.env.DROPBOX_APP_SECRET)
 }
 
-const PASS_STAGES = ['Pass (DOA)', 'Pass (Pre-LOI)', 'Pass (Post-LOI)']
-const ACTIVE_STAGES = ['Teaser', 'Reviewing', 'Pre-LOI', 'LOI Submitted', 'Exclusivity']
+const PASS_STAGES   = ['Pass (DOA)', 'Pass (Pre-LOI)', 'Pass (Post-LOI)']
+const CLOSED_STAGES = ['Closed (Platform)', 'Closed (Add-On)']
 
 export function expectedDropboxFolder(companyName: string, stage: string): string {
   const safe = companyName.replace(/[<>:"/\\|?*]/g, '_')
-  if (PASS_STAGES.includes(stage)) return `/Evolution Strategy Partners/Deals/!Passed Deals/${safe}`
+  if (PASS_STAGES.includes(stage))   return `/Evolution Strategy Partners/Deals/!Passed Deals/${safe}`
+  if (CLOSED_STAGES.includes(stage)) return `/Evolution Strategy Partners/Portfolio Co's/${safe}`
   return `/Evolution Strategy Partners/Deals/${safe}`
+}
+
+/** Canonical Dropbox folder for a portfolio company (no deal stage needed). */
+export function portfolioDropboxFolder(companyName: string): string {
+  const safe = companyName.replace(/[<>:"/\\|?*]/g, '_')
+  return `/Evolution Strategy Partners/Portfolio Co's/${safe}`
 }

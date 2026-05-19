@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatCurrency } from '@/types'
-import { ArrowLeft, Plus, TrendingUp, TrendingDown, Zap, Check, Upload, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Plus, TrendingUp, TrendingDown, Zap, Check, Upload, AlertCircle, Pencil, X } from 'lucide-react'
 import Link from 'next/link'
 import { useDropzone } from 'react-dropzone'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
@@ -22,6 +22,11 @@ export default function PortfolioCompanyPage() {
   const [analysis, setAnalysis] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [addons, setAddons] = useState<any[]>([])
+
+  // Company Details inline editing
+  const [editingDetails, setEditingDetails] = useState(false)
+  const [savingDetails, setSavingDetails] = useState(false)
+  const [detailEdits, setDetailEdits] = useState<any>({})
 
   // Upload state
   const [uploadStage, setUploadStage] = useState<'idle'|'parsing'|'review'|'saving'|'done'>('idle')
@@ -172,6 +177,38 @@ export default function PortfolioCompanyPage() {
     setAnalyzing(false)
   }
 
+  const openDetailEdit = () => {
+    setDetailEdits({
+      name:                 company.name || '',
+      sector:               company.sector || '',
+      geography:            company.geography || '',
+      deal_type:            company.deal_type || '',
+      acquisition_date:     company.acquisition_date || '',
+      acquisition_revenue:  company.acquisition_revenue  != null ? (company.acquisition_revenue  / 1e6).toFixed(2) : '',
+      acquisition_ebitda:   company.acquisition_ebitda   != null ? (company.acquisition_ebitda   / 1e6).toFixed(2) : '',
+      acquisition_ev:       company.acquisition_ev       != null ? (company.acquisition_ev       / 1e6).toFixed(2) : '',
+    })
+    setEditingDetails(true)
+  }
+
+  const saveDetails = async () => {
+    setSavingDetails(true)
+    const payload: any = {
+      name:             detailEdits.name?.trim() || company.name,
+      sector:           detailEdits.sector?.trim()   || null,
+      geography:        detailEdits.geography?.trim() || null,
+      deal_type:        detailEdits.deal_type?.trim() || null,
+      acquisition_date: detailEdits.acquisition_date || null,
+      acquisition_revenue: detailEdits.acquisition_revenue !== '' ? parseFloat(detailEdits.acquisition_revenue) * 1e6 : null,
+      acquisition_ebitda:  detailEdits.acquisition_ebitda  !== '' ? parseFloat(detailEdits.acquisition_ebitda)  * 1e6 : null,
+      acquisition_ev:      detailEdits.acquisition_ev       !== '' ? parseFloat(detailEdits.acquisition_ev)       * 1e6 : null,
+    }
+    await supabase.from('portfolio_companies').update(payload).eq('id', companyId)
+    setCompany((prev: any) => prev ? { ...prev, ...payload } : prev)
+    setEditingDetails(false)
+    setSavingDetails(false)
+  }
+
   if (loading) return <div style={{ padding: '40px', color: 'var(--text-muted)' }}>Loading...</div>
   if (!company) return <div style={{ padding: '40px', color: 'var(--red)' }}>Company not found.</div>
 
@@ -267,22 +304,100 @@ export default function PortfolioCompanyPage() {
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div className="card" style={{ padding: '20px' }}>
-                <div className="label" style={{ marginBottom: '14px' }}>Company Details</div>
-                {[
-                  { label: 'Sector', value: company.sector },
-                  { label: 'Geography', value: company.geography },
-                  { label: 'Deal Type', value: company.deal_type ? company.deal_type.charAt(0).toUpperCase() + company.deal_type.slice(1) : null },
-                  { label: 'Acquired', value: company.acquisition_date ? new Date(company.acquisition_date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : null },
-                  { label: 'Entry Revenue', value: company.acquisition_revenue ? formatCurrency(company.acquisition_revenue) : null },
-                  { label: 'Entry EBITDA', value: company.acquisition_ebitda ? formatCurrency(company.acquisition_ebitda) : null },
-                  { label: 'Entry EV', value: company.acquisition_ev ? formatCurrency(company.acquisition_ev) : null },
-                  { label: 'Employees', value: latest?.headcount ? latest.headcount.toLocaleString() : null },
-                ].filter(r => r.value).map(({ label, value }) => (
-                  <div key={label} style={{ display: 'flex', gap: '12px', marginBottom: '8px' }}>
-                    <div style={{ minWidth: '100px', fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', paddingTop: '1px' }}>{label}</div>
-                    <div style={{ fontSize: '13px', color: 'var(--text-primary)' }}>{value}</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                  <div className="label">Company Details</div>
+                  {!editingDetails ? (
+                    <button
+                      onClick={openDetailEdit}
+                      style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '11px', padding: '3px 6px', borderRadius: '4px' }}
+                      onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent)')}
+                      onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+                    >
+                      <Pencil size={11} /> Edit
+                    </button>
+                  ) : (
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button onClick={() => setEditingDetails(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '3px' }}><X size={13} /></button>
+                      <button
+                        onClick={saveDetails}
+                        disabled={savingDetails}
+                        className="btn btn-primary"
+                        style={{ fontSize: '11px', padding: '4px 10px' }}
+                      >
+                        <Check size={11} /> {savingDetails ? 'Saving…' : 'Save'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {editingDetails ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <div>
+                        <label className="label">Name</label>
+                        <input className="input" value={detailEdits.name || ''} onChange={e => setDetailEdits((p: any) => ({ ...p, name: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label className="label">Type</label>
+                        <select className="select" value={detailEdits.deal_type || ''} onChange={e => setDetailEdits((p: any) => ({ ...p, deal_type: e.target.value }))}>
+                          <option value="">—</option>
+                          <option value="Platform">Platform</option>
+                          <option value="Add-On">Add-On</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <div>
+                        <label className="label">Sector</label>
+                        <input className="input" value={detailEdits.sector || ''} onChange={e => setDetailEdits((p: any) => ({ ...p, sector: e.target.value }))} placeholder="e.g. Safety Services" />
+                      </div>
+                      <div>
+                        <label className="label">Geography</label>
+                        <input className="input" value={detailEdits.geography || ''} onChange={e => setDetailEdits((p: any) => ({ ...p, geography: e.target.value }))} placeholder="e.g. Texas" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="label">Acquisition Date</label>
+                      <input className="input" type="date" value={detailEdits.acquisition_date || ''} onChange={e => setDetailEdits((p: any) => ({ ...p, acquisition_date: e.target.value }))} />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+                      <div>
+                        <label className="label">Entry Revenue ($M)</label>
+                        <input className="input" type="number" step="0.1" placeholder="0.0" value={detailEdits.acquisition_revenue || ''} onChange={e => setDetailEdits((p: any) => ({ ...p, acquisition_revenue: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label className="label">Entry EBITDA ($M)</label>
+                        <input className="input" type="number" step="0.1" placeholder="0.0" value={detailEdits.acquisition_ebitda || ''} onChange={e => setDetailEdits((p: any) => ({ ...p, acquisition_ebitda: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label className="label">Entry EV ($M)</label>
+                        <input className="input" type="number" step="0.1" placeholder="0.0" value={detailEdits.acquisition_ev || ''} onChange={e => setDetailEdits((p: any) => ({ ...p, acquisition_ev: e.target.value }))} />
+                      </div>
+                    </div>
                   </div>
-                ))}
+                ) : (
+                  <>
+                    {[
+                      { label: 'Sector',        value: company.sector },
+                      { label: 'Geography',     value: company.geography },
+                      { label: 'Deal Type',     value: company.deal_type },
+                      { label: 'Acquired',      value: company.acquisition_date ? new Date(company.acquisition_date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : null },
+                      { label: 'Entry Revenue', value: company.acquisition_revenue ? formatCurrency(company.acquisition_revenue) : null },
+                      { label: 'Entry EBITDA',  value: company.acquisition_ebitda  ? formatCurrency(company.acquisition_ebitda)  : null },
+                      { label: 'Entry EV',      value: company.acquisition_ev      ? formatCurrency(company.acquisition_ev)      : null },
+                      { label: 'Employees',     value: latest?.headcount ? latest.headcount.toLocaleString() : null },
+                    ].filter(r => r.value).map(({ label, value }) => (
+                      <div key={label} style={{ display: 'flex', gap: '12px', marginBottom: '8px' }}>
+                        <div style={{ minWidth: '100px', fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', paddingTop: '1px' }}>{label}</div>
+                        <div style={{ fontSize: '13px', color: 'var(--text-primary)' }}>{value}</div>
+                      </div>
+                    ))}
+                    {/* Placeholder when nothing is set */}
+                    {!company.sector && !company.geography && !company.acquisition_date && (
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No details yet — click Edit to add</div>
+                    )}
+                  </>
+                )}
 
                 {/* Add-on deals */}
                 {addons.length > 0 && (
