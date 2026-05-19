@@ -434,7 +434,8 @@ function NDAFlow() {
     }
   }
 
-  const sorted = result ? [...(result.markup || [])].sort((a: any, b: any) => ({ high: 0, medium: 1, low: 2 }[a.significance as string] - ({ high: 0, medium: 1, low: 2 }[b.significance as string]))) : []
+  const sigOrder: Record<string, number> = { high: 0, medium: 1, low: 2 }
+  const sorted = result ? [...(result.markup || [])].sort((a: any, b: any) => (sigOrder[a.significance] ?? 3) - (sigOrder[b.significance] ?? 3)) : []
 
   return (
     <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
