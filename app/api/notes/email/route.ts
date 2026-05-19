@@ -179,10 +179,10 @@ async function parseForwardingNote(bodyText: string, emailHeaders: { from: strin
 
 {
   "stage": "exact stage or null — one of: Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity | Closed (Platform) | Closed (Add-On) | Pass (DOA) | Pass (Pre-LOI) | Pass (Post-LOI) | Hold",
-  "deal_name": "string or null — the deal or project name the sender explicitly mentions to link this to (e.g. 'for Project Anchor', 're: Anchor deal', 'this is for ABC Plumbing'). Extract the name only, not the full phrase.",
+  "deal_name": "string or null — name of a SPECIFIC EXISTING DEAL to link this document to (e.g. 'for Project Anchor', 're: Anchor deal'). Only set if the sender is linking to a previously-created deal by a project codename or company name. Do NOT set this to a portfolio company name when the sender is describing an add-on acquisition.",
   "status": "Active | Dead | Closed | null",
   "deal_type": "platform | add-on | null",
-  "parent_portco": "portfolio company name if add-on, else null",
+  "parent_portco": "string or null — name of our EXISTING PORTFOLIO COMPANY that would acquire this target. Set when sender uses language like 'add-on for Amped', 'under Amped', 'bolt-on for Amped', 'for the Amped platform'. This is NOT the target company — it is the acquirer we already own.",
   "forwarder_note": "any context or commentary the sender added, else null",
   "auto_approve": true or false — true only if sender made an explicit final decision (pass, hold, close),
   "contacts": [
@@ -474,6 +474,20 @@ export async function POST(req: NextRequest) {
         } else {
           console.log(`[email-intake] No existing deal found for "${name}"`)
         }
+      }
+
+      // ── Guard: if the matched "existing deal" IS the parent portco (not the
+      // acquisition target), clear existingDeal so we create a fresh add-on deal
+      // with the correct "[PortcoName]" folder suffix.
+      // e.g. user says "add-on for Amped" — we might match Amped's own deal record,
+      // but Amped is the acquirer, not the target we're evaluating.
+      if (
+        existingDeal &&
+        instructions.parent_portco &&
+        existingDeal.company_name.toLowerCase().includes(instructions.parent_portco.toLowerCase().trim())
+      ) {
+        console.log(`[email-intake] Matched deal "${existingDeal.company_name}" appears to be the parent portco "${instructions.parent_portco}" — clearing to create new add-on deal`)
+        existingDeal = null
       }
 
       // ── Step 4: Upload ALL files to Dropbox ───────────────────────────────
