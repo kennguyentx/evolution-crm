@@ -101,7 +101,8 @@ export default function DupesPage() {
       }
       for (const [, g] of byEmail) if (g.length > 1) for (let i=0;i<g.length-1;i++) for (let j=i+1;j<g.length;j++) addPair(g[i],g[j],'email')
 
-      // Phone
+      // Phone — only flag if same phone AND (same last name OR same firm)
+      // Pure phone matches are too noisy due to shared main office lines
       const norm = (p: string) => p.replace(/\D/g, '')
       const byPhone = new Map<string, Contact[]>()
       for (const c of contacts) {
@@ -111,7 +112,17 @@ export default function DupesPage() {
         if (!byPhone.has(k)) byPhone.set(k, [])
         byPhone.get(k)!.push(c)
       }
-      for (const [, g] of byPhone) if (g.length > 1) for (let i=0;i<g.length-1;i++) for (let j=i+1;j<g.length;j++) addPair(g[i],g[j],'phone')
+      for (const [, g] of byPhone) {
+        if (g.length < 2) continue
+        for (let i = 0; i < g.length - 1; i++) {
+          for (let j = i + 1; j < g.length; j++) {
+            const a = g[i], b = g[j]
+            const sameLast = a.last_name.toLowerCase().trim() === b.last_name.toLowerCase().trim()
+            const sameFirm = a.firm && b.firm && a.firm.toLowerCase().trim() === b.firm.toLowerCase().trim()
+            if (sameLast || sameFirm) addPair(a, b, 'phone')
+          }
+        }
+      }
 
       // Name
       const byName = new Map<string, Contact[]>()
