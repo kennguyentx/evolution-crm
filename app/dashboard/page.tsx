@@ -10,10 +10,15 @@ const STAGE_ORDER = ['Exclusivity', 'LOI Submitted', 'Pre-LOI', 'Reviewing', 'Te
 
 type DealRow = { id: string; company_name: string; stage: DealStage; ebitda: number | null; revenue: number | null; sector: string | null }
 type RaiseRow = { id: string; name: string; target_equity: number | null; target_debt: number | null; deal: { company_name: string } | { company_name: string }[] | null }
-type InteractionRow = { id: string; interaction_date: string; interaction_type: string | null; summary: string | null; next_steps: string | null; contact: { first_name: string; last_name: string } | null; deal: { company_name: string } | null }
+type JoinOne<T> = T | T[] | null
+type InteractionRow = { id: string; interaction_date: string; interaction_type: string | null; summary: string | null; next_steps: string | null; contact: JoinOne<{ first_name: string; last_name: string }>; deal: JoinOne<{ company_name: string }> }
 
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 const daysSince = (d: string) => Math.floor((Date.now() - new Date(d).getTime()) / 86400000)
+function unwrap<T>(v: T | T[] | null | undefined): T | null {
+  if (!v) return null
+  return Array.isArray(v) ? (v[0] ?? null) : v
+}
 
 export default function DashboardPage() {
   const supabase = createClient()
@@ -171,9 +176,9 @@ export default function DashboardPage() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-                          {i.contact ? `${i.contact.first_name} ${i.contact.last_name}` : 'Note'}
+                          {unwrap(i.contact) ? `${unwrap(i.contact)!.first_name} ${unwrap(i.contact)!.last_name}` : 'Note'}
                         </span>
-                        {i.deal && <span style={{ fontSize: '10px', padding: '1px 6px', background: 'var(--accent-muted)', color: 'var(--accent)', borderRadius: '4px', whiteSpace: 'nowrap' }}>{i.deal.company_name}</span>}
+                        {unwrap(i.deal) && <span style={{ fontSize: '10px', padding: '1px 6px', background: 'var(--accent-muted)', color: 'var(--accent)', borderRadius: '4px', whiteSpace: 'nowrap' }}>{unwrap(i.deal)!.company_name}</span>}
                         <span style={{ fontSize: '10px', color: 'var(--text-muted)', whiteSpace: 'nowrap', marginLeft: 'auto' }}>{fmtDate(i.interaction_date)}</span>
                       </div>
                       {i.summary && <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.summary}</div>}
@@ -199,8 +204,8 @@ export default function DashboardPage() {
                 {overdueFollowUps.slice(0, 6).map(i => (
                   <div key={i.id} style={{ padding: '10px 12px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '7px' }}>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '4px', flexWrap: 'wrap' }}>
-                      {i.contact && <span style={{ fontSize: '12px', fontWeight: 500 }}>{i.contact.first_name} {i.contact.last_name}</span>}
-                      {i.deal && <span style={{ fontSize: '10px', padding: '1px 6px', background: 'var(--accent-muted)', color: 'var(--accent)', borderRadius: '4px' }}>{i.deal.company_name}</span>}
+                      {unwrap(i.contact) && <span style={{ fontSize: '12px', fontWeight: 500 }}>{unwrap(i.contact)!.first_name} {unwrap(i.contact)!.last_name}</span>}
+                      {unwrap(i.deal) && <span style={{ fontSize: '10px', padding: '1px 6px', background: 'var(--accent-muted)', color: 'var(--accent)', borderRadius: '4px' }}>{unwrap(i.deal)!.company_name}</span>}
                       <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: 'auto' }}>{daysSince(i.interaction_date)}d ago</span>
                     </div>
                     <div style={{ fontSize: '11px', color: 'var(--accent)', fontStyle: 'italic' }}>→ {i.next_steps}</div>
