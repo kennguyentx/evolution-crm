@@ -43,6 +43,7 @@ export default function DealDetailPage() {
   const [diligence, setDiligence] = useState<DiligenceItem[]>([])
   const [capital, setCapital] = useState<DealCapitalAssignment[]>([])
   const [documents, setDocuments] = useState<any[]>([])
+  const [dealNotes, setDealNotes] = useState<any[]>([])
   const [dealRaises, setDealRaises] = useState<any[]>([])
   const [comps, setComps] = useState<any[]>([])
   const [compsNotes, setCompsNotes] = useState<string | null>(null)
@@ -105,6 +106,9 @@ export default function DealDetailPage() {
     if (interactionsRes.data) setInteractions(interactionsRes.data)
     if (diligenceRes.data) setDiligence(diligenceRes.data)
     if (capitalRes.data) setCapital(capitalRes.data)
+    // Fetch linked notes
+    const { data: notesData } = await supabase.from('notes').select('*').eq('deal_id', dealId).order('note_date', { ascending: false })
+    if (notesData) setDealNotes(notesData)
     setLoading(false)
     // Fetch portfolio companies for parent linking
     const { data: pcos } = await supabase.from('portfolio_companies').select('id, name').eq('status', 'Active').order('name')
@@ -1150,9 +1154,37 @@ export default function DealDetailPage() {
               </div>
             )}
 
-            {interactions.length === 0 && !showActivityForm ? (
-              <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>No interactions logged yet.</div>
-            ) : interactions.map(i => {
+            {/* Merged timeline: interactions + linked notes sorted by date */}
+            {(() => {
+              const noteItems = dealNotes.map(n => ({ _type: 'note' as const, _date: n.note_date || n.created_at, ...n }))
+              const interactionItems = interactions.map(i => ({ _type: 'interaction' as const, _date: i.interaction_date || i.created_at, ...i }))
+              const merged = [...noteItems, ...interactionItems].sort((a, b) => new Date(b._date).getTime() - new Date(a._date).getTime())
+
+              if (merged.length === 0 && !showActivityForm) return (
+                <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>No interactions logged yet.</div>
+              )
+
+              return merged.map((item, idx) => {
+                if (item._type === 'note') return (
+                  <div key={`note-${item.id}`} className="card-2" style={{ padding: '14px 16px', marginBottom: '8px', borderLeft: '3px solid var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: item.summary ? '6px' : 0 }}>
+                      <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', background: 'var(--surface-2)', borderRadius: '4px', padding: '1px 6px' }}>
+                        {item.source === 'email' ? 'Email' : 'Note'}
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        {item.note_date ? new Date(item.note_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                        {item.logged_by ? ` · ${item.logged_by}` : ''}
+                      </span>
+                    </div>
+                    {item.summary && <div style={{ fontSize: '13px', color: 'var(--text-primary)' }}>{item.summary}</div>}
+                    {item.next_steps && <div style={{ fontSize: '12px', color: 'var(--accent)', marginTop: '4px' }}>→ {item.next_steps}</div>}
+                  </div>
+                )
+
+                // interaction item
+                const i = item
+                const isEditing = editingInteractionId === i.id
+                return (
               const isEditing = editingInteractionId === i.id
               return (
                 <div key={i.id} className="card-2" style={{ padding: '14px 16px', marginBottom: '8px' }}>
@@ -1229,7 +1261,8 @@ export default function DealDetailPage() {
                   )}
                 </div>
               )
-            })}
+              })
+            })()}
           </div>
         )}
 

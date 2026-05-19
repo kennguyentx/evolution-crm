@@ -23,6 +23,7 @@ export default function NewContactModal({ onClose, onCreated, contact }: Contact
   const [saving, setSaving] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [dealLinks, setDealLinks] = useState<any[]>([])
+  const [contactNotes, setContactNotes] = useState<any[]>([])
   const [form, setForm] = useState({
     first_name: contact?.first_name || '',
     last_name:  contact?.last_name  || '',
@@ -35,16 +36,21 @@ export default function NewContactModal({ onClose, onCreated, contact }: Contact
     notes:      contact?.notes      || '',
   })
 
-  // Fetch deals linked to this contact if editing
+  // Fetch deals and notes linked to this contact if editing
   useEffect(() => {
     if (!contact?.id) return
     supabase
       .from('contact_deal_links')
       .select('role, deal:deals(id, company_name, stage)')
       .eq('contact_id', contact.id)
-      .then(({ data }) => {
-        if (data) setDealLinks(data)
-      })
+      .then(({ data }) => { if (data) setDealLinks(data) })
+    supabase
+      .from('notes')
+      .select('id, note_date, summary, next_steps, logged_by, source')
+      .eq('contact_id', contact.id)
+      .order('note_date', { ascending: false })
+      .limit(10)
+      .then(({ data }) => { if (data) setContactNotes(data) })
   }, [contact?.id])
 
   const field = (key: keyof typeof form) => ({
@@ -217,6 +223,35 @@ export default function NewContactModal({ onClose, onCreated, contact }: Contact
                       <ExternalLink size={12} style={{ color: 'var(--text-muted)' }} />
                     </div>
                   </Link>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Linked notes — only shown when editing and notes exist */}
+          {isEdit && contactNotes.length > 0 && (
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+              <label className="label" style={{ marginBottom: '10px' }}>Recent Notes</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {contactNotes.map((note: any) => (
+                  <div key={note.id} style={{
+                    padding: '10px 12px',
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '6px',
+                    borderLeft: '3px solid var(--border)',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: note.summary ? '5px' : 0 }}>
+                      <span style={{ fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
+                        {note.source === 'email' ? 'Email' : 'Note'}
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        {note.note_date ? new Date(note.note_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                        {note.logged_by ? ` · ${note.logged_by}` : ''}
+                      </span>
+                    </div>
+                    {note.summary && <div style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.5 }}>{note.summary}</div>}
+                    {note.next_steps && <div style={{ fontSize: '11px', color: 'var(--accent)', marginTop: '3px' }}>→ {note.next_steps}</div>}
+                  </div>
                 ))}
               </div>
             </div>
