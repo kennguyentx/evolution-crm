@@ -82,11 +82,15 @@ function DealSelector({ onSelect }: { onSelect: (deal: any) => void }) {
 
 // ── FileDropZone (reusable) ───────────────────────────────────────────────────
 
-function FileDropZone({ accept, onFile, file, onClear, hint }: {
+function FileDropZone({ accept, onFile, file, onClear, hint, getRootProps: externalGetRootProps, getInputProps: externalGetInputProps, isDragActive: externalIsDragActive }: {
   accept: Record<string, string[]>; onFile: (f: File) => void; file: File | null; onClear: () => void; hint: string
+  getRootProps?: () => any; getInputProps?: () => any; isDragActive?: boolean
 }) {
   const onDrop = useCallback((accepted: File[]) => { if (accepted[0]) onFile(accepted[0]) }, [onFile])
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, accept, maxFiles: 1 })
+  const internal = useDropzone({ onDrop, accept, maxFiles: 1, disabled: !!externalGetRootProps })
+  const getRootProps  = externalGetRootProps  ?? internal.getRootProps
+  const getInputProps = externalGetInputProps ?? internal.getInputProps
+  const isDragActive  = externalIsDragActive  ?? internal.isDragActive
 
   if (file) return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--surface)' }}>
@@ -754,27 +758,61 @@ function TeaserFlow() {
   const reset = () => { setStage('idle'); setParsed(null); setEdited(null); setDealId(null); setError(null); setFileName(''); setContacts([]); setDuplicateDeals([]); setIgnoreDuplicate(false); setDropboxFolder(null); setDropboxError(null); setExtraFiles([]) }
 
   return (
-    <div style={{ maxWidth: '680px' }}>
+    <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+
+      {/* Left panel */}
+      <div style={{ width: '280px', minWidth: '280px' }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '16px' }}>
+          <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '10px' }}>Upload Teaser</div>
+
+          {stage === 'idle' && (
+            <FileDropZone
+              accept={{ 'application/pdf': ['.pdf'] }}
+              onFile={() => {}}
+              file={null}
+              onClear={() => {}}
+              hint="Drop PDF here or click to browse"
+              getRootProps={getRootProps}
+              getInputProps={getInputProps}
+              isDragActive={isDragActive}
+            />
+          )}
+
+          {(stage === 'uploading' || stage === 'parsing') && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '20px 0' }}>
+              <Loader2 size={22} style={{ color: 'var(--accent)', animation: 'spin 1s linear infinite' }} />
+              <div style={{ fontSize: '12px', fontWeight: 600, textAlign: 'center' }}>{stage === 'uploading' ? 'Uploading…' : 'Parsing…'}</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center' }}>{fileName}</div>
+            </div>
+          )}
+
+          {(stage === 'review' || stage === 'saving' || stage === 'done') && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Check size={13} style={{ color: 'var(--green)', flexShrink: 0 }} />
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', wordBreak: 'break-all' }}>{fileName}</span>
+              </div>
+              {stage !== 'done' && (
+                <button className="btn btn-ghost" onClick={reset} style={{ fontSize: '11px', padding: '4px 10px', width: '100%' }}>
+                  Start over
+                </button>
+              )}
+            </div>
+          )}
+
+          {error && (
+            <div style={{ display: 'flex', gap: '8px', marginTop: '10px', padding: '8px 10px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '7px', fontSize: '11px', color: '#ef4444' }}>
+              <AlertCircle size={12} style={{ flexShrink: 0, marginTop: '1px' }} />{error}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Right panel — review content */}
+      <div style={{ flex: 1, minWidth: 0 }}>
       {stage === 'idle' && (
-        <div {...getRootProps()} style={{ border: `2px dashed ${isDragActive ? 'var(--accent)' : 'var(--border)'}`, borderRadius: '12px', padding: '60px 40px', textAlign: 'center', cursor: 'pointer', background: isDragActive ? 'var(--accent-muted)' : 'var(--surface)', transition: 'all 0.2s' }}>
-          <input {...getInputProps()} />
-          <Upload size={32} style={{ color: isDragActive ? 'var(--accent)' : 'var(--text-muted)', display: 'block', margin: '0 auto 16px' }} />
-          <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>Drop teaser PDF here</div>
-          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Claude will extract deal data, contacts, and file to Dropbox automatically</div>
-        </div>
-      )}
-
-      {(stage === 'uploading' || stage === 'parsing') && (
-        <div className="card" style={{ padding: '40px', textAlign: 'center' }}>
-          <Loader2 size={32} style={{ color: 'var(--accent)', display: 'block', margin: '0 auto 16px', animation: 'spin 1s linear infinite' }} />
-          <div style={{ fontSize: '15px', fontWeight: 600, marginBottom: '8px' }}>{stage === 'uploading' ? `Uploading ${fileName}…` : `Parsing ${fileName}…`}</div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Claude is reading and extracting deal data</div>
-        </div>
-      )}
-
-      {error && (
-        <div style={{ display: 'flex', gap: '10px', padding: '12px 16px', background: 'rgba(192,57,43,0.08)', border: '1px solid rgba(192,57,43,0.2)', borderRadius: '8px', marginBottom: '16px', fontSize: '13px', color: '#ef4444' }}>
-          <AlertCircle size={15} style={{ flexShrink: 0 }} /> {error}
+        <div style={{ padding: '40px 0', color: 'var(--text-muted)', fontSize: '13px' }}>
+          Upload a teaser PDF. Claude will extract deal data and contacts automatically and file it to Dropbox.
         </div>
       )}
 
@@ -870,7 +908,6 @@ function TeaserFlow() {
           )}
 
           <div style={{ display: 'flex', gap: '10px' }}>
-            <button className="btn btn-ghost" onClick={reset}>Start over</button>
             <button className="btn btn-primary" onClick={() => handleSave(false)} disabled={missingFields.length > 0}>
               <Check size={14} /> Save as deal
             </button>
@@ -887,12 +924,11 @@ function TeaserFlow() {
           <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '24px' }}>
             {edited?.company_name} added to pipeline{linkedCount > 0 && ` · ${linkedCount} contact${linkedCount > 1 ? 's' : ''} linked`}
           </div>
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-            <button className="btn btn-ghost" onClick={reset}>Parse another</button>
-            <Link href={`/deals/${dealId}`} className="btn btn-primary">View deal <ChevronRight size={13} /></Link>
-          </div>
+          <Link href={`/deals/${dealId}`} className="btn btn-primary">View deal <ChevronRight size={13} /></Link>
         </div>
       )}
+
+      </div>{/* end right panel */}
     </div>
   )
 }
