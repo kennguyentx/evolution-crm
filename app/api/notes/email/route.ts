@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
-import { dropboxConfigured, dropboxUpload } from '@/lib/dropbox'
+import { dropboxConfigured, dropboxUpload, expectedDropboxFolder } from '@/lib/dropbox'
 
 export const maxDuration = 120
 
@@ -305,24 +305,51 @@ export async function POST(req: NextRequest) {
     console.log(`[email-intake] messageId=${messageId} from=${from} subject="${subject}" attachments=${attachments.length}`,
       attachments.map((a: any) => ({ name: a.Name, type: a.ContentType, size: a.Content?.length ?? 0 })))
 
-    // ── Idempotency guard — ATOMIC dedup using MessageID unique constraint ─────
-    // Prevents duplicate processing when Postmark retries or M365 double-forwards.
-    // Requires: ALTER TABLE intake_queue ADD COLUMN IF NOT EXISTS message_id TEXT UNIQUE;
+    // ── Idempotency guard — block duplicate webhook calls ─────────────────────
+    // Two-layer check: (1) Postmark MessageID unique constraint if migration ran,
+    // (2) fallback subject+from check against notes table.
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString()
+
     if (messageId) {
-      const { error: lockError } = await supabase
-        .from('intake_queue')
-        .insert({
-          message_id:  messageId,
-          source:      'email',
-          status:      'processing',
-          from_email:  from,
-          file_name:   subject.slice(0, 200),
-          extracted:   {},
-        })
-      if (lockError?.code === '23505') {
-        // Unique violation — another call already claimed this messageId
-        console.log(`[email-intake] Idempotency: messageId ${messageId} already processing, skipping`)
-        return NextResponse.json({ success: true, skipped: 'duplicate messageId' })
+      // Layer 1: try atomic sentinel insert (requires message_id column + unique index)
+      try {
+        const { error: lockError } = await supabase
+          .from('intake_queue')
+          .insert({
+            message_id: messageId,
+            source:     'email',
+            status:     'processing',
+            from_email: from,
+            file_name:  subject.slice(0, 200),
+            extracted:  {},
+          })
+        if (lockError?.code === '23505') {
+          console.log(`[email-intake] Idempotency (messageId): duplicate, skipping`)
+          return NextResponse.json({ success: true, skipped: 'duplicate messageId' })
+        }
+        if (lockError) {
+          // Column probably doesn't exist yet — migration not run; fall through to layer 2
+          console.warn(`[email-intake] Sentinel insert failed (run migration?): ${lockError.code} ${lockError.message}`)
+        }
+      } catch (e: any) {
+        console.warn(`[email-intake] Sentinel error:`, e?.message)
+      }
+    }
+
+    // Layer 2: fallback — check notes table for same subject today (note_date = today)
+    {
+      const today = new Date().toISOString().split('T')[0]
+      const { data: recentNote } = await supabase
+        .from('notes')
+        .select('id')
+        .eq('source', 'email')
+        .eq('note_date', today)
+        .ilike('raw_text', `%Subject: ${subject}%`)
+        .limit(1)
+        .maybeSingle()
+      if (recentNote) {
+        console.log(`[email-intake] Idempotency (fallback): note for subject "${subject}" already exists today, skipping`)
+        return NextResponse.json({ success: true, skipped: 'duplicate subject+sender' })
       }
     }
 
@@ -386,21 +413,17 @@ export async function POST(req: NextRequest) {
           let dropboxPath: string | null = null
           if (dropboxConfigured() && extracted.company_name) {
             try {
-              const safeName     = extracted.company_name.replace(/[<>:"/\\|?*]/g, '_')
-              const portcoSuffix = instructions.parent_portco ? ` [${instructions.parent_portco.replace(/[<>:"/\\|?*]/g, '_')}]` : ''
-              const stage        = instructions.stage ?? ''
-              // Route to the correct top-level folder based on stage
-              let topFolder: string
-              if (stage.startsWith('Pass')) {
-                topFolder = '!Passed Deals'
-              } else if (stage.startsWith('Closed')) {
-                topFolder = 'Portfolio'
-              } else {
-                topFolder = 'Deals'
-              }
-              const folder = `/Evolution Strategy Partners/${topFolder}/${safeName}${portcoSuffix}`
+              const effectiveStage = instructions.stage ?? 'Teaser'
+              const companyForPath = instructions.parent_portco
+                ? `${extracted.company_name} [${instructions.parent_portco}]`
+                : extracted.company_name
+              // Use canonical folder logic from lib/dropbox to stay consistent with UI moves
+              const folder = expectedDropboxFolder(companyForPath, effectiveStage)
+              console.log(`[email-intake] Dropbox target: "${folder}" (stage="${effectiveStage}")`)
               dropboxPath  = await dropboxUpload(folder, fileName, buffer)
-            } catch { /* non-fatal */ }
+            } catch (dbxErr: any) {
+              console.error(`[email-intake] Dropbox upload failed:`, dbxErr?.message)
+            }
           }
 
           // If auto_approve (explicit decision from forwarder), create deal directly
