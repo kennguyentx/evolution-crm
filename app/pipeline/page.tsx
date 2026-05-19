@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import type { Deal, DealStage } from '@/types'
 import { formatCurrency, stageClass } from '@/types'
@@ -20,6 +20,8 @@ export default function PipelinePage() {
   const [dealContacts, setDealContacts] = useState<Record<string, any[]>>({})
   const [loading, setLoading] = useState(true)
   const [showNewDeal, setShowNewDeal] = useState(false)
+  const [dragOverStage, setDragOverStage] = useState<DealStage | null>(null)
+  const dragId = useRef<string | null>(null)
   const supabase = createClient()
 
   const fetchDeals = useCallback(async () => {
@@ -84,13 +86,23 @@ export default function PipelinePage() {
         {STAGES.map(({ name, label }) => {
           const stageDeals = dealsByStage(name)
           return (
-            <div key={name} style={{
+            <div key={name}
+              onDragOver={e => { e.preventDefault(); setDragOverStage(name) }}
+              onDragLeave={() => setDragOverStage(null)}
+              onDrop={e => {
+                e.preventDefault()
+                setDragOverStage(null)
+                if (dragId.current) { updateStage(dragId.current, name); dragId.current = null }
+              }}
+              style={{
               display: 'flex',
               alignItems: 'flex-start',
               gap: '0',
               marginBottom: '0',
               borderBottom: '1px solid var(--border)',
               minHeight: '120px',
+              background: dragOverStage === name ? 'var(--accent-muted)' : undefined,
+              transition: 'background 0.15s',
             }}>
               {/* Stage label column */}
               <div style={{
@@ -133,7 +145,7 @@ export default function PipelinePage() {
                     fontSize: '12px', color: 'var(--text-muted)',
                     fontStyle: 'italic', padding: '8px 0',
                   }}>
-                    No deals
+                    {dragOverStage === name ? 'Drop to move here' : 'No deals'}
                   </div>
                 ) : stageDeals.map(deal => (
                   <DealCard
@@ -141,6 +153,7 @@ export default function PipelinePage() {
                     deal={deal}
                     contacts={dealContacts[deal.id] || []}
                     onStageChange={updateStage}
+                    onDragStart={() => { dragId.current = deal.id }}
                   />
                 ))}
               </div>
@@ -159,13 +172,17 @@ export default function PipelinePage() {
   )
 }
 
-function DealCard({ deal, contacts, onStageChange }: {
+function DealCard({ deal, contacts, onStageChange, onDragStart }: {
   deal: Deal
   contacts: any[]
   onStageChange: (id: string, stage: DealStage) => void
+  onDragStart: () => void
 }) {
   return (
-    <div style={{
+    <div
+      draggable
+      onDragStart={onDragStart}
+      style={{
       width: '280px',
       minWidth: '280px',
       background: 'var(--surface)',
@@ -174,6 +191,7 @@ function DealCard({ deal, contacts, onStageChange }: {
       padding: '14px',
       boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
       transition: 'box-shadow 0.15s, border-color 0.15s',
+      cursor: 'grab',
     }}
     onMouseEnter={e => {
       (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(49,20,50,0.1)'

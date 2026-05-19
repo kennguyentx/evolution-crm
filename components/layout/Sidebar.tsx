@@ -2,13 +2,15 @@
 import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { Kanban, Building2, Users, BarChart3, Zap, LogOut, TrendingUp, FileText, Menu, X, FileText as NoteIcon, Star } from 'lucide-react'
+import { Kanban, Building2, Users, BarChart3, Zap, TrendingUp, FileText, Menu, X, FileText as NoteIcon, Star, LayoutDashboard } from 'lucide-react'
 
 const NAV = [
+  { href: '/dashboard',        label: 'Dashboard',         icon: LayoutDashboard },
   { href: '/pipeline',         label: 'Pipeline',          icon: Kanban },
   { href: '/deals',            label: 'Deals',             icon: FileText },
   { href: '/intake',           label: 'Teaser / CIM',      icon: Zap },
   { href: '/contacts',         label: 'Contacts',          icon: Users },
+  { href: '/contacts/dupes',   label: 'Dedup Contacts',    icon: Users },
   { href: '/raises',           label: 'Capital Raises',    icon: TrendingUp },
   { href: '/raises/contacts',  label: 'Capital Contacts',  icon: BarChart3 },
   { href: '/investors',        label: 'Investors',         icon: Users },
@@ -67,12 +69,12 @@ export default function Sidebar() {
           paddingTop: 'env(safe-area-inset-top)',
           boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', height: '52px' }}>
+          <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '10px', height: '52px', textDecoration: 'none' }}>
             <div style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.15)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ color: 'white', fontSize: '11px', fontWeight: 700 }}>ESP</span>
             </div>
             <span style={{ color: 'white', fontSize: '14px', fontWeight: 700 }}>Evolution Strategy Partners</span>
-          </div>
+          </Link>
           <button onClick={() => setMobileOpen(!mobileOpen)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'white', padding: '4px', height: '52px', display: 'flex', alignItems: 'center' }}>
             {mobileOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
@@ -105,12 +107,12 @@ export default function Sidebar() {
       height: '100vh', position: 'sticky', top: 0,
     }}>
       {/* Logo */}
-      <div style={{ padding: '8px 10px 20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <Link href="/dashboard" style={{ padding: '8px 10px 20px', display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
         <div style={{ width: '32px', height: '32px', background: 'rgba(255,255,255,0.15)', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <span style={{ color: 'white', fontSize: '11px', fontWeight: 700 }}>ESP</span>
         </div>
         <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', fontWeight: 600, lineHeight: 1.2 }}>Evolution Strategy Partners</span>
-      </div>
+      </Link>
 
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
         <NavLinks />
