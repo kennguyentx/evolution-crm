@@ -1,5 +1,7 @@
 // app/api/assistant/route.ts
 
+export const maxDuration = 120 // seconds — Vercel default is 10s, agent loops need more
+
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
