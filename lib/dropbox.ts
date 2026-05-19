@@ -73,6 +73,6 @@ const ACTIVE_STAGES = ['Teaser', 'Reviewing', 'Pre-LOI', 'LOI Submitted', 'Exclu
 
 export function expectedDropboxFolder(companyName: string, stage: string): string {
   const safe = companyName.replace(/[<>:"/\\|?*]/g, '_')
-  if (PASS_STAGES.includes(stage)) return `/Deals/Passed/${safe}`
-  return `/Deals/${safe}`
+  if (PASS_STAGES.includes(stage)) return `/Evolution Strategy/Deals/!Passed/${safe}`
+  return `/Evolution Strategy/Deals/${safe}`
 }

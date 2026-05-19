@@ -627,6 +627,8 @@ export default function DealDetailPage() {
                   )}
                 </div>
               </div>
+              <EditableField label="Revenue ($M)"  value={deal.revenue ? String((deal.revenue / 1e6).toFixed(1)) : ''} placeholder="e.g. 18.5" onSave={v => updateField('revenue', v ? parseFloat(v) * 1e6 : null)} />
+              <EditableField label="EBITDA ($M)"  value={deal.ebitda  ? String((deal.ebitda  / 1e6).toFixed(1)) : ''} placeholder="e.g. 4.2"  onSave={v => updateField('ebitda',  v ? parseFloat(v) * 1e6 : null)} />
               <EditableField label="LOI Date"   value={deal.loi_date || ''}      onSave={v => updateField('loi_date', v)}       type="date" />
               <EditableField label="Entry Date"  value={deal.expected_close || ''} onSave={v => updateField('expected_close', v)} type="date" />
               <EditableField label="Geography"   value={deal.geography || ''}      onSave={v => updateField('geography', v)} />

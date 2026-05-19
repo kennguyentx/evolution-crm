@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
     if (dbx_configured && parsed.company_name) {
       try {
         const safeName = parsed.company_name.replace(/[<>:"/\\|?*]/g, '_')
-        const folderPath = `/Deals/${safeName}`
+        const folderPath = `/Evolution Strategy/Deals/${safeName}`
         await dropboxUpload(folderPath, fileName, Buffer.from(buffer))
         dropbox_folder = folderPath
       } catch (dbxErr: any) {
