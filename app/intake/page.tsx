@@ -578,6 +578,9 @@ function TeaserFlow() {
   const [missingFields, setMissingFields] = useState<{key: keyof ParsedDeal; label: string}[]>([])
   const [contacts, setContacts] = useState<ExtractedContact[]>([])
   const [dropboxFolder, setDropboxFolder] = useState<string|null>(null)
+  const [inputMode, setInputMode] = useState<'pdf'|'word'|'paste'>('pdf')
+  const [pastedText, setPastedText] = useState('')
+  const [wordFile, setWordFile] = useState<File|null>(null)
   const [dropboxError, setDropboxError] = useState<string|null>(null)
   const [extraFiles, setExtraFiles] = useState<{name:string;status:'uploading'|'done'|'error';error?:string}[]>([])
   const extraFileRef = useRef<HTMLInputElement>(null)
@@ -683,7 +686,8 @@ function TeaserFlow() {
       const urlRes = await fetch('/api/intake/upload-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fileName: file.name }) })
       if (!urlRes.ok) throw new Error(`Upload setup failed: ${(await urlRes.json()).error}`)
       const { signedUploadUrl, storagePath } = await urlRes.json()
-      const uploadRes = await fetch(signedUploadUrl, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: file })
+      const mimeType = /\.docx?$/i.test(file.name) ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf'
+      const uploadRes = await fetch(signedUploadUrl, { method: 'PUT', headers: { 'Content-Type': mimeType }, body: file })
       if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`)
       setStage('parsing')
       const res = await fetch('/api/intake/parse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ storagePath, fileName: file.name }) })
@@ -723,7 +727,14 @@ function TeaserFlow() {
     if (extraFileRef.current) extraFileRef.current.value = ''
   }
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, accept: { 'application/pdf': ['.pdf'] }, maxFiles: 1, disabled: stage !== 'idle' })
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: inputMode === 'word'
+      ? { 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'], 'application/msword': ['.doc'] }
+      : { 'application/pdf': ['.pdf'] },
+    maxFiles: 1,
+    disabled: stage !== 'idle' || inputMode === 'paste',
+  })
   const updateField = (key: keyof ParsedDeal, value: any) => setEdited(prev => prev ? { ...prev, [key]: value } : null)
   const linkedCount = contacts.filter(c => c.crmContact && !c.skip).length
 
@@ -755,7 +766,27 @@ function TeaserFlow() {
     setDealId(data.id); setStage('done')
   }
 
-  const reset = () => { setStage('idle'); setParsed(null); setEdited(null); setDealId(null); setError(null); setFileName(''); setContacts([]); setDuplicateDeals([]); setIgnoreDuplicate(false); setDropboxFolder(null); setDropboxError(null); setExtraFiles([]) }
+  const handlePasteSubmit = async () => {
+    if (!pastedText.trim()) return
+    setFileName('pasted text'); setStage('parsing'); setError(null)
+    try {
+      const res = await fetch('/api/intake/parse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: pastedText, fileName: 'teaser.txt' }) })
+      if (!res.ok) throw new Error(await res.text())
+      const data = await res.json()
+      setParsed(data); setEdited({ ...data, stage: data.stage || 'Teaser' })
+      if (data.dropbox_folder) setDropboxFolder(data.dropbox_folder)
+      if (data.dropbox_error) setDropboxError(data.dropbox_error)
+      const parsedContacts: ParsedContact[] = Array.isArray(data.contacts) ? data.contacts : []
+      const initialContacts: ExtractedContact[] = parsedContacts.map(c => ({ ...c, searchQuery: c.name, searchResults: [], showSearch: false, showAddForm: false, addForm: { first_name: c.name.split(' ')[0] || '', last_name: c.name.split(' ').slice(1).join(' ') || '', firm: c.firm || '', title: c.title || '', email: c.email || '', phone: c.phone || '' } }))
+      setContacts(initialContacts)
+      initialContacts.forEach((_, i) => autoLinkContact(i, parsedContacts[i]))
+      setStage('review')
+    } catch (err: any) {
+      setError(err.message || 'Parsing failed'); setStage('idle')
+    }
+  }
+
+  const reset = () => { setStage('idle'); setParsed(null); setEdited(null); setDealId(null); setError(null); setFileName(''); setContacts([]); setDuplicateDeals([]); setIgnoreDuplicate(false); setDropboxFolder(null); setDropboxError(null); setExtraFiles([]); setPastedText('') }
 
   return (
     <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
@@ -766,16 +797,57 @@ function TeaserFlow() {
           <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '10px' }}>Upload Teaser</div>
 
           {stage === 'idle' && (
-            <FileDropZone
-              accept={{ 'application/pdf': ['.pdf'] }}
-              onFile={() => {}}
-              file={null}
-              onClear={() => {}}
-              hint="Drop PDF here or click to browse"
-              getRootProps={getRootProps}
-              getInputProps={getInputProps}
-              isDragActive={isDragActive}
-            />
+            <>
+              {/* Mode toggle */}
+              <div style={{ display: 'flex', gap: '4px', marginBottom: '10px' }}>
+                {(['pdf', 'word', 'paste'] as const).map(m => (
+                  <button key={m} onClick={() => setInputMode(m)} style={{
+                    flex: 1, padding: '5px 0', fontSize: '11px', fontWeight: inputMode === m ? 600 : 400,
+                    borderRadius: '5px', border: '1px solid var(--border)', cursor: 'pointer',
+                    background: inputMode === m ? 'var(--accent)' : 'transparent',
+                    color: inputMode === m ? '#fff' : 'var(--text-secondary)',
+                    transition: 'all 0.15s',
+                  }}>
+                    {m === 'pdf' ? 'PDF' : m === 'word' ? 'Word' : 'Paste'}
+                  </button>
+                ))}
+              </div>
+
+              {(inputMode === 'pdf' || inputMode === 'word') && (
+                <FileDropZone
+                  accept={inputMode === 'word'
+                    ? { 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'], 'application/msword': ['.doc'] }
+                    : { 'application/pdf': ['.pdf'] }}
+                  onFile={() => {}}
+                  file={null}
+                  onClear={() => {}}
+                  hint={inputMode === 'word' ? 'Drop .docx / .doc here or click to browse' : 'Drop PDF here or click to browse'}
+                  getRootProps={getRootProps}
+                  getInputProps={getInputProps}
+                  isDragActive={isDragActive}
+                />
+              )}
+
+              {inputMode === 'paste' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <textarea
+                    value={pastedText}
+                    onChange={e => setPastedText(e.target.value)}
+                    placeholder="Paste teaser text here…"
+                    rows={8}
+                    style={{ width: '100%', fontSize: '12px', padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
+                  />
+                  <button
+                    className="btn btn-primary"
+                    onClick={handlePasteSubmit}
+                    disabled={!pastedText.trim()}
+                    style={{ width: '100%', fontSize: '12px' }}
+                  >
+                    Parse Teaser
+                  </button>
+                </div>
+              )}
+            </>
           )}
 
           {(stage === 'uploading' || stage === 'parsing') && (

@@ -44,38 +44,72 @@ Rules:
 - For each contact, role must be exactly one of the values listed above
 - For email and phone: only extract values explicitly shown next to or under that contact's name`
 
+async function extractDocxText(buffer: ArrayBuffer): Promise<string> {
+  const JSZip = (await import('jszip')).default
+  const zip = await JSZip.loadAsync(buffer)
+  const xml = await zip.file('word/document.xml')?.async('string')
+  if (!xml) return ''
+  return xml
+    .replace(/<w:br[^/]*/g, '\n')
+    .replace(/<w:p[ >][^>]*>/g, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"')
+    .replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
+}
+
 export async function POST(req: NextRequest) {
   let storagePath: string | null = null
   try {
-    const { storagePath: sp, fileName } = await req.json()
+    const body = await req.json()
+    const { storagePath: sp, fileName, text: pastedText } = body
     storagePath = sp || null
 
-    if (!storagePath) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 })
+    let messageContent: any[]
+    let parsedCompanyName: string | null = null
+    let buffer: ArrayBuffer | null = null
+    let resolvedFileName: string = fileName || 'teaser'
+
+    // ── Path A: pasted text ───────────────────────────────────────────────────
+    if (pastedText?.trim()) {
+      messageContent = [
+        { type: 'text', text: `TEASER / CIM TEXT:\n${pastedText}` },
+        { type: 'text', text: 'Extract deal data from the text above. Return only valid JSON.' },
+      ]
+
+    // ── Path B: file from Supabase Storage ───────────────────────────────────
+    } else if (storagePath) {
+      const supabase = serviceClient()
+      const { data: fileData, error: dlError } = await supabase.storage.from(BUCKET).download(storagePath)
+      if (dlError || !fileData) throw new Error(`Download failed: ${dlError?.message ?? 'no data'}`)
+
+      buffer = await (fileData as Blob).arrayBuffer()
+      const ext = resolvedFileName.split('.').pop()?.toLowerCase() ?? ''
+      const isDocx = ext === 'docx' || ext === 'doc'
+
+      if (isDocx) {
+        const docText = await extractDocxText(buffer)
+        messageContent = [
+          { type: 'text', text: `TEASER / CIM (${resolvedFileName}):\n${docText}` },
+          { type: 'text', text: 'Extract deal data from the text above. Return only valid JSON.' },
+        ]
+      } else {
+        // PDF
+        const base64 = Buffer.from(buffer).toString('base64')
+        messageContent = [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+          { type: 'text', text: `Extract deal data from this document (${resolvedFileName}). Return only valid JSON.` },
+        ]
+      }
+    } else {
+      return NextResponse.json({ error: 'No file or text provided' }, { status: 400 })
     }
-
-    // Download the file from Supabase Storage using the service role key
-    const supabase = serviceClient()
-    const { data: fileData, error: dlError } = await supabase.storage
-      .from(BUCKET)
-      .download(storagePath)
-
-    if (dlError || !fileData) throw new Error(`Download failed: ${dlError?.message ?? 'no data'}`)
-
-    const buffer = await (fileData as Blob).arrayBuffer()
-    const base64 = Buffer.from(buffer).toString('base64')
 
     const response = await anthropic.messages.create({
       model: 'claude-opus-4-7',
       max_tokens: 2500,
       system: SYSTEM_PROMPT,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
-          { type: 'text', text: `Extract deal data from this document (${fileName}). Return only valid JSON.` },
-        ],
-      }],
+      messages: [{ role: 'user', content: messageContent }],
     })
 
     const text = response.content
@@ -87,20 +121,22 @@ export async function POST(req: NextRequest) {
 
     const parsed = JSON.parse(text)
 
-    // Clean up temp storage file
-    await supabase.storage.from(BUCKET).remove([storagePath])
+    // Clean up temp storage file if one was used
+    if (storagePath) {
+      const supabase = serviceClient()
+      await supabase.storage.from(BUCKET).remove([storagePath]).catch(() => {})
+    }
 
     // Upload to Dropbox (best-effort — doesn't fail the parse if Dropbox is unavailable)
     let dropbox_folder: string | null = null
     let dropbox_error: string | null = null
     const dbx_configured = dropboxConfigured()
 
-    if (dbx_configured && parsed.company_name) {
+    if (dbx_configured && parsed.company_name && buffer) {
       try {
         const safeName = parsed.company_name.replace(/[<>:"/\\|?*]/g, '_')
         const folderPath = `/Evolution Strategy Partners/Deals/${safeName}`
-        const uploadedFilePath = await dropboxUpload(folderPath, fileName, Buffer.from(buffer))
-        // Use the path Dropbox actually confirms (path_lower), strip filename to get folder
+        const uploadedFilePath = await dropboxUpload(folderPath, resolvedFileName, Buffer.from(buffer))
         dropbox_folder = uploadedFilePath.substring(0, uploadedFilePath.lastIndexOf('/'))
       } catch (dbxErr: any) {
         dropbox_error = dbxErr.message ?? 'Unknown Dropbox error'
