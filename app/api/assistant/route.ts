@@ -15,8 +15,23 @@ const supabase = createClient(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const TOOLS: any[] = [
   {
+    name: 'count_deals',
+    description: 'Get an exact count of deals matching filters — use this for ANY counting question ("how many deals", "how many in 2025", etc.). Returns the true DB total with no row limit. Always prefer this over search_deals for counting.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        sector:      { type: 'string', description: 'Sector keyword filter' },
+        geography:   { type: 'string', description: 'Geography keyword filter' },
+        stage:       { type: 'string', description: 'Exact stage value' },
+        status:      { type: 'string', description: 'Active | Dead | Closed | Passed — omit for all' },
+        year:        { type: 'number', description: 'Calendar year to filter by created_at' },
+        sourced_year:{ type: 'number', description: 'Calendar year to filter by sourced_date' },
+      },
+    },
+  },
+  {
     name: 'search_deals',
-    description: 'Search ALL deals (active, dead, closed) by company name, sector, geography, stage, status, or year. Default returns ALL statuses — never filter to Active only unless explicitly asked. Use year filter for historical counting questions.',
+    description: 'Search and retrieve deal records by company name, sector, geography, stage, status, or year. Use this to find deals by name or get a list of deals. For counting questions use count_deals instead.',
     input_schema: {
       type: 'object',
       properties: {
@@ -343,10 +358,26 @@ async function dbxDownload(path: string): Promise<{ base64: string; name: string
 async function executeTool(name: string, input: any): Promise<any> {
   switch (name) {
 
+    case 'count_deals': {
+      // Pure count query — head:true means no rows returned, just the count header
+      let q = supabase
+        .from('deals')
+        .select('*', { count: 'exact', head: true })
+      if (input.sector)       q = (q as any).ilike('sector', `%${input.sector}%`)
+      if (input.geography)    q = (q as any).ilike('geography', `%${input.geography}%`)
+      if (input.stage)        q = (q as any).eq('stage', input.stage)
+      if (input.status)       q = (q as any).eq('status', input.status)
+      if (input.year)         q = (q as any).gte('created_at', `${input.year}-01-01`).lte('created_at', `${input.year}-12-31`)
+      if (input.sourced_year) q = (q as any).gte('sourced_date', `${input.sourced_year}-01-01`).lte('sourced_date', `${input.sourced_year}-12-31`)
+      const { count, error } = await q
+      if (error) return { error: error.message }
+      return { total_count: count ?? 0 }
+    }
+
     case 'search_deals': {
       let q = supabase
         .from('deals')
-        .select('id, company_name, sector, geography, stage, status, ebitda, revenue, description, notes, sourced_date, created_at')
+        .select('id, company_name, sector, geography, stage, status, ebitda, revenue, description, notes, sourced_date, created_at', { count: 'exact' })
         .limit(200)
       if (input.company_name) q = q.ilike('company_name', `%${input.company_name}%`)
       if (input.sector) q = q.ilike('sector', `%${input.sector}%`)
@@ -355,9 +386,13 @@ async function executeTool(name: string, input: any): Promise<any> {
       if (input.status) q = q.eq('status', input.status)
       if (input.year) q = q.gte('created_at', `${input.year}-01-01`).lte('created_at', `${input.year}-12-31`)
       if (input.sourced_year) q = q.gte('sourced_date', `${input.sourced_year}-01-01`).lte('sourced_date', `${input.sourced_year}-12-31`)
-      const { data, error } = await q.order('created_at', { ascending: false })
+      const { data, error, count } = await q.order('created_at', { ascending: false })
       if (error) return { error: error.message }
-      return { count: (data || []).length, deals: data || [] }
+      return {
+        total_count: count ?? (data || []).length,  // actual DB total — use this for counting questions
+        returned: (data || []).length,              // rows returned (capped at 200)
+        deals: data || [],
+      }
     }
 
     case 'get_deal_detail': {
@@ -681,13 +716,14 @@ NEXUS SIDEBAR NAVIGATION — mention these links when directing a user to a sect
 - /contacts/dupes → Contact Deduplication
 
 RULES:
-1. When counting or listing deals historically, search ALL statuses — never default to Active only
-2. Use sourced_year filter (Salesforce close date) for "deals we looked at in [year]" questions — it is more accurate than created_at
-3. For ambiguous company names, search first and confirm the match before updating
-4. Always fetch the deal/contact ID via a read tool before calling any write tool
-5. Write tools always go to confirmation — never execute them directly
-6. For dollar amounts in tool calls, pass the number in millions as a plain string (e.g. "5.2" for $5.2M)
-7. When presenting data, include counts. E.g. "Found 47 deals in 2025 (32 Dead, 12 Active, 3 Closed)"
+1. For ANY counting question ("how many deals", "how many in 2025", etc.) use count_deals — it returns the true total with no row cap
+2. When counting deals by year, pass BOTH year and sourced_year and sum the union — sourced_date is more accurate but may be null for some deals; created_at captures everything
+3. When listing or searching deals, search ALL statuses — never default to Active only
+4. For ambiguous company names, search first and confirm the match before updating
+5. Always fetch the deal/contact ID via a read tool before calling any write tool
+6. Write tools always go to confirmation — never execute them directly
+7. For dollar amounts in tool calls, pass the number in millions as a plain string (e.g. "5.2" for $5.2M)
+8. When presenting counts, show breakdowns. E.g. "Found 47 deals in 2025 (32 Passed, 12 Active, 3 Closed)"
 
 Format responses cleanly: bold for key figures, bullet points for lists, tables where helpful. Be concise.
 
