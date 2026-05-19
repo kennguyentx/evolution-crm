@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import { Check, X, Merge } from 'lucide-react'
+import { X, Check } from 'lucide-react'
 
 type Contact = {
   id: string
@@ -16,65 +16,84 @@ type Contact = {
   created_at: string
 }
 
-type DupePair = { a: Contact; b: Contact; reason: 'name' | 'email' }
+type DupePair = { a: Contact; b: Contact; reason: 'email' | 'name' | 'phone' }
 
-function mergeFields(primary: Contact, secondary: Contact): Partial<Contact> {
-  const merged: Partial<Contact> = {}
-  const fields: (keyof Contact)[] = ['email', 'phone', 'firm', 'title', 'notes']
-  for (const f of fields) {
-    if (!primary[f] && secondary[f]) (merged as any)[f] = secondary[f]
-  }
-  return merged
-}
+// Reassign all FK references from secondary → primary, then delete secondary
+const FK_TABLES: { table: string; col: string }[] = [
+  { table: 'interactions',       col: 'contact_id' },
+  { table: 'contact_deal_links', col: 'contact_id' },
+  { table: 'notes',              col: 'contact_id' },
+  { table: 'capital_contacts',   col: 'crm_contact_id' },
+  { table: 'calendar_events',    col: 'contact_id' },
+]
 
 export default function DupesPage() {
   const supabase = createClient()
-  const [pairs, setPairs] = useState<DupePair[]>([])
+  const [pairs, setPairs]       = useState<DupePair[]>([])
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
-  const [loading, setLoading] = useState(true)
-  const [merging, setMerging] = useState<string | null>(null)
-  const [merged, setMerged] = useState<Set<string>>(new Set())
+  const [loading, setLoading]   = useState(true)
+  const [acting, setActing]     = useState<string | null>(null)
+  const [done, setDone]         = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase.from('contacts').select('id, first_name, last_name, email, phone, firm, title, contact_type, notes, created_at').order('created_at', { ascending: true })
+      const { data } = await supabase
+        .from('contacts')
+        .select('id, first_name, last_name, email, phone, firm, title, contact_type, notes, created_at')
+        .order('created_at', { ascending: true })
       const contacts: Contact[] = data ?? []
       const found: DupePair[] = []
       const seen = new Set<string>()
 
-      // Check by email
+      const addPair = (a: Contact, b: Contact, reason: DupePair['reason']) => {
+        const key = [a.id, b.id].sort().join('|')
+        if (!seen.has(key)) { seen.add(key); found.push({ a, b, reason }) }
+      }
+
+      // Email duplicates
       const byEmail = new Map<string, Contact[]>()
       for (const c of contacts) {
         if (!c.email) continue
-        const key = c.email.toLowerCase()
+        const key = c.email.toLowerCase().trim()
         if (!byEmail.has(key)) byEmail.set(key, [])
         byEmail.get(key)!.push(c)
       }
       for (const [, group] of byEmail) {
         if (group.length < 2) continue
-        for (let i = 0; i < group.length - 1; i++) {
-          for (let j = i + 1; j < group.length; j++) {
-            const key = `${group[i].id}|${group[j].id}`
-            if (!seen.has(key)) { seen.add(key); found.push({ a: group[i], b: group[j], reason: 'email' }) }
-          }
-        }
+        for (let i = 0; i < group.length - 1; i++)
+          for (let j = i + 1; j < group.length; j++)
+            addPair(group[i], group[j], 'email')
       }
 
-      // Check by name
+      // Phone duplicates
+      const normalize = (p: string) => p.replace(/\D/g, '')
+      const byPhone = new Map<string, Contact[]>()
+      for (const c of contacts) {
+        if (!c.phone) continue
+        const key = normalize(c.phone)
+        if (key.length < 7) continue
+        if (!byPhone.has(key)) byPhone.set(key, [])
+        byPhone.get(key)!.push(c)
+      }
+      for (const [, group] of byPhone) {
+        if (group.length < 2) continue
+        for (let i = 0; i < group.length - 1; i++)
+          for (let j = i + 1; j < group.length; j++)
+            addPair(group[i], group[j], 'phone')
+      }
+
+      // Name duplicates
       const byName = new Map<string, Contact[]>()
       for (const c of contacts) {
-        const key = `${c.first_name.toLowerCase()}|${c.last_name.toLowerCase()}`
+        const key = `${c.first_name.toLowerCase().trim()}|${c.last_name.toLowerCase().trim()}`
         if (!byName.has(key)) byName.set(key, [])
         byName.get(key)!.push(c)
       }
       for (const [, group] of byName) {
         if (group.length < 2) continue
-        for (let i = 0; i < group.length - 1; i++) {
-          for (let j = i + 1; j < group.length; j++) {
-            const key = `${group[i].id}|${group[j].id}`
-            if (!seen.has(key)) { seen.add(key); found.push({ a: group[i], b: group[j], reason: 'name' }) }
-          }
-        }
+        for (let i = 0; i < group.length - 1; i++)
+          for (let j = i + 1; j < group.length; j++)
+            addPair(group[i], group[j], 'name')
       }
 
       setPairs(found)
@@ -83,48 +102,55 @@ export default function DupesPage() {
     load()
   }, [])
 
-  const pairKey = (p: DupePair) => `${p.a.id}|${p.b.id}`
+  const pairKey = (p: DupePair) => [p.a.id, p.b.id].sort().join('|')
 
-  const dismiss = (p: DupePair) => setDismissed(prev => new Set([...prev, pairKey(p)]))
-
+  // Merge: keep primary, fill its empty fields from secondary, reassign refs, delete secondary
   const merge = async (primary: Contact, secondary: Contact, p: DupePair) => {
     const key = pairKey(p)
-    if (!confirm(`Merge "${secondary.first_name} ${secondary.last_name}" into "${primary.first_name} ${primary.last_name}"? This will update all references and delete the secondary record.`)) return
-    setMerging(key)
-
-    // Copy empty fields from secondary to primary
-    const updates = mergeFields(primary, secondary)
-    if (Object.keys(updates).length > 0) {
-      await supabase.from('contacts').update(updates).eq('id', primary.id)
-    }
-
-    // Reassign FK references
-    await Promise.all([
-      supabase.from('interactions').update({ contact_id: primary.id }).eq('contact_id', secondary.id),
-      supabase.from('contact_deal_links').update({ contact_id: primary.id }).eq('contact_id', secondary.id),
-      supabase.from('notes').update({ contact_id: primary.id }).eq('contact_id', secondary.id),
-      supabase.from('capital_contacts').update({ crm_contact_id: primary.id }).eq('crm_contact_id', secondary.id),
-    ])
-
-    // Delete secondary
+    setActing(key)
+    const patch: Partial<Contact> = {}
+    const fields: (keyof Contact)[] = ['email', 'phone', 'firm', 'title', 'notes']
+    for (const f of fields) if (!primary[f] && secondary[f]) (patch as any)[f] = secondary[f]
+    if (Object.keys(patch).length > 0)
+      await supabase.from('contacts').update(patch).eq('id', primary.id)
+    await Promise.all(FK_TABLES.map(({ table, col }) =>
+      supabase.from(table as any).update({ [col]: primary.id }).eq(col, secondary.id)
+    ))
     await supabase.from('contacts').delete().eq('id', secondary.id)
-
-    setMerging(null)
-    setMerged(prev => new Set([...prev, key]))
+    setActing(null)
+    setDone(prev => new Set([...prev, key]))
   }
 
-  const visible = pairs.filter(p => !dismissed.has(pairKey(p)) && !merged.has(pairKey(p)))
+  // Overwrite: keep primary, replace all non-null fields from secondary, reassign refs, delete secondary
+  const overwrite = async (primary: Contact, secondary: Contact, p: DupePair) => {
+    const key = pairKey(p)
+    setActing(key)
+    const patch: Partial<Contact> = {}
+    const fields: (keyof Contact)[] = ['email', 'phone', 'firm', 'title', 'notes']
+    for (const f of fields) if (secondary[f]) (patch as any)[f] = secondary[f]
+    if (Object.keys(patch).length > 0)
+      await supabase.from('contacts').update(patch).eq('id', primary.id)
+    await Promise.all(FK_TABLES.map(({ table, col }) =>
+      supabase.from(table as any).update({ [col]: primary.id }).eq(col, secondary.id)
+    ))
+    await supabase.from('contacts').delete().eq('id', secondary.id)
+    setActing(null)
+    setDone(prev => new Set([...prev, key]))
+  }
 
+  const visible = pairs.filter(p => !dismissed.has(pairKey(p)) && !done.has(pairKey(p)))
   const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+
+  const reasonLabel = (r: DupePair['reason']) =>
+    r === 'email' ? 'Same email' : r === 'phone' ? 'Same phone' : 'Same name'
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
       <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
         <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Contact Deduplication</h1>
         <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
           {loading ? 'Scanning…' : `${visible.length} potential duplicate${visible.length !== 1 ? 's' : ''} found`}
-          {merged.size > 0 && <span style={{ marginLeft: '12px', color: 'var(--green)' }}>· {merged.size} merged this session</span>}
+          {done.size > 0 && <span style={{ marginLeft: '12px', color: 'var(--green)' }}>· {done.size} resolved this session</span>}
         </p>
       </div>
 
@@ -137,62 +163,73 @@ export default function DupesPage() {
             No duplicates found.
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '900px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '960px' }}>
             {visible.map(p => {
               const key = pairKey(p)
-              const isMerging = merging === key
+              const isActing = acting === key
               return (
                 <div key={key} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', overflow: 'hidden' }}>
-                  {/* Reason badge */}
+                  {/* Header */}
                   <div style={{ padding: '8px 16px', background: 'var(--surface-2)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--accent)', background: 'var(--accent-muted)', padding: '2px 8px', borderRadius: '10px' }}>
-                      {p.reason === 'email' ? 'Same email' : 'Same name'}
+                      {reasonLabel(p.reason)}
                     </span>
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)', flex: 1 }}>
-                      {p.reason === 'email' ? `Both have email: ${p.a.email}` : `${p.a.first_name} ${p.a.last_name}`}
+                      {p.reason === 'email' ? `email: ${p.a.email}` : p.reason === 'phone' ? `phone: ${p.a.phone}` : `${p.a.first_name} ${p.a.last_name}`}
                     </span>
-                    <button onClick={() => dismiss(p)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <button onClick={() => setDismissed(prev => new Set([...prev, key]))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <X size={12} /> Not a duplicate
                     </button>
                   </div>
 
-                  {/* Side-by-side */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '0' }}>
-                    {[p.a, p.b].map((c, idx) => (
-                      <>
-                        <div key={c.id} style={{ padding: '16px 20px' }}>
+                  {/* Side by side */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1px 1fr' }}>
+                    {[p.a, p.b].map((c, idx) => {
+                      const other = idx === 0 ? p.b : p.a
+                      return (
+                        <div key={c.id} style={{ padding: '18px 20px' }}>
                           <div style={{ fontSize: '14px', fontWeight: 700, marginBottom: '4px' }}>{c.first_name} {c.last_name}</div>
-                          {c.title && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '2px' }}>{c.title}</div>}
-                          {c.firm && <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>{c.firm}</div>}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          {c.title && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{c.title}</div>}
+                          {c.firm  && <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px' }}>{c.firm}</div>}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginBottom: '12px' }}>
                             {c.email && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>✉ {c.email}</div>}
                             {c.phone && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>✆ {c.phone}</div>}
                             <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'capitalize' }}>{c.contact_type}</div>
-                            {c.notes && <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.notes}</div>}
-                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>Added {fmtDate(c.created_at)}</div>
+                            {c.notes && <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '280px' }}>{c.notes}</div>}
+                            <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>Added {fmtDate(c.created_at)}</div>
                           </div>
 
-                          {/* Merge buttons */}
-                          <div style={{ marginTop: '14px', display: 'flex', gap: '6px' }}>
+                          <div style={{ fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                            Keep this one and…
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                             <button
-                              onClick={() => merge(c, idx === 0 ? p.b : p.a, p)}
-                              disabled={isMerging}
-                              style={{ fontSize: '11px', padding: '5px 12px', border: '1px solid var(--accent)', borderRadius: '6px', background: 'var(--accent-muted)', color: 'var(--accent)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                              onClick={() => merge(c, other, p)}
+                              disabled={isActing}
+                              title="Keep this contact, fill its blank fields with the other's data, then delete the other"
+                              style={{ fontSize: '11px', padding: '5px 12px', border: '1px solid var(--accent)', borderRadius: '6px', background: 'var(--accent-muted)', color: 'var(--accent)', cursor: 'pointer', textAlign: 'left', opacity: isActing ? 0.5 : 1 }}
                             >
-                              <Check size={11} /> Keep this one
+                              <Check size={11} style={{ display: 'inline', marginRight: '5px' }} />
+                              Merge — fill my blank fields from the other
+                            </button>
+                            <button
+                              onClick={() => overwrite(c, other, p)}
+                              disabled={isActing}
+                              title="Keep this contact, replace all its fields with the other's data, then delete the other"
+                              style={{ fontSize: '11px', padding: '5px 12px', border: '1px solid #d97706', borderRadius: '6px', background: 'rgba(245,158,11,0.07)', color: '#d97706', cursor: 'pointer', textAlign: 'left', opacity: isActing ? 0.5 : 1 }}
+                            >
+                              ↺ Overwrite — replace all my fields with the other's
                             </button>
                           </div>
                         </div>
-                        {idx === 0 && (
-                          <div key="divider" style={{ width: '1px', background: 'var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                            <span style={{ position: 'absolute', background: 'var(--surface)', padding: '4px 6px', fontSize: '10px', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: '4px' }}>vs</span>
-                          </div>
-                        )}
-                      </>
-                    ))}
+                      )
+                    })}
+                    <div style={{ background: 'var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                      <span style={{ position: 'absolute', background: 'var(--surface)', padding: '4px 6px', fontSize: '10px', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: '4px' }}>vs</span>
+                    </div>
                   </div>
 
-                  {isMerging && (
+                  {isActing && (
                     <div style={{ padding: '10px 20px', background: 'var(--surface-2)', borderTop: '1px solid var(--border)', fontSize: '12px', color: 'var(--text-muted)' }}>
                       Merging and updating references…
                     </div>
