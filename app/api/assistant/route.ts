@@ -219,6 +219,37 @@ const TOOLS: any[] = [
     },
   },
   {
+    name: 'get_calendar_events',
+    description: 'Get calendar events. Use for questions about upcoming meetings, deadlines, calls, or site visits. Can filter by date range, event type, or linked deal/contact.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        date_from: { type: 'string', description: 'Start date filter YYYY-MM-DD (default: today)' },
+        date_to:   { type: 'string', description: 'End date filter YYYY-MM-DD (default: 30 days from date_from)' },
+        event_type: { type: 'string', description: 'meeting | call | deadline | reminder | site visit | other' },
+        query: { type: 'string', description: 'Keyword to search in title or description' },
+      },
+    },
+  },
+  {
+    name: 'create_calendar_event',
+    description: 'Add an event to the calendar. ALWAYS requires user confirmation.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title:       { type: 'string', description: 'Event title' },
+        event_date:  { type: 'string', description: 'Date in YYYY-MM-DD format' },
+        start_time:  { type: 'string', description: 'Start time HH:MM (24h), optional' },
+        end_time:    { type: 'string', description: 'End time HH:MM (24h), optional' },
+        event_type:  { type: 'string', description: 'meeting | call | deadline | reminder | site visit | other' },
+        description: { type: 'string', description: 'Notes or agenda, optional' },
+        deal_id:     { type: 'string', description: 'Link to deal UUID from search_deals, optional' },
+        contact_id:  { type: 'string', description: 'Link to contact UUID from search_contacts, optional' },
+      },
+      required: ['title', 'event_date', 'event_type'],
+    },
+  },
+  {
     name: 'list_files',
     description: 'List files and folders at any path in the Evolution Strategy Dropbox. Use for general browsing when not looking for a specific deal or portco.',
     input_schema: {
@@ -242,7 +273,7 @@ const TOOLS: any[] = [
   },
 ]
 
-const WRITE_TOOLS = new Set(['update_deal_field', 'update_contact_field', 'update_raise_participant', 'log_note'])
+const WRITE_TOOLS = new Set(['update_deal_field', 'update_contact_field', 'update_raise_participant', 'log_note', 'create_calendar_event'])
 
 // ─── Allowed write fields (whitelist to prevent injection) ────
 
@@ -428,6 +459,42 @@ async function executeTool(name: string, input: any): Promise<any> {
       return { result: text || 'No results found.' }
     }
 
+    case 'get_calendar_events': {
+      const today = new Date().toISOString().split('T')[0]
+      const dateFrom = input.date_from || today
+      const dateTo   = input.date_to   || (() => {
+        const d = new Date(dateFrom); d.setDate(d.getDate() + 30); return d.toISOString().split('T')[0]
+      })()
+      let q = supabase
+        .from('calendar_events')
+        .select('id, title, event_date, start_time, end_time, event_type, description, deal:deals(company_name), contact:contacts(first_name, last_name), portfolio_company:portfolio_companies(name)')
+        .gte('event_date', dateFrom)
+        .lte('event_date', dateTo)
+        .order('event_date', { ascending: true })
+        .order('start_time', { ascending: true, nullsFirst: false })
+        .limit(50)
+      if (input.event_type) q = q.eq('event_type', input.event_type)
+      if (input.query) q = q.or(`title.ilike.%${input.query}%,description.ilike.%${input.query}%`)
+      const { data, error } = await q
+      if (error) return { error: error.message }
+      return { count: (data || []).length, from: dateFrom, to: dateTo, events: data || [] }
+    }
+
+    case 'create_calendar_event': {
+      const { data, error } = await supabase.from('calendar_events').insert({
+        title:       input.title,
+        event_date:  input.event_date,
+        start_time:  input.start_time  || null,
+        end_time:    input.end_time    || null,
+        event_type:  input.event_type  || 'meeting',
+        description: input.description || null,
+        deal_id:     input.deal_id     || null,
+        contact_id:  input.contact_id  || null,
+      }).select().single()
+      if (error) return { error: error.message }
+      return { success: true, event_id: data?.id, message: `Calendar event "${input.title}" created for ${input.event_date}` }
+    }
+
     case 'list_portco_files': {
       const { data: portco } = await supabase
         .from('portfolio_companies')
@@ -597,7 +664,21 @@ FIRM CONTEXT:
 DEAL STAGES — use EXACTLY these strings:
 Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity | Closed (Platform) | Closed (Add-On) | Pass (DOA) | Pass (Pre-LOI) | Pass (Post-LOI) | Hold
 
-DEAL STATUS: Active | Dead | Closed
+DEAL STATUS: Active | Dead | Closed | Passed
+
+NEXUS SIDEBAR NAVIGATION — mention these links when directing a user to a section:
+- /dashboard → Dashboard (deal funnel, recent activity)
+- /pipeline → Pipeline (Kanban board, active deals only)
+- /deals → Deals (full list, all stages, sortable/filterable)
+- /intake → Teaser / CIM Intake (upload a PDF to auto-parse a new deal)
+- /contacts → Contacts (all CRM contacts)
+- /raises → Capital Raises
+- /raises/contacts → Capital Contacts (LP/lender master list)
+- /investors → Investors (LP commitments and investments)
+- /portfolio → Portfolio Companies
+- /calendar → Calendar (meetings, calls, deadlines)
+- /notes → Notes (interaction log)
+- /contacts/dupes → Contact Deduplication
 
 RULES:
 1. When counting or listing deals historically, search ALL statuses — never default to Active only
