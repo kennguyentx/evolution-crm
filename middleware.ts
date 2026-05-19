@@ -28,6 +28,15 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL('/login', req.url))
   }
 
+  // MFA enforcement: if user has enrolled TOTP but hasn't completed the challenge
+  // this session, gate all pages except /login and /mfa/*
+  if (session && !pathname.startsWith('/mfa') && pathname !== '/login') {
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+    if (aal && aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') {
+      return NextResponse.redirect(new URL('/mfa/verify', req.url))
+    }
+  }
+
   return res
 }
 

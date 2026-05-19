@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { Kanban, Building2, Users, BarChart3, Zap, TrendingUp, FileText, Menu, X, FileText as NoteIcon, Star, LayoutDashboard, Calendar, Search, BookOpen } from 'lucide-react'
+import { Kanban, Building2, Users, BarChart3, Zap, TrendingUp, FileText, Menu, X, FileText as NoteIcon, Star, LayoutDashboard, Calendar, Search, BookOpen, ShieldCheck } from 'lucide-react'
 
 const NAV = [
   { href: '/dashboard',        label: 'Dashboard',         icon: LayoutDashboard },
@@ -94,6 +94,15 @@ export default function Sidebar() {
               overflowY: 'auto',
             }}>
               <NavLinks />
+              <Link href="/mfa/enroll" style={{
+                display: 'flex', alignItems: 'center', gap: '10px',
+                padding: '14px 20px', borderRadius: '7px', textDecoration: 'none',
+                fontSize: '13px', fontWeight: 400, color: 'rgba(255,255,255,0.4)',
+                marginTop: '8px',
+              }}>
+                <ShieldCheck size={15} />
+                Security
+              </Link>
             </div>
           </div>
         )}
@@ -137,6 +146,23 @@ export default function Sidebar() {
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
         <NavLinks />
       </nav>
+
+      {/* Security / MFA link pinned to bottom */}
+      <Link href="/mfa/enroll" style={{
+        display: 'flex', alignItems: 'center', gap: '10px',
+        padding: '8px 16px',
+        borderRadius: '7px',
+        textDecoration: 'none',
+        fontSize: '12px',
+        fontWeight: isActive('/mfa/enroll') ? 600 : 400,
+        color: isActive('/mfa/enroll') ? '#ffffff' : 'rgba(255,255,255,0.4)',
+        background: isActive('/mfa/enroll') ? 'rgba(255,255,255,0.15)' : 'transparent',
+        marginTop: '8px',
+        transition: 'all 0.15s',
+      }}>
+        <ShieldCheck size={14} />
+        Security
+      </Link>
     </div>
   )
 }
