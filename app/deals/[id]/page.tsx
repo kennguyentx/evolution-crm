@@ -173,9 +173,16 @@ export default function DealDetailPage() {
     return () => clearTimeout(timer)
   }, [capitalSearch])
 
+  const stageToStatus = (s: string) => {
+    if (['Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)'].includes(s)) return 'Passed'
+    if (['Closed (Platform)','Closed (Add-On)'].includes(s)) return 'Closed'
+    return 'Active'
+  }
+
   const updateStage = async (stage: string) => {
-    await supabase.from('deals').update({ stage }).eq('id', dealId)
-    setDeal(prev => prev ? { ...prev, stage: stage as any } : null)
+    const status = stageToStatus(stage)
+    await supabase.from('deals').update({ stage, status }).eq('id', dealId)
+    setDeal(prev => prev ? { ...prev, stage: stage as any, status } : null)
     setEditingStage(false)
     if (deal) {
       const { path: newPath, error: moveErr } = await moveDropboxOnStageChange(supabase, dealId, deal.company_name, deal.dropbox_path, stage)
