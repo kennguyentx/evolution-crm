@@ -75,7 +75,7 @@ export default function Sidebar() {
           boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
         }}>
           <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '10px', height: '52px', textDecoration: 'none' }}>
-            <img src="/esp-icon.svg" alt="ESP" style={{ width: '28px', height: '28px', flexShrink: 0 }} />
+            <img src="/esp-icon.svg" alt="ESP" style={{ width: '28px', height: '28px', flexShrink: 0, borderRadius: '6px' }} />
             <span style={{ color: 'white', fontSize: '14px', fontWeight: 700 }}>Evolution Strategy Partners</span>
           </Link>
           <button onClick={() => setMobileOpen(!mobileOpen)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'white', padding: '4px', height: '52px', display: 'flex', alignItems: 'center' }}>
@@ -111,7 +111,7 @@ export default function Sidebar() {
     }}>
       {/* Logo */}
       <Link href="/dashboard" style={{ padding: '8px 10px 20px', display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
-        <img src="/esp-icon.svg" alt="ESP" style={{ width: '32px', height: '32px', flexShrink: 0 }} />
+        <img src="/esp-icon.svg" alt="ESP" style={{ width: '32px', height: '32px', flexShrink: 0, borderRadius: '7px' }} />
         <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', fontWeight: 600, lineHeight: 1.2 }}>Evolution Strategy Partners</span>
       </Link>
 

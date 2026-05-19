@@ -1,4 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <!-- Outer arc path -->
-  <path d="M 5,58 A 45,45 0 0,1 95,58 L 73,58 A 23,23 0 0,0 27,58 Z" fill="#E8722A"/>
+  <!-- Dark purple background -->
+  <rect width="100" height="100" fill="#311535"/>
+  <!-- Orange arc -->
+  <path d="M 24,44 Q 50,7 76,44 L 70,44 Q 50,17 30,44 Z" fill="#E8722A"/>
+  <!-- White italic e -->
+  <text x="51" y="77" font-family="Georgia, 'Times New Roman', serif" font-size="52" font-style="italic" text-anchor="middle" fill="white">e</text>
 </svg>
