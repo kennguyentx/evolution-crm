@@ -476,12 +476,14 @@ export async function POST(req: NextRequest) {
 
         // Store CIM in deal_cims if it's a CIM
         if (primary.extracted.doc_type === 'cim') {
-          await supabase.from('deal_cims').insert({
-            deal_id:      existingDeal.id,
-            file_name:    primary.fileName,
-            dropbox_path: primaryDropboxPath,
-            extracted:    primary.extracted,
-          }).select('id').single().catch(() => {})
+          try {
+            await supabase.from('deal_cims').insert({
+              deal_id:      existingDeal.id,
+              file_name:    primary.fileName,
+              dropbox_path: primaryDropboxPath,
+              extracted:    primary.extracted,
+            })
+          } catch { /* non-fatal */ }
         }
 
         await supabase.from('notes').insert({
