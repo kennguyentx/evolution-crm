@@ -284,7 +284,7 @@ function CIMFlow() {
                 <div style={{ fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', marginBottom: '8px' }}>
                   Cross-reference vs teaser ({discrepancies.length} item{discrepancies.length !== 1 ? 's' : ''})
                 </div>
-                {[...discrepancies].sort((a: any, b: any) => ({ high: 0, medium: 1, low: 2 }[a.significance as string] - ({ high: 0, medium: 1, low: 2 }[b.significance as string]))).map((d: any, i: number) => (
+                {[...discrepancies].sort((a: any, b: any) => { const o: Record<string,number> = { high: 0, medium: 1, low: 2 }; return (o[a.significance] ?? 3) - (o[b.significance] ?? 3) }).map((d: any, i: number) => (
                   <div key={i} style={{ border: `1px solid ${d.significance === 'high' ? '#ef4444' : d.significance === 'medium' ? '#f59e0b' : 'var(--border)'}`, borderRadius: '8px', padding: '10px 14px', marginBottom: '8px', background: d.significance === 'high' ? 'rgba(239,68,68,0.04)' : d.significance === 'medium' ? 'rgba(245,158,11,0.04)' : 'transparent' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
                       <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: d.significance === 'high' ? '#ef4444' : d.significance === 'medium' ? '#f59e0b' : 'var(--text-muted)' }}>{d.significance}</span>
