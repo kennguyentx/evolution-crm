@@ -286,6 +286,28 @@ const TOOLS: any[] = [
       required: ['path'],
     },
   },
+  {
+    name: 'browse_best_practices',
+    description: 'List folders and files in the Best Practices library stored in Dropbox. Use with no subfolder to see all categories (e.g. Credit Agreements, LOI Templates, Financial Models). Then drill into a category to find specific documents. Always call this before read_best_practices_file to get the exact file path.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        subfolder: { type: 'string', description: 'Optional subfolder name or path relative to Best Practices root (e.g. "Credit Agreements"). Omit to list all top-level categories.' },
+      },
+    },
+  },
+  {
+    name: 'read_best_practices_file',
+    description: 'Read and analyze a file from the Best Practices library. Extracts full content from PDF, Word, Excel, or CSV. Use to answer questions about standard terms, market benchmarks, credit agreement structure, LOI templates, diligence checklists, etc. After reading, compare to deal-specific documents or provide market context as requested.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Full Dropbox path from browse_best_practices (e.g. /evolution strategy partners/best practices/credit agreements/credit agreement template.pdf)' },
+        analysis_question: { type: 'string', description: 'Optional: specific question to focus the analysis on (e.g. "What are the key financial covenants?" or "How does this compare to market standard?")' },
+      },
+      required: ['path'],
+    },
+  },
 ]
 
 const WRITE_TOOLS = new Set(['update_deal_field', 'update_contact_field', 'update_raise_participant', 'log_note', 'create_calendar_event'])
@@ -579,6 +601,39 @@ async function executeTool(name: string, input: any): Promise<any> {
       return { file: name, path: input.path, content: extracted }
     }
 
+    case 'browse_best_practices': {
+      const BP_ROOT = '/Evolution Strategy Partners/Best Practices'
+      const folder = input.subfolder
+        ? `${BP_ROOT}/${input.subfolder.replace(/^\/+/, '')}`
+        : BP_ROOT
+      const items = await dbxListFolder(folder)
+      return { folder, items, tip: 'Call read_best_practices_file with any file path shown above to read its full content.' }
+    }
+
+    case 'read_best_practices_file': {
+      const { base64, name, ext: fileExt } = await dbxDownload(input.path)
+      const isText = ['.txt', '.md', '.csv'].includes(fileExt)
+      if (isText) {
+        return { file: name, path: input.path, content: Buffer.from(base64, 'base64').toString('utf-8').slice(0, 20000) }
+      }
+      if (fileExt !== '.pdf') {
+        return { error: `File type ${fileExt} cannot be read directly. Ask the user to provide a PDF version.` }
+      }
+      const question = input.analysis_question
+        ? `Focus especially on: ${input.analysis_question}`
+        : 'Provide a comprehensive summary covering all key terms, standards, thresholds, typical ranges, and important provisions.'
+      const extractResp = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4000,
+        messages: [{ role: 'user', content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+          { type: 'text', text: `You are analyzing a Best Practices document: "${name}". ${question} Include all key terms, market-standard benchmarks, acceptable ranges, red flags, and negotiating points. Be thorough — this will be used to assess where a specific deal stands relative to market.` },
+        ]}],
+      })
+      const extracted = extractResp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
+      return { file: name, path: input.path, content: extracted }
+    }
+
     case 'list_files': {
       const items = await dbxListFolder(input.path || '')
       return { folder: input.path || 'root', items }
@@ -714,6 +769,7 @@ NEXUS SIDEBAR NAVIGATION — mention these links when directing a user to a sect
 - /calendar → Calendar (meetings, calls, deadlines)
 - /notes → Notes (interaction log)
 - /contacts/dupes → Contact Deduplication
+- /best-practices → Best Practices library (Dropbox folders: credit agreements, LOI templates, etc.)
 
 RULES:
 1. For ANY counting question ("how many deals", "how many in 2025", etc.) use count_deals — it returns the true total with no row cap
@@ -726,6 +782,8 @@ RULES:
 8. When presenting counts, show breakdowns. E.g. "Found 47 deals in 2025 (32 Passed, 12 Active, 3 Closed)"
 
 Format responses cleanly: bold for key figures, bullet points for lists, tables where helpful. Be concise.
+
+BEST PRACTICES LIBRARY: Use browse_best_practices (no args) to list all categories (Credit Agreements, LOI Templates, Financial Models, Diligence Checklists, etc.). Then call read_best_practices_file with the exact path to extract and analyze any document. When a user asks about credit agreement terms, standard covenants, LOI structure, or where a deal stands relative to market, always pull the relevant BP document first before answering. After reading, synthesize: (1) what the standard/template says, (2) how the deal in question compares, (3) where there is room to negotiate.
 
 DROPBOX: The Evolution Strategy Dropbox root path is "/Ken Nguyen/Evolution Strategy Partners". Subfolders: Auditors, Bankers, Best Practices, Claude, Compliance, Consultants, Dealflow, Deals, Evolution Investments, Industry Data, Investors, Lenders, Marketing, Office, Portfolio Co's. Deal files are under "/Ken Nguyen/Evolution Strategy Partners/Deals/[Company Name]". Portfolio files are under "/Ken Nguyen/Evolution Strategy Partners/Portfolio Co's/[Company Name]". For portfolio company file questions, ALWAYS use list_portco_files first — it looks up the linked Dropbox path automatically. For deal file questions use list_deal_files. Only use list_files for general browsing. If Dropbox access fails, report what you already found in this session rather than saying you need to try again later.
 

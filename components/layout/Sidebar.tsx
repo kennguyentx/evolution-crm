@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { Kanban, Building2, Users, BarChart3, Zap, TrendingUp, FileText, Menu, X, FileText as NoteIcon, Star, LayoutDashboard, Calendar, Search } from 'lucide-react'
+import { Kanban, Building2, Users, BarChart3, Zap, TrendingUp, FileText, Menu, X, FileText as NoteIcon, Star, LayoutDashboard, Calendar, Search, BookOpen } from 'lucide-react'
 
 const NAV = [
   { href: '/dashboard',        label: 'Dashboard',         icon: LayoutDashboard },
@@ -16,6 +16,7 @@ const NAV = [
   { href: '/portfolio',        label: 'Portfolio',         icon: Building2 },
   { href: '/calendar',         label: 'Calendar',          icon: Calendar },
   { href: '/notes',            label: 'Notes',             icon: NoteIcon },
+  { href: '/best-practices',   label: 'Best Practices',    icon: BookOpen },
   { href: '/assistant',        label: 'Assistant',         icon: Star },
 ]
 
