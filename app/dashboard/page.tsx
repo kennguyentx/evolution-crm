@@ -9,7 +9,7 @@ const ACTIVE_STAGES: DealStage[] = ['Teaser', 'Reviewing', 'Pre-LOI', 'LOI Submi
 const STAGE_ORDER = ['Exclusivity', 'LOI Submitted', 'Pre-LOI', 'Reviewing', 'Teaser'] as DealStage[]
 
 type DealRow = { id: string; company_name: string; stage: DealStage; ebitda: number | null; revenue: number | null; sector: string | null }
-type RaiseRow = { id: string; name: string; target_equity: number | null; target_debt: number | null; deal: { company_name: string } | null }
+type RaiseRow = { id: string; name: string; target_equity: number | null; target_debt: number | null; deal: { company_name: string } | { company_name: string }[] | null }
 type InteractionRow = { id: string; interaction_date: string; interaction_type: string | null; summary: string | null; next_steps: string | null; contact: { first_name: string; last_name: string } | null; deal: { company_name: string } | null }
 
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -143,7 +143,7 @@ export default function DashboardPage() {
                       <div style={{ height: '7px', background: 'var(--border)', borderRadius: '4px', overflow: 'hidden' }}>
                         <div style={{ height: '100%', width: `${pct}%`, background: pct >= 80 ? 'var(--green)' : 'var(--accent)', borderRadius: '4px', transition: 'width 0.3s' }} />
                       </div>
-                      {r.deal && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px' }}>{r.deal.company_name}</div>}
+                      {r.deal && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px' }}>{Array.isArray(r.deal) ? r.deal[0]?.company_name : r.deal.company_name}</div>}
                     </div>
                   )
                 })}
