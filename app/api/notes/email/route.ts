@@ -367,29 +367,51 @@ export async function POST(req: NextRequest) {
       const instructions = await parseForwardingNote(text, { from, fromName, cc: ccFull })
       console.log(`[email-intake] instructions:`, JSON.stringify(instructions))
 
-      // ── Step 1: Extract all attachments in parallel ───────────────────────
+      // ── Step 1: Separate NDAs (skip Claude, just upload) from deal docs ─────
+      // Detecting NDAs by filename avoids wasting Claude Opus time on them.
+      const isNdaFile = (name: string) => /nda|non.?disclosure/i.test(name)
+
+      const ndaAttachments  = docAttachments.filter((a: any) => isNdaFile(a.Name ?? ''))
+      const dealAttachments = docAttachments.filter((a: any) => !isNdaFile(a.Name ?? ''))
+
+      console.log(`[email-intake] deal docs: ${dealAttachments.length}, NDAs: ${ndaAttachments.length}`)
+
+      // ── Step 2: Extract deal docs sequentially (avoids parallel timeout) ───
       const extracted_docs: Array<{ fileName: string; buffer: Buffer; extracted: any }> = []
-      await Promise.all(docAttachments.map(async (att: any) => {
+
+      // Add NDAs as stub entries — no extraction needed
+      for (const att of ndaAttachments) {
+        const fileName = att.Name ?? 'nda'
+        const buffer   = Buffer.from(att.Content, 'base64')
+        extracted_docs.push({ fileName, buffer, extracted: { doc_type: 'nda', company_name: null, contacts: [] } })
+      }
+
+      for (const att of dealAttachments) {
         const fileName    = att.Name ?? 'document'
         const buffer      = Buffer.from(att.Content, 'base64')
         const contentType = att.ContentType ?? ''
+        console.log(`[email-intake] Extracting ${fileName} (${(buffer.length / 1024 / 1024).toFixed(1)} MB)…`)
         try {
           const extracted = await processAttachment(fileName, buffer, contentType)
-          if (extracted) extracted_docs.push({ fileName, buffer, extracted })
+          if (extracted) {
+            extracted_docs.push({ fileName, buffer, extracted })
+            console.log(`[email-intake] Extracted ${fileName}: doc_type=${extracted.doc_type} company="${extracted.company_name}"`)
+          }
         } catch (e: any) {
           console.error(`[email-intake] Extract error (${fileName}):`, e?.message)
           results.push({ type: 'error', file: fileName, error: e?.message })
         }
-      }))
+      }
 
-      if (extracted_docs.length === 0) {
+      if (extracted_docs.filter(d => d.extracted.doc_type !== 'nda').length === 0 && ndaAttachments.length === 0) {
         return NextResponse.json({ success: true, processed: results })
       }
 
-      // ── Step 2: Find primary doc (teaser or CIM) — NDAs are supporting ────
+      // ── Step 3: Find primary doc (teaser or CIM) — NDAs are supporting ────
       const primary = extracted_docs.find(d =>
         d.extracted.doc_type === 'teaser' || d.extracted.doc_type === 'cim'
-      ) ?? extracted_docs[0] // fallback: first doc if no teaser/CIM
+      ) ?? extracted_docs.find(d => d.extracted.doc_type !== 'nda')
+        ?? extracted_docs[0]
       const supporting = extracted_docs.filter(d => d !== primary)
 
       // Apply instruction overrides to primary
@@ -472,16 +494,19 @@ export async function POST(req: NextRequest) {
       // dealFolderPath is what we store on the deal — always the folder, never a file
       let dealFolderPath: string | null = targetFolder
 
+      console.log(`[email-intake] Step 4: Dropbox target="${targetFolder}" existing=${!!existingDeal}`)
       if (dropboxConfigured() && targetFolder) {
-        console.log(`[email-intake] Dropbox target: "${targetFolder}" (stage="${effectiveStage}", existing=${!!existingDeal})`)
         for (const doc of extracted_docs) {
           try {
+            console.log(`[email-intake] Uploading ${doc.fileName}…`)
             await dropboxUpload(targetFolder, doc.fileName, doc.buffer)
+            console.log(`[email-intake] Uploaded ${doc.fileName} ✓`)
           } catch (dbxErr: any) {
             console.error(`[email-intake] Dropbox upload failed (${doc.fileName}):`, dbxErr?.message)
           }
         }
       }
+      console.log(`[email-intake] Step 5: writing deal/note. existingDeal=${existingDeal?.id ?? 'none'}`)
 
       // Merge contacts from all docs + forwarding note
       const allContacts = filterInternalContacts([
