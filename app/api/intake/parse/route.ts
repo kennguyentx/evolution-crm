@@ -17,7 +17,7 @@ const SYSTEM_PROMPT = `You extract factual deal data from teasers and CIMs. Retu
 
 {
   "company_name": "string — exact company name as stated",
-  "sector": "string — one of: Underground Utilities | Electrical Contracting | Civil / Public Works | Commercial Landscaping | Fiber Optics | HVAC | Plumbing | Industrial Services | Environmental Services | Construction & Engineering | Other",
+  "sector": "string — use the closest match from: Underground Utilities | Electrical Contracting | Civil / Public Works | Commercial Landscaping | Fiber Optics | HVAC | Plumbing | Industrial Services | Environmental Services | Construction & Engineering. If none fit well, return a short descriptive sector name (2-4 words, title case) that accurately describes the industry.",
   "geography": "string — primary state(s) or region of operations as stated in the document",
   "deal_type": "string — one of: platform | add-on | recap | growth",
   "revenue": "number in raw dollars or null — most recent annual revenue as stated",

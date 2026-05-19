@@ -136,10 +136,10 @@ export default function NewDealModal({ onClose, onCreated }: {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div>
               <label className="label">Sector</label>
-              <select className="select" {...field('sector')}>
-                <option value="">Select sector</option>
-                {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+              <input className="input" list="sector-list" placeholder="Select or type a sector…" {...field('sector')} />
+              <datalist id="sector-list">
+                {SECTORS.map(s => <option key={s} value={s} />)}
+              </datalist>
             </div>
             <div>
               <label className="label">Geography</label>

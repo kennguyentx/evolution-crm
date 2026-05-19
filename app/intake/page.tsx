@@ -8,7 +8,7 @@ import Link from 'next/link'
 const SECTORS = [
   'Underground Utilities', 'Electrical Contracting', 'Civil / Public Works',
   'Commercial Landscaping', 'Fiber Optics', 'HVAC', 'Plumbing', 'Industrial Services',
-  'Environmental Services', 'Construction & Engineering', 'Other'
+  'Environmental Services', 'Construction & Engineering',
 ]
 
 interface ParsedContact {
@@ -512,10 +512,10 @@ export default function IntakePage() {
               </IntakeField>
 
               <IntakeField label="Sector *" required={!edited.sector}>
-                <select className="select" value={edited.sector || ''} onChange={e => updateField('sector', e.target.value)}>
-                  <option value="">Select sector</option>
-                  {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                <input className="input" list="sector-options" placeholder="Select or type a sector…" value={edited.sector || ''} onChange={e => updateField('sector', e.target.value)} />
+                <datalist id="sector-options">
+                  {SECTORS.map(s => <option key={s} value={s} />)}
+                </datalist>
               </IntakeField>
 
               <IntakeField label="Geography *" required={!edited.geography}>
