@@ -124,6 +124,13 @@ async function processAttachment(
   return JSON.parse(raw)
 }
 
+// ── Normalize a Dropbox path to a folder (strip filename if present) ──────────
+function toFolder(p: string | null | undefined): string | null {
+  if (!p) return null
+  const last = p.split('/').pop() ?? ''
+  return last.includes('.') ? p.substring(0, p.lastIndexOf('/')) : p
+}
+
 // ── Get today's date in US Central time ───────────────────────────────────────
 // Vercel runs in UTC. Using toISOString() can return tomorrow's date for US
 // evening hours. Always format in America/Chicago (CST/CDT) so notes are
@@ -317,9 +324,6 @@ export async function POST(req: NextRequest) {
 
     // ── Idempotency guard — block duplicate webhook calls ─────────────────────
     // Two-layer check: (1) Postmark MessageID unique constraint if migration ran,
-    // (2) fallback subject+from check against notes table.
-    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString()
-
     if (messageId) {
       // Layer 1: try atomic sentinel insert (requires message_id column + unique index)
       try {
@@ -346,22 +350,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Layer 2: fallback — check notes table for same subject today (note_date = today)
-    {
-      const today = new Date().toISOString().split('T')[0]
-      const { data: recentNote } = await supabase
-        .from('notes')
-        .select('id')
-        .eq('source', 'email')
-        .eq('note_date', today)
-        .ilike('raw_text', `%Subject: ${subject}%`)
-        .limit(1)
-        .maybeSingle()
-      if (recentNote) {
-        console.log(`[email-intake] Idempotency (fallback): note for subject "${subject}" already exists today, skipping`)
-        return NextResponse.json({ success: true, skipped: 'duplicate subject+sender' })
-      }
-    }
+    // Layer 2 (subject-based fallback) intentionally removed — it blocked
+    // legitimate re-sends when a previous attempt had partially failed.
+    // Layer 1 (messageId unique constraint) is the reliable dedup once the
+    // migration has been run.
 
     // ── Path A: process document attachments ──────────────────────────────────
     const docAttachments = attachments.filter((a: any) => {
@@ -464,13 +456,7 @@ export async function POST(req: NextRequest) {
 
       // ── Step 4: Upload ALL files to Dropbox ───────────────────────────────
       // deals.dropbox_path stores the FOLDER path (not a file path).
-      // If the stored value ends with a filename (legacy file path), strip it.
-      function toFolder(p: string | null | undefined): string | null {
-        if (!p) return null
-        const last = p.split('/').pop() ?? ''
-        return last.includes('.') ? p.substring(0, p.lastIndexOf('/')) : p
-      }
-
+      // toFolder() (defined at module scope) strips filenames from legacy records.
       const effectiveStage = existingDeal?.stage ?? instructions.stage ?? 'Teaser'
       const companyForPath = primary.extracted.company_name
         ? (instructions.parent_portco
