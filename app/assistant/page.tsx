@@ -154,12 +154,16 @@ export default function AssistantPage() {
       threadId = saved
     }
 
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 90000)
     try {
       const res = await fetch('/api/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({ messages: newApiMessages }),
       })
+      clearTimeout(timeout)
       const data = await res.json()
 
       if (data.error) {
@@ -167,7 +171,6 @@ export default function AssistantPage() {
         const final = [...newMessages, errMsg]
         setMessages(final)
         await saveThread(threadId, final, newApiMessages)
-        setLoading(false)
         return
       }
 
@@ -190,23 +193,30 @@ export default function AssistantPage() {
         await saveThread(threadId, final, data.messages_so_far, title)
       }
     } catch (e: any) {
-      setMessages(prev => [...prev, { id: uid(), role: 'system', content: `Network error: ${e.message}` }])
+      clearTimeout(timeout)
+      const errText = e.name === 'AbortError' ? 'Request timed out (90s). Try again.' : `Network error: ${e.message}`
+      setMessages(prev => [...prev, { id: uid(), role: 'system', content: errText }])
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [loading, apiMessages, messages, activeThread, supabase])
 
   const handleConfirm = async (msg: Message) => {
     setLoading(true)
     setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, content: 'Confirmed - executing...' } : m))
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 90000)
     try {
       const res = await fetch('/api/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           messages: msg.messagesSoFar,
           confirming: { tool_use_id: msg.toolUseId, tool_name: msg.toolName, input: msg.toolInput },
         }),
       })
+      clearTimeout(timeout)
       const data = await res.json()
 
       if (data.error) {
@@ -216,20 +226,24 @@ export default function AssistantPage() {
         const aMsg: Message = { id: uid(), role: 'assistant', content: data.content }
         const finalApi = [...(msg.messagesSoFar || []), { role: 'assistant', content: data.content }]
         const threadId = activeThread?.id ?? null
+        let snapshotMsgs: Message[] = []
         setMessages(prev => {
           const updated = prev.map(m => m.id === msg.id ? doneMsg : m)
-          return [...updated, aMsg]
+          snapshotMsgs = [...updated, aMsg]
+          return snapshotMsgs
         })
         setApiMessages(finalApi)
-        await saveThread(threadId, [...messages.map(m => m.id === msg.id ? { id: uid(), role: 'system' as const, content: 'Done' } : m), aMsg], finalApi)
+        await saveThread(threadId, snapshotMsgs, finalApi)
       } else {
-        // Unexpected response — surface it so it's not silently swallowed
         setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, role: 'system', content: `Unexpected response: ${JSON.stringify(data)}` } : m))
       }
     } catch (e: any) {
-      setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, role: 'system', content: `Error: ${e.message}` } : m))
+      clearTimeout(timeout)
+      const errText = e.name === 'AbortError' ? 'Request timed out (90s). Try again.' : `Error: ${e.message}`
+      setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, role: 'system', content: errText } : m))
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   const handleDeny = (msgId: string) => {
