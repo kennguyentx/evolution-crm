@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
-import { dropboxConfigured, dropboxUpload, expectedDropboxFolder } from '@/lib/dropbox'
+import { dropboxConfigured, dropboxUpload, dropboxMove, expectedDropboxFolder } from '@/lib/dropbox'
 
 export const maxDuration = 120
 
@@ -424,13 +424,13 @@ export async function POST(req: NextRequest) {
       // ── Step 3: Look up existing deal by company name ─────────────────────
       // If a deal already exists, associate the CIM/teaser with it instead of
       // creating a duplicate. Use the existing deal's stage for Dropbox routing.
-      let existingDeal: { id: string; stage: string; status: string; dropbox_path: string | null } | null = null
+      let existingDeal: { id: string; company_name: string; stage: string; status: string; dropbox_path: string | null } | null = null
 
       // Helper: search deals by name with exact-then-partial fallback
       async function findDealByName(searchName: string) {
         const { data: exact } = await supabase
           .from('deals')
-          .select('id, stage, status, dropbox_path')
+          .select('id, company_name, stage, status, dropbox_path')
           .ilike('company_name', searchName)
           .order('created_at', { ascending: false })
           .limit(1)
@@ -443,7 +443,7 @@ export async function POST(req: NextRequest) {
         if (chunk.length > 3) {
           const { data: partial } = await supabase
             .from('deals')
-            .select('id, stage, status, dropbox_path')
+            .select('id, company_name, stage, status, dropbox_path')
             .ilike('company_name', `%${chunk}%`)
             .order('created_at', { ascending: false })
             .limit(1)
@@ -494,19 +494,50 @@ export async function POST(req: NextRequest) {
       // dealFolderPath is what we store on the deal — always the folder, never a file
       let dealFolderPath: string | null = targetFolder
 
-      console.log(`[email-intake] Step 4: Dropbox target="${targetFolder}" existing=${!!existingDeal}`)
-      if (dropboxConfigured() && targetFolder) {
+      // ── Rename deal + Dropbox folder when CIM reveals the real company name ──
+      // If the existing deal was created under a project codename (e.g. "Project Anchor")
+      // and the CIM contains the real company name, rename both the deal and the folder.
+      let renamedCompany: string | null = null
+      if (
+        existingDeal &&
+        primary.extracted.doc_type === 'cim' &&
+        primary.extracted.company_name &&
+        primary.extracted.company_name.toLowerCase().trim() !== existingDeal.company_name.toLowerCase().trim()
+      ) {
+        const newCompanyName = primary.extracted.company_name.trim()
+        const newFolder = expectedDropboxFolder(newCompanyName, existingDeal.stage)
+
+        if (dropboxConfigured() && targetFolder) {
+          try {
+            console.log(`[email-intake] Renaming Dropbox folder: "${targetFolder}" → "${newFolder}"`)
+            const movedPath = await dropboxMove(targetFolder, newFolder)
+            dealFolderPath = toFolder(movedPath) ?? newFolder
+            console.log(`[email-intake] Folder renamed ✓ → "${dealFolderPath}"`)
+          } catch (renameErr: any) {
+            console.error(`[email-intake] Folder rename failed (non-fatal):`, renameErr?.message)
+            // Keep original folder path, still rename the deal in DB
+          }
+        }
+
+        renamedCompany = newCompanyName
+        console.log(`[email-intake] Deal will be renamed: "${existingDeal.company_name}" → "${newCompanyName}"`)
+      }
+
+      // Use the (possibly renamed) folder for uploads
+      const uploadFolder = dealFolderPath ?? targetFolder
+      console.log(`[email-intake] Step 4: Dropbox upload target="${uploadFolder}" existing=${!!existingDeal}`)
+      if (dropboxConfigured() && uploadFolder) {
         for (const doc of extracted_docs) {
           try {
             console.log(`[email-intake] Uploading ${doc.fileName}…`)
-            await dropboxUpload(targetFolder, doc.fileName, doc.buffer)
+            await dropboxUpload(uploadFolder, doc.fileName, doc.buffer)
             console.log(`[email-intake] Uploaded ${doc.fileName} ✓`)
           } catch (dbxErr: any) {
             console.error(`[email-intake] Dropbox upload failed (${doc.fileName}):`, dbxErr?.message)
           }
         }
       }
-      console.log(`[email-intake] Step 5: writing deal/note. existingDeal=${existingDeal?.id ?? 'none'}`)
+      console.log(`[email-intake] Step 5: writing deal/note. existingDeal=${existingDeal?.id ?? 'none'} rename=${renamedCompany ?? 'none'}`)
 
       // Merge contacts from all docs + forwarding note
       const allContacts = filterInternalContacts([
@@ -525,6 +556,7 @@ export async function POST(req: NextRequest) {
         if (primary.extracted.revenue != null) updates.revenue = primary.extracted.revenue
         if (primary.extracted.ebitda  != null) updates.ebitda  = primary.extracted.ebitda
         if (dealFolderPath) updates.dropbox_path = dealFolderPath
+        if (renamedCompany)  updates.company_name = renamedCompany
         if (Object.keys(updates).length > 0) {
           await supabase.from('deals').update(updates).eq('id', existingDeal.id)
         }
@@ -544,7 +576,7 @@ export async function POST(req: NextRequest) {
         await supabase.from('notes').insert({
           note_date:  noteDate,
           raw_text:   `Forwarded via email by ${from}\nSubject: ${subject}\nFiles: ${allFileNames}`,
-          summary:    `${docLabel} received for ${primary.extracted.company_name}. Linked to existing deal (${existingDeal.stage}).${supportingLabel}${instructions.forwarder_note ? ` Note: ${instructions.forwarder_note}` : ''}`,
+          summary:    `${docLabel} received for ${primary.extracted.company_name}. Linked to existing deal (${existingDeal.stage}).${renamedCompany ? ` Deal renamed from "${existingDeal.company_name}" to "${renamedCompany}" and Dropbox folder updated.` : ''}${supportingLabel}${instructions.forwarder_note ? ` Note: ${instructions.forwarder_note}` : ''}`,
           next_steps: null,
           logged_by:  from.split('@')[0] ?? 'email',
           source:     'email',
