@@ -8,7 +8,7 @@ const NAV = [
   { href: '/dashboard',        label: 'Dashboard',         icon: LayoutDashboard },
   { href: '/pipeline',         label: 'Pipeline',          icon: Kanban },
   { href: '/deals',            label: 'Deals',             icon: FileText },
-  { href: '/intake',           label: 'Teaser / CIM',      icon: Zap },
+  { href: '/intake',           label: 'Document Intake',   icon: Zap },
   { href: '/contacts',         label: 'Contacts',          icon: Users },
   { href: '/raises',           label: 'Capital Raises',    icon: TrendingUp },
   { href: '/raises/contacts',  label: 'Capital Contacts',  icon: BarChart3 },
