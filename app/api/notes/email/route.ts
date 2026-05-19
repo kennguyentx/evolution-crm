@@ -405,18 +405,44 @@ export async function POST(req: NextRequest) {
       // Track all file names for the note
       const allFileNames = extracted_docs.map(d => d.fileName).join(', ')
 
-      // ── Step 3: Upload ALL files to same Dropbox folder ───────────────────
-      const effectiveStage = instructions.stage ?? 'Teaser'
+      // ── Step 3: Look up existing deal by company name ─────────────────────
+      // If a deal already exists, associate the CIM/teaser with it instead of
+      // creating a duplicate. Use the existing deal's stage for Dropbox routing.
+      let existingDeal: { id: string; stage: string; status: string; dropbox_path: string | null } | null = null
+      if (primary.extracted.company_name) {
+        const { data: found } = await supabase
+          .from('deals')
+          .select('id, stage, status, dropbox_path')
+          .ilike('company_name', primary.extracted.company_name.trim())
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (found) {
+          existingDeal = found
+          console.log(`[email-intake] Found existing deal: ${found.id} stage="${found.stage}"`)
+        }
+      }
+
+      // ── Step 4: Upload ALL files to Dropbox ───────────────────────────────
+      // Use the existing deal's stage (and its current folder) if one was found;
+      // otherwise fall back to the instruction stage or 'Teaser'.
+      const effectiveStage = existingDeal?.stage ?? instructions.stage ?? 'Teaser'
       const companyForPath = primary.extracted.company_name
         ? (instructions.parent_portco
-          ? `${primary.extracted.company_name} [${instructions.parent_portco}]`
-          : primary.extracted.company_name)
+            ? `${primary.extracted.company_name} [${instructions.parent_portco}]`
+            : primary.extracted.company_name)
         : null
-      let primaryDropboxPath: string | null = null
+      let primaryDropboxPath: string | null = existingDeal?.dropbox_path
+        ? existingDeal.dropbox_path.substring(0, existingDeal.dropbox_path.lastIndexOf('/'))  // parent folder
+        : null
 
       if (dropboxConfigured() && companyForPath) {
-        const folder = expectedDropboxFolder(companyForPath, effectiveStage)
-        console.log(`[email-intake] Dropbox target: "${folder}" (stage="${effectiveStage}")`)
+        // If existing deal has a known dropbox_path, upload into its parent folder.
+        // Otherwise derive the folder from expectedDropboxFolder.
+        const folder = existingDeal?.dropbox_path
+          ? existingDeal.dropbox_path.substring(0, existingDeal.dropbox_path.lastIndexOf('/'))
+          : expectedDropboxFolder(companyForPath, effectiveStage)
+        console.log(`[email-intake] Dropbox target: "${folder}" (stage="${effectiveStage}", existing=${!!existingDeal})`)
         for (const doc of extracted_docs) {
           try {
             const path = await dropboxUpload(folder, doc.fileName, doc.buffer)
@@ -433,8 +459,49 @@ export async function POST(req: NextRequest) {
         ...(instructions.contacts ?? []),
       ])
 
-      // ── Step 4: Create ONE deal or queue entry for the whole email ─────────
-      if (instructions.auto_approve && instructions.stage) {
+      const docLabel = primary.extracted.doc_type === 'cim' ? 'CIM' : 'Teaser'
+      const supportingLabel = supporting.length > 0 ? ` Also received: ${supporting.map(d => d.fileName).join(', ')}.` : ''
+
+      // ── Step 5: Create or update deal, then log note ───────────────────────
+      if (existingDeal) {
+        // ── Existing deal: attach CIM data and log note ──────────────────────
+        const updates: Record<string, any> = {}
+        if (primary.extracted.doc_type === 'cim') updates.cim_parsed = true
+        if (primary.extracted.revenue  != null && !existingDeal) updates.revenue = primary.extracted.revenue
+        if (primary.extracted.ebitda   != null && !existingDeal) updates.ebitda  = primary.extracted.ebitda
+        if (primaryDropboxPath) updates.dropbox_path = primaryDropboxPath
+        if (Object.keys(updates).length > 0) {
+          await supabase.from('deals').update(updates).eq('id', existingDeal.id)
+        }
+
+        // Store CIM in deal_cims if it's a CIM
+        if (primary.extracted.doc_type === 'cim') {
+          await supabase.from('deal_cims').insert({
+            deal_id:      existingDeal.id,
+            file_name:    primary.fileName,
+            dropbox_path: primaryDropboxPath,
+            extracted:    primary.extracted,
+          }).select('id').single().catch(() => {})
+        }
+
+        await supabase.from('notes').insert({
+          note_date:  noteDate,
+          raw_text:   `Forwarded via email by ${from}\nSubject: ${subject}\nFiles: ${allFileNames}`,
+          summary:    `${docLabel} received for ${primary.extracted.company_name}. Linked to existing deal (${existingDeal.stage}).${supportingLabel}${instructions.forwarder_note ? ` Note: ${instructions.forwarder_note}` : ''}`,
+          next_steps: null,
+          logged_by:  from.split('@')[0] ?? 'email',
+          source:     'email',
+          deal_id:    existingDeal.id,
+        })
+
+        if (allContacts.length > 0) {
+          await upsertContacts(supabase, allContacts, existingDeal.id)
+        }
+
+        results.push({ type: primary.extracted.doc_type, status: 'linked-to-existing', deal_id: existingDeal.id, files: allFileNames, company: primary.extracted.company_name })
+
+      } else if (instructions.auto_approve && instructions.stage) {
+        // ── New deal, auto-approved ──────────────────────────────────────────
         const stage  = instructions.stage
         const status = instructions.status ?? (stage.startsWith('Pass') ? 'Dead' : stage.startsWith('Closed') ? 'Closed' : 'Active')
         const { data: deal } = await supabase.from('deals').insert({
@@ -455,7 +522,7 @@ export async function POST(req: NextRequest) {
         await supabase.from('notes').insert({
           note_date:  noteDate,
           raw_text:   `Forwarded via email by ${from}\nSubject: ${subject}\nFiles: ${allFileNames}`,
-          summary:    `${primary.extracted.doc_type === 'cim' ? 'CIM' : 'Teaser'} received for ${primary.extracted.company_name ?? 'unknown company'}. Auto-logged as ${stage}.${supporting.length > 0 ? ` Also received: ${supporting.map(d => d.fileName).join(', ')}.` : ''}${instructions.forwarder_note ? ` Note: ${instructions.forwarder_note}` : ''}`,
+          summary:    `${docLabel} received for ${primary.extracted.company_name ?? 'unknown company'}. Auto-logged as ${stage}.${supportingLabel}${instructions.forwarder_note ? ` Note: ${instructions.forwarder_note}` : ''}`,
           next_steps: null,
           logged_by:  from.split('@')[0] ?? 'email',
           source:     'email',
@@ -467,8 +534,9 @@ export async function POST(req: NextRequest) {
         }
 
         results.push({ type: primary.extracted.doc_type, status: 'auto-approved', stage, files: allFileNames, company: primary.extracted.company_name, deal_id: deal?.id })
+
       } else {
-        // Save ONE pending queue entry (primary doc), supporting files listed inside
+        // ── New deal, pending review ─────────────────────────────────────────
         await supabase.from('intake_queue').insert({
           source:       'email',
           doc_type:     primary.extracted.doc_type ?? 'teaser',
@@ -477,10 +545,10 @@ export async function POST(req: NextRequest) {
           dropbox_path: primaryDropboxPath,
           extracted: {
             ...primary.extracted,
-            contacts:             allContacts,
-            _supporting_files:    supporting.map(d => d.fileName),
-            _stage_suggestion:    instructions.stage         || null,
-            _forwarder_note:      instructions.forwarder_note || null,
+            contacts:          allContacts,
+            _supporting_files: supporting.map(d => d.fileName),
+            _stage_suggestion: instructions.stage         || null,
+            _forwarder_note:   instructions.forwarder_note || null,
           },
           status: 'pending',
         })
@@ -488,7 +556,7 @@ export async function POST(req: NextRequest) {
         await supabase.from('notes').insert({
           note_date:  noteDate,
           raw_text:   `Forwarded via email by ${from}\nSubject: ${subject}\nFiles: ${allFileNames}`,
-          summary:    `${primary.extracted.doc_type === 'cim' ? 'CIM' : 'Teaser'} received for ${primary.extracted.company_name ?? 'unknown company'} via email intake. Pending review.${supporting.length > 0 ? ` Also received: ${supporting.map(d => d.fileName).join(', ')}.` : ''}${instructions.forwarder_note ? ` Forwarder note: "${instructions.forwarder_note}"` : ''}`,
+          summary:    `${docLabel} received for ${primary.extracted.company_name ?? 'unknown company'} via email intake. Pending review.${supportingLabel}${instructions.forwarder_note ? ` Forwarder note: "${instructions.forwarder_note}"` : ''}`,
           next_steps: instructions.stage ? `Suggested stage: ${instructions.stage}` : 'Review in Document Intake → Pending Review',
           logged_by:  from.split('@')[0] ?? 'email',
           source:     'email',
