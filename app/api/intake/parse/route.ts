@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
+import { dropboxConfigured, dropboxUpload } from '@/lib/dropbox'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 const BUCKET = 'intake-temp'
@@ -89,7 +90,20 @@ export async function POST(req: NextRequest) {
     // Clean up temp storage file
     await supabase.storage.from(BUCKET).remove([storagePath])
 
-    return NextResponse.json(parsed)
+    // Upload to Dropbox (best-effort — doesn't fail the parse if Dropbox is unavailable)
+    let dropbox_folder: string | null = null
+    if (dropboxConfigured() && parsed.company_name) {
+      try {
+        const safeName = parsed.company_name.replace(/[<>:"/\\|?*]/g, '_')
+        const folderPath = `/Deals/${safeName}`
+        await dropboxUpload(folderPath, fileName, Buffer.from(buffer))
+        dropbox_folder = folderPath
+      } catch (dbxErr) {
+        console.warn('Dropbox upload skipped:', (dbxErr as Error).message)
+      }
+    }
+
+    return NextResponse.json({ ...parsed, dropbox_folder })
   } catch (err: any) {
     // Attempt cleanup even on error
     if (storagePath) {

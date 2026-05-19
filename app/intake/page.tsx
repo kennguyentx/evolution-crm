@@ -59,6 +59,7 @@ export default function IntakePage() {
   const [fileName, setFileName] = useState('')
   const [missingFields, setMissingFields] = useState<MissingField[]>([])
   const [contacts, setContacts] = useState<ExtractedContact[]>([])
+  const [dropboxFolder, setDropboxFolder] = useState<string | null>(null)
 
   // When parsed data arrives, check for missing fields
   useEffect(() => {
@@ -197,6 +198,7 @@ export default function IntakePage() {
       const data = await res.json()
       setParsed(data)
       setEdited({ ...data, stage: data.stage || 'Teaser' })
+      if (data.dropbox_folder) setDropboxFolder(data.dropbox_folder)
 
       // Initialize contacts state
       const parsedContacts: ParsedContact[] = Array.isArray(data.contacts) ? data.contacts : []
@@ -272,6 +274,7 @@ export default function IntakePage() {
       cim_parsed: true,
       stage: edited.stage || 'Reviewing',
       status: 'Active',
+      dropbox_path: dropboxFolder || null,
       expected_close: new Date().toISOString().split('T')[0],
       source_notes: firstBanker?.crmContact?.firm || contacts.find(c => c.role === 'Source / Banker')?.firm || null,
     }).select().single()
@@ -308,6 +311,7 @@ export default function IntakePage() {
     setContacts([])
     setDuplicateDeals([])
     setIgnoreDuplicate(false)
+    setDropboxFolder(null)
   }
 
   const linkedCount = contacts.filter(c => c.crmContact && !c.skip).length
@@ -368,6 +372,14 @@ export default function IntakePage() {
         {/* REVIEW */}
         {stage === 'review' && edited && (
           <div className="fade-in">
+
+            {/* Dropbox confirmation */}
+            {dropboxFolder && (
+              <div style={{ display: 'flex', gap: '10px', padding: '10px 14px', background: 'rgba(5,150,105,0.07)', border: '1px solid rgba(5,150,105,0.25)', borderRadius: '8px', marginBottom: '14px', fontSize: '12px', color: 'var(--green)' }}>
+                <Check size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
+                PDF saved to Dropbox at <strong style={{ marginLeft: '4px' }}>{dropboxFolder}</strong>
+              </div>
+            )}
 
             {/* Missing fields warning */}
             {missingFields.length > 0 && (
