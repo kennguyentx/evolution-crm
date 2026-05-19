@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation'
 import { useDropzone } from 'react-dropzone'
 import { format } from 'date-fns'
 import DropboxFilesTab from '@/components/deals/DropboxFilesTab'
+import NDATab from '@/components/deals/NDATab'
 import NewContactModal from '@/components/contacts/NewContactModal'
 import UndoToast, { type UndoEntry } from '@/components/layout/UndoToast'
 import { moveDropboxOnStageChange } from '@/lib/dropbox-stage-move'
@@ -48,7 +49,7 @@ export default function DealDetailPage() {
   const [loadingComps, setLoadingComps] = useState(false)
   const [compsError, setCompsError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview'|'diligence'|'contacts'|'capital'|'activity'|'documents'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview'|'diligence'|'contacts'|'capital'|'activity'|'documents'|'nda'>('overview')
   const [editingStage, setEditingStage] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [editingContact, setEditingContact] = useState<any>(null)
@@ -507,7 +508,8 @@ export default function DealDetailPage() {
     { key: 'capital',   label: `Capital (${capital.length})` },
     { key: 'activity',  label: `Activity (${interactions.length})` },
     { key: 'documents',  label: `Documents (${documents.length})` },
-      ]
+    { key: 'nda',        label: 'NDA' },
+  ]
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -1241,6 +1243,10 @@ export default function DealDetailPage() {
       onPathSaved={(path) => setDeal(prev => prev ? { ...prev, dropbox_path: path } : prev)}
     />
   </div>
+)}
+
+{activeTab === 'nda' && (
+  <NDATab dealId={dealId} companyName={deal.company_name} />
 )}
 
       </div>{/* closes TAB CONTENT div */}
