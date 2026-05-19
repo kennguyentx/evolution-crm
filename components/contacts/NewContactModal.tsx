@@ -245,7 +245,7 @@ export default function NewContactModal({ onClose, onCreated, contact }: Contact
                         {note.source === 'email' ? 'Email' : 'Note'}
                       </span>
                       <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                        {note.note_date ? new Date(note.note_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                        {note.note_date ? new Date(note.note_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
                         {note.logged_by ? ` · ${note.logged_by}` : ''}
                       </span>
                     </div>

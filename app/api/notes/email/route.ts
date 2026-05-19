@@ -410,16 +410,39 @@ export async function POST(req: NextRequest) {
       // creating a duplicate. Use the existing deal's stage for Dropbox routing.
       let existingDeal: { id: string; stage: string; status: string; dropbox_path: string | null } | null = null
       if (primary.extracted.company_name) {
-        const { data: found } = await supabase
+        const name = primary.extracted.company_name.trim()
+
+        // Try exact match first, then partial match on the first significant word cluster
+        let { data: found } = await supabase
           .from('deals')
           .select('id, stage, status, dropbox_path')
-          .ilike('company_name', primary.extracted.company_name.trim())
+          .ilike('company_name', name)
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle()
+
+        // Fallback: partial match — useful when Claude extracts slightly different name
+        if (!found) {
+          // Use first 3+ meaningful words stripped of common suffixes
+          const keywords = name.replace(/\b(Inc|LLC|Ltd|Co|Corp|Company|Group|Partners|Holdings|the)\b\.?/gi, '').trim()
+          const firstChunk = keywords.split(/\s+/).slice(0, 3).join(' ')
+          if (firstChunk.length > 3) {
+            const { data: partial } = await supabase
+              .from('deals')
+              .select('id, stage, status, dropbox_path')
+              .ilike('company_name', `%${firstChunk}%`)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            found = partial
+          }
+        }
+
         if (found) {
           existingDeal = found
-          console.log(`[email-intake] Found existing deal: ${found.id} stage="${found.stage}"`)
+          console.log(`[email-intake] Matched existing deal ${found.id} ("${name}") stage="${found.stage}"`)
+        } else {
+          console.log(`[email-intake] No existing deal found for "${name}"`)
         }
       }
 

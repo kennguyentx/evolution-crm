@@ -1172,7 +1172,7 @@ export default function DealDetailPage() {
                         {item.source === 'email' ? 'Email' : 'Note'}
                       </span>
                       <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                        {item.note_date ? new Date(item.note_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                        {item.note_date ? new Date(item.note_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
                         {item.logged_by ? ` · ${item.logged_by}` : ''}
                       </span>
                     </div>
