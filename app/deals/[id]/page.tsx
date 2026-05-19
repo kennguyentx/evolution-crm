@@ -544,15 +544,17 @@ export default function DealDetailPage() {
           {deal.geography && <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>· {deal.geography}</span>}
         </div>
         <div style={{ display: 'flex', gap: '28px', marginTop: '14px' }}>
-          {[
-            { label: 'Revenue', value: formatCurrency(deal.revenue) },
-            { label: 'EBITDA', value: formatCurrency(deal.ebitda), accent: true },
-          ].map(({ label, value, accent }: any) => (
-            <div key={label}>
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
-              <div style={{ fontSize: '16px', fontFamily: 'var(--font-mono)', color: accent ? 'var(--accent)' : 'var(--text-primary)', marginTop: '2px' }}>{value}</div>
-            </div>
-          ))}
+          <InlineFinancial
+            label="Revenue"
+            value={deal.revenue}
+            onSave={v => updateField('revenue', v)}
+          />
+          <InlineFinancial
+            label="EBITDA"
+            value={deal.ebitda}
+            accent
+            onSave={v => updateField('ebitda', v)}
+          />
         </div>
       </div>
 
@@ -1243,6 +1245,49 @@ export default function DealDetailPage() {
       )}
 
       <UndoToast stack={undoStack} onUndo={handleUndo} onDismiss={handleDismiss}/>
+    </div>
+  )
+}
+
+function InlineFinancial({ label, value, accent, onSave }: {
+  label: string, value: number | null, accent?: boolean, onSave: (v: number | null) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [raw, setRaw] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const start = () => {
+    setRaw(value ? String((value / 1e6).toFixed(1)) : '')
+    setEditing(true)
+    setTimeout(() => inputRef.current?.select(), 0)
+  }
+  const save = () => {
+    const parsed = parseFloat(raw)
+    onSave(isNaN(parsed) ? null : parsed * 1e6)
+    setEditing(false)
+  }
+
+  if (editing) return (
+    <div>
+      <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '2px' }}>{label} ($M)</div>
+      <input
+        ref={inputRef}
+        value={raw}
+        onChange={e => setRaw(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
+        onBlur={save}
+        placeholder="e.g. 4.2"
+        style={{ width: '80px', fontSize: '15px', fontFamily: 'var(--font-mono)', fontWeight: 600, padding: '2px 6px', border: '1px solid var(--accent)', borderRadius: '5px', background: 'var(--surface)', color: accent ? 'var(--accent)' : 'var(--text-primary)', outline: 'none' }}
+      />
+    </div>
+  )
+
+  return (
+    <div onClick={start} style={{ cursor: 'text' }} title="Click to edit">
+      <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
+      <div style={{ fontSize: '16px', fontFamily: 'var(--font-mono)', color: accent ? 'var(--accent)' : 'var(--text-primary)', marginTop: '2px', borderBottom: '1px dashed var(--border)', paddingBottom: '1px', minWidth: '40px' }}>
+        {value ? formatCurrency(value) : <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>Add</span>}
+      </div>
     </div>
   )
 }
