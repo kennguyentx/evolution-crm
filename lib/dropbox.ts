@@ -26,6 +26,24 @@ export async function getDropboxToken(): Promise<string> {
   return cachedToken!
 }
 
+export async function dropboxFolderExists(folderPath: string): Promise<boolean> {
+  try {
+    const token = await getDropboxToken()
+    const res = await fetch(`${DBX_API}/files/get_metadata`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: folderPath }),
+    })
+    if (res.ok) return true
+    const err = await res.json().catch(() => ({}))
+    // path/not_found is the expected "doesn't exist" response
+    if (err?.error_summary?.startsWith('path/not_found')) return false
+    return false
+  } catch {
+    return false
+  }
+}
+
 export async function dropboxUpload(folderPath: string, fileName: string, buffer: Buffer | Uint8Array): Promise<string> {
   const token = await getDropboxToken()
   const fullPath = `${folderPath.replace(/\/$/, '')}/${fileName}`

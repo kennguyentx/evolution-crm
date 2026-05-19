@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
-import { dropboxConfigured, dropboxUpload } from '@/lib/dropbox'
+import { dropboxConfigured, dropboxUpload, dropboxFolderExists } from '@/lib/dropbox'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 const BUCKET = 'intake-temp'
@@ -130,23 +130,35 @@ export async function POST(req: NextRequest) {
     // Upload to Dropbox (best-effort — doesn't fail the parse if Dropbox is unavailable)
     let dropbox_folder: string | null = null
     let dropbox_error: string | null = null
+    let dropbox_folder_existed = false
     const dbx_configured = dropboxConfigured()
 
-    if (dbx_configured && parsed.company_name && buffer) {
-      try {
-        const safeName = parsed.company_name.replace(/[<>:"/\\|?*]/g, '_')
-        const folderPath = `/Evolution Strategy Partners/Deals/${safeName}`
-        const uploadedFilePath = await dropboxUpload(folderPath, resolvedFileName, Buffer.from(buffer))
-        dropbox_folder = uploadedFilePath.substring(0, uploadedFilePath.lastIndexOf('/'))
-      } catch (dbxErr: any) {
-        dropbox_error = dbxErr.message ?? 'Unknown Dropbox error'
-        console.warn('Dropbox upload failed:', dropbox_error)
+    if (dbx_configured && parsed.company_name) {
+      const safeName = parsed.company_name.replace(/[<>:"/\\|?*]/g, '_')
+      const folderPath = `/Evolution Strategy Partners/Deals/${safeName}`
+
+      // Check whether a folder for this company already exists in Dropbox
+      dropbox_folder_existed = await dropboxFolderExists(folderPath).catch(() => false)
+
+      if (buffer) {
+        try {
+          const uploadedFilePath = await dropboxUpload(folderPath, resolvedFileName, Buffer.from(buffer))
+          dropbox_folder = uploadedFilePath.substring(0, uploadedFilePath.lastIndexOf('/'))
+        } catch (dbxErr: any) {
+          dropbox_error = dbxErr.message ?? 'Unknown Dropbox error'
+          // If upload failed but folder existed, still surface the folder path so the UI can link to it
+          if (dropbox_folder_existed) dropbox_folder = folderPath
+          console.warn('Dropbox upload failed:', dropbox_error)
+        }
+      } else if (dropbox_folder_existed) {
+        // Paste mode — no file to upload, but still surface the existing folder
+        dropbox_folder = folderPath
       }
     } else if (!dbx_configured) {
       dropbox_error = 'Dropbox is not configured (missing env vars)'
     }
 
-    return NextResponse.json({ ...parsed, dropbox_folder, dropbox_error, dbx_configured })
+    return NextResponse.json({ ...parsed, dropbox_folder, dropbox_folder_existed, dropbox_error, dbx_configured })
   } catch (err: any) {
     // Attempt cleanup even on error
     if (storagePath) {

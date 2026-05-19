@@ -578,6 +578,7 @@ function TeaserFlow() {
   const [missingFields, setMissingFields] = useState<{key: keyof ParsedDeal; label: string}[]>([])
   const [contacts, setContacts] = useState<ExtractedContact[]>([])
   const [dropboxFolder, setDropboxFolder] = useState<string|null>(null)
+  const [dropboxFolderExisted, setDropboxFolderExisted] = useState(false)
   const [inputMode, setInputMode] = useState<'pdf'|'word'|'paste'>('pdf')
   const [pastedText, setPastedText] = useState('')
   const [wordFile, setWordFile] = useState<File|null>(null)
@@ -695,6 +696,7 @@ function TeaserFlow() {
       const data = await res.json()
       setParsed(data); setEdited({ ...data, stage: data.stage || 'Teaser' })
       if (data.dropbox_folder) setDropboxFolder(data.dropbox_folder)
+      if (data.dropbox_folder_existed) setDropboxFolderExisted(true)
       if (data.dropbox_error) setDropboxError(data.dropbox_error)
       const parsedContacts: ParsedContact[] = Array.isArray(data.contacts) ? data.contacts : []
       const initialContacts: ExtractedContact[] = parsedContacts.map(c => ({ ...c, searchQuery: c.name, searchResults: [], showSearch: false, showAddForm: false, addForm: { first_name: c.name.split(' ')[0] || '', last_name: c.name.split(' ').slice(1).join(' ') || '', firm: c.firm || '', title: c.title || '', email: c.email || '', phone: c.phone || '' } }))
@@ -775,6 +777,7 @@ function TeaserFlow() {
       const data = await res.json()
       setParsed(data); setEdited({ ...data, stage: data.stage || 'Teaser' })
       if (data.dropbox_folder) setDropboxFolder(data.dropbox_folder)
+      if (data.dropbox_folder_existed) setDropboxFolderExisted(true)
       if (data.dropbox_error) setDropboxError(data.dropbox_error)
       const parsedContacts: ParsedContact[] = Array.isArray(data.contacts) ? data.contacts : []
       const initialContacts: ExtractedContact[] = parsedContacts.map(c => ({ ...c, searchQuery: c.name, searchResults: [], showSearch: false, showAddForm: false, addForm: { first_name: c.name.split(' ')[0] || '', last_name: c.name.split(' ').slice(1).join(' ') || '', firm: c.firm || '', title: c.title || '', email: c.email || '', phone: c.phone || '' } }))
@@ -786,7 +789,7 @@ function TeaserFlow() {
     }
   }
 
-  const reset = () => { setStage('idle'); setParsed(null); setEdited(null); setDealId(null); setError(null); setFileName(''); setContacts([]); setDuplicateDeals([]); setIgnoreDuplicate(false); setDropboxFolder(null); setDropboxError(null); setExtraFiles([]); setPastedText('') }
+  const reset = () => { setStage('idle'); setParsed(null); setEdited(null); setDealId(null); setError(null); setFileName(''); setContacts([]); setDuplicateDeals([]); setIgnoreDuplicate(false); setDropboxFolder(null); setDropboxFolderExisted(false); setDropboxError(null); setExtraFiles([]); setPastedText('') }
 
   return (
     <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
@@ -884,16 +887,22 @@ function TeaserFlow() {
       <div style={{ flex: 1, minWidth: 0 }}>
       {stage === 'idle' && (
         <div style={{ padding: '40px 0', color: 'var(--text-muted)', fontSize: '13px' }}>
-          Upload a teaser PDF. Claude will extract deal data and contacts automatically and file it to Dropbox.
+          Upload a teaser PDF or Word doc, or paste the text. Claude will extract deal data and contacts automatically and file it to Dropbox.
         </div>
       )}
 
       {stage === 'review' && edited && (
         <div className="fade-in">
+          {dropboxFolderExisted && (
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '10px 14px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: '8px', marginBottom: '10px', fontSize: '12px', color: '#b45309' }}>
+              <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: '1px' }} />
+              <span>A Dropbox folder for <strong>{edited.company_name}</strong> already exists — this company may already be in the pipeline. Review for duplicates before saving.</span>
+            </div>
+          )}
           {dropboxFolder && (
             <div style={{ padding: '12px 14px', background: 'rgba(5,150,105,0.07)', border: '1px solid rgba(5,150,105,0.25)', borderRadius: '8px', marginBottom: '14px', fontSize: '12px' }}>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', color: 'var(--green)', marginBottom: extraFiles.length > 0 ? '10px' : '8px' }}>
-                <Check size={14} style={{ flexShrink: 0 }} /> Teaser saved to Dropbox · <strong>{dropboxFolder}</strong>
+                <Check size={14} style={{ flexShrink: 0 }} /> {dropboxFolderExisted ? 'File added to existing Dropbox folder' : 'Teaser saved to Dropbox'} · <strong>{dropboxFolder}</strong>
               </div>
               {extraFiles.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' }}>
