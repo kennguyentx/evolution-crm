@@ -127,6 +127,25 @@ const TOOLS: any[] = [
   },
   // ─── Write tools — ALL require confirmation ───────────────────
   {
+    name: 'create_deal',
+    description: 'Create a new deal and log it into the pipeline. ALWAYS requires user confirmation. Use when the user mentions receiving a teaser, being introduced to a company, or wanting to track a new opportunity. Collect as much info as provided — at minimum a company name.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        company_name:  { type: 'string',  description: 'Company name (required)' },
+        sector:        { type: 'string',  description: 'Closest match: Underground Utilities | Electrical Contracting | Civil / Public Works | Commercial Landscaping | Fiber Optics | HVAC | Plumbing | Industrial Services | Environmental Services | Construction & Engineering' },
+        geography:     { type: 'string',  description: 'State(s) or region of operations' },
+        deal_type:     { type: 'string',  description: 'platform | add-on | recap | growth' },
+        stage:         { type: 'string',  description: 'Starting pipeline stage — default "Teaser". Use: Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity' },
+        revenue:       { type: 'number',  description: 'Most recent annual revenue in millions (e.g. 12.5 for $12.5M)' },
+        ebitda:        { type: 'number',  description: 'Most recent annual EBITDA in millions' },
+        description:   { type: 'string',  description: '1-3 sentence business description' },
+        source_notes:  { type: 'string',  description: 'Source name — banker, broker, or referral name / firm' },
+      },
+      required: ['company_name'],
+    },
+  },
+  {
     name: 'update_deal_field',
     description: 'Update any field on a deal. ALWAYS requires user confirmation before executing — do not skip. First use search_deals to find the deal ID, then call this tool.',
     input_schema: {
@@ -312,7 +331,7 @@ const TOOLS: any[] = [
   },
 ]
 
-const WRITE_TOOLS = new Set(['update_deal_field', 'update_contact_field', 'update_raise_participant', 'log_note', 'create_calendar_event'])
+const WRITE_TOOLS = new Set(['create_deal', 'update_deal_field', 'update_contact_field', 'update_raise_participant', 'log_note', 'create_calendar_event'])
 
 // ─── Allowed write fields (whitelist to prevent injection) ────
 
@@ -664,6 +683,31 @@ async function executeTool(name: string, input: any): Promise<any> {
 
     // ─── Write tools — only called after confirmation ─────────
 
+    case 'create_deal': {
+      const stage = input.stage || 'Teaser'
+      const status = stage.startsWith('Closed') ? 'Closed' : stage.startsWith('Pass') ? 'Dead' : 'Active'
+      const { data, error } = await supabase.from('deals').insert({
+        company_name:   input.company_name,
+        sector:         input.sector        || null,
+        geography:      input.geography     || null,
+        deal_type:      input.deal_type     || 'platform',
+        stage,
+        status,
+        revenue:        input.revenue  != null ? input.revenue  * 1_000_000 : null,
+        ebitda:         input.ebitda   != null ? input.ebitda   * 1_000_000 : null,
+        description:    input.description   || null,
+        source_notes:   input.source_notes  || null,
+        cim_parsed:     false,
+        expected_close: new Date().toISOString().split('T')[0],
+      }).select().single()
+      if (error) return { error: error.message }
+      return {
+        success: true,
+        deal_id: data?.id,
+        message: `Created deal **${input.company_name}** in stage **${stage}**. View it at /deals/${data?.id}`,
+      }
+    }
+
     case 'update_deal_field': {
       if (!ALLOWED_DEAL_FIELDS.has(input.field)) return { error: `Field "${input.field}" is not editable` }
       let value: any = input.new_value
@@ -762,7 +806,7 @@ NEXUS SIDEBAR NAVIGATION — mention these links when directing a user to a sect
 - /dashboard → Dashboard (deal funnel, recent activity)
 - /pipeline → Pipeline (Kanban board, active deals only)
 - /deals → Deals (full list, all stages, sortable/filterable)
-- /intake → Teaser / CIM Intake (upload a PDF to auto-parse a new deal)
+- /intake → Document Intake (upload PDF/Word or paste text to auto-parse a Teaser, CIM, or NDA)
 - /contacts → Contacts (all CRM contacts)
 - /raises → Capital Raises
 - /raises/contacts → Capital Contacts (LP/lender master list)

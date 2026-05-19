@@ -24,23 +24,37 @@ type Thread = {
 }
 
 const TOOL_LABELS: Record<string, string> = {
-  update_deal_stage: 'Update deal stage',
+  create_deal: 'Log new deal',
+  update_deal_field: 'Update deal',
+  update_contact_field: 'Update contact',
+  update_raise_participant: 'Update raise participant',
   log_note: 'Log a note',
-  update_raise_participant_status: 'Update raise participant status',
+  create_calendar_event: 'Create calendar event',
 }
 
 const TOOL_SUMMARIES: Record<string, (input: any) => string> = {
-  update_deal_stage: (i) => `Change **${i.company_name}** from ${i.current_stage || '?'} to **${i.new_stage}**`,
+  create_deal: (i) => {
+    const parts = [`Add **${i.company_name}**`]
+    if (i.sector) parts.push(`· ${i.sector}`)
+    if (i.geography) parts.push(`· ${i.geography}`)
+    if (i.revenue != null) parts.push(`· $${i.revenue}M rev`)
+    if (i.ebitda != null) parts.push(`· $${i.ebitda}M EBITDA`)
+    parts.push(`→ **${i.stage || 'Teaser'}**`)
+    return parts.join(' ')
+  },
+  update_deal_field: (i) => `Update **${i.company_name}**: ${i.field} → **${i.new_value}**${i.current_value ? ` (was ${i.current_value})` : ''}`,
+  update_contact_field: (i) => `Update **${i.contact_name}**: ${i.field} → **${i.new_value}**`,
+  update_raise_participant: (i) => `Update **${i.firm_name}** on ${i.raise_name || 'raise'}: ${i.field} → **${i.new_value}**`,
   log_note: (i) => `Log note: "${i.summary.slice(0, 120)}${i.summary.length > 120 ? '...' : ''}"`,
-  update_raise_participant_status: (i) => `Update **${i.firm_name}** on ${i.raise_name || 'raise'}: ${i.current_status || '?'} to **${i.new_status}**`,
+  create_calendar_event: (i) => `Add **${i.title}** on ${i.event_date}${i.start_time ? ` at ${i.start_time}` : ''}`,
 }
 
 const SUGGESTED_PROMPTS = [
+  "Log a new deal: Acme Plumbing, Texas, $8M revenue, $1.2M EBITDA, sourced from Nolan Reed",
   "Show me all active deals in the pipeline",
   "What's our total committed capital across open raises?",
   "Which lenders have we talked to about DiPonio?",
   "Find contacts at BMO",
-  "What notes do we have from this week?",
   "What are current senior debt pricing benchmarks for infrastructure services?",
 ]
 
