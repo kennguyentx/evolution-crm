@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { Kanban, Building2, Users, BarChart3, Zap, TrendingUp, FileText, Menu, X, FileText as NoteIcon, Star, LayoutDashboard, Calendar } from 'lucide-react'
+import { Kanban, Building2, Users, BarChart3, Zap, TrendingUp, FileText, Menu, X, FileText as NoteIcon, Star, LayoutDashboard, Calendar, Search } from 'lucide-react'
 
 const NAV = [
   { href: '/dashboard',        label: 'Dashboard',         icon: LayoutDashboard },
@@ -117,6 +117,25 @@ export default function Sidebar() {
         </div>
         <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', fontWeight: 600, lineHeight: 1.2 }}>Evolution Strategy Partners</span>
       </Link>
+
+      {/* Search button */}
+      <button
+        onClick={() => window.dispatchEvent(new CustomEvent('open-search'))}
+        style={{
+          display: 'flex', alignItems: 'center', gap: '8px',
+          margin: '0 0 10px', padding: '7px 12px',
+          borderRadius: '7px', border: '1px solid rgba(255,255,255,0.2)',
+          background: 'rgba(255,255,255,0.08)', cursor: 'pointer',
+          color: 'rgba(255,255,255,0.6)', fontSize: '12px', width: '100%',
+          transition: 'background 0.15s',
+        }}
+        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.14)'}
+        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)'}
+      >
+        <Search size={13} />
+        <span style={{ flex: 1, textAlign: 'left' }}>Search…</span>
+        <kbd style={{ fontSize: '9px', opacity: 0.5, border: '1px solid rgba(255,255,255,0.3)', borderRadius: '3px', padding: '1px 4px' }}>⌘K</kbd>
+      </button>
 
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
         <NavLinks />

@@ -27,7 +27,7 @@ export default function LayoutClient({ children }: { children: React.ReactNode }
     return () => subscription.unsubscribe()
   }, [pathname])
 
-  // Global Cmd+K / Ctrl+K
+  // Global Cmd+K / Ctrl+K and sidebar search button event
   useEffect(() => {
     if (!session) return
     const onKey = (e: KeyboardEvent) => {
@@ -36,8 +36,13 @@ export default function LayoutClient({ children }: { children: React.ReactNode }
         setShowPalette(p => !p)
       }
     }
+    const onOpen = () => setShowPalette(true)
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('open-search', onOpen)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('open-search', onOpen)
+    }
   }, [session])
 
   if (session === undefined) return null
