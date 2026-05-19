@@ -1119,7 +1119,7 @@ function TeaserContactRow({ contact, onUpdate, onSearch, onLinkCrm, onAddNew, on
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const DOC_TYPES: { key: DocType; label: string; icon: React.ReactNode; description: string; formats: string }[] = [
-  { key: 'teaser',  label: 'Teaser',  icon: <FileText size={22} />,   description: 'Upload a banker teaser to auto-create a deal and extract contacts', formats: 'PDF' },
+  { key: 'teaser',  label: 'Teaser',  icon: <FileText size={22} />,   description: 'Upload a banker teaser to auto-create a deal and extract contacts', formats: 'PDF · Word' },
   { key: 'cim',     label: 'CIM',     icon: <FileSearch size={22} />, description: 'Analyze a CIM and cross-reference with teaser data and NDA',         formats: 'PDF · Word' },
   { key: 'nda',     label: 'NDA',     icon: <FileCheck size={22} />,  description: 'Review an NDA against your standard template from Best Practices',    formats: 'PDF · Word' },
 ]
