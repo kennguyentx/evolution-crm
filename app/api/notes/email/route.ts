@@ -145,6 +145,7 @@ function filterInternalContacts(contacts: any[]): any[] {
 
 async function parseForwardingNote(bodyText: string, emailHeaders: { from: string; fromName: string; cc: any[] }): Promise<{
   stage: string | null
+  deal_name: string | null
   status: string | null
   deal_type: string | null
   parent_portco: string | null
@@ -152,7 +153,7 @@ async function parseForwardingNote(bodyText: string, emailHeaders: { from: strin
   auto_approve: boolean
   contacts: any[]
 }> {
-  const empty = { stage: null, status: null, deal_type: null, parent_portco: null, forwarder_note: null, auto_approve: false, contacts: [] }
+  const empty = { stage: null, deal_name: null, status: null, deal_type: null, parent_portco: null, forwarder_note: null, auto_approve: false, contacts: [] }
   if (!bodyText?.trim()) return empty
 
   // Build CC contact list from headers directly
@@ -171,6 +172,7 @@ async function parseForwardingNote(bodyText: string, emailHeaders: { from: strin
 
 {
   "stage": "exact stage or null — one of: Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity | Closed (Platform) | Closed (Add-On) | Pass (DOA) | Pass (Pre-LOI) | Pass (Post-LOI) | Hold",
+  "deal_name": "string or null — the deal or project name the sender explicitly mentions to link this to (e.g. 'for Project Anchor', 're: Anchor deal', 'this is for ABC Plumbing'). Extract the name only, not the full phrase.",
   "status": "Active | Dead | Closed | null",
   "deal_type": "platform | add-on | null",
   "parent_portco": "portfolio company name if add-on, else null",
@@ -409,38 +411,52 @@ export async function POST(req: NextRequest) {
       // If a deal already exists, associate the CIM/teaser with it instead of
       // creating a duplicate. Use the existing deal's stage for Dropbox routing.
       let existingDeal: { id: string; stage: string; status: string; dropbox_path: string | null } | null = null
-      if (primary.extracted.company_name) {
-        const name = primary.extracted.company_name.trim()
 
-        // Try exact match first, then partial match on the first significant word cluster
-        let { data: found } = await supabase
+      // Helper: search deals by name with exact-then-partial fallback
+      async function findDealByName(searchName: string) {
+        const { data: exact } = await supabase
           .from('deals')
           .select('id, stage, status, dropbox_path')
-          .ilike('company_name', name)
+          .ilike('company_name', searchName)
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle()
+        if (exact) return exact
 
-        // Fallback: partial match — useful when Claude extracts slightly different name
-        if (!found) {
-          // Use first 3+ meaningful words stripped of common suffixes
-          const keywords = name.replace(/\b(Inc|LLC|Ltd|Co|Corp|Company|Group|Partners|Holdings|the)\b\.?/gi, '').trim()
-          const firstChunk = keywords.split(/\s+/).slice(0, 3).join(' ')
-          if (firstChunk.length > 3) {
-            const { data: partial } = await supabase
-              .from('deals')
-              .select('id, stage, status, dropbox_path')
-              .ilike('company_name', `%${firstChunk}%`)
-              .order('created_at', { ascending: false })
-              .limit(1)
-              .maybeSingle()
-            found = partial
-          }
+        // Partial match on first 3 meaningful words
+        const stripped = searchName.replace(/\b(Inc|LLC|Ltd|Co|Corp|Company|Group|Partners|Holdings|the)\b\.?/gi, '').trim()
+        const chunk = stripped.split(/\s+/).slice(0, 3).join(' ')
+        if (chunk.length > 3) {
+          const { data: partial } = await supabase
+            .from('deals')
+            .select('id, stage, status, dropbox_path')
+            .ilike('company_name', `%${chunk}%`)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          if (partial) return partial
         }
+        return null
+      }
 
+      // Priority 1: deal name the user explicitly stated in their forwarding note
+      if (instructions.deal_name) {
+        const found = await findDealByName(instructions.deal_name.trim())
         if (found) {
           existingDeal = found
-          console.log(`[email-intake] Matched existing deal ${found.id} ("${name}") stage="${found.stage}"`)
+          console.log(`[email-intake] Matched by forwarder deal_name "${instructions.deal_name}": deal ${found.id} stage="${found.stage}"`)
+        } else {
+          console.log(`[email-intake] Forwarder said deal_name="${instructions.deal_name}" but no match found`)
+        }
+      }
+
+      // Priority 2: company name extracted from the document
+      if (!existingDeal && primary.extracted.company_name) {
+        const name = primary.extracted.company_name.trim()
+        const found = await findDealByName(name)
+        if (found) {
+          existingDeal = found
+          console.log(`[email-intake] Matched by doc company_name "${name}": deal ${found.id} stage="${found.stage}"`)
         } else {
           console.log(`[email-intake] No existing deal found for "${name}"`)
         }
