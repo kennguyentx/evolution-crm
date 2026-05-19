@@ -546,12 +546,12 @@ export default function DealDetailPage() {
         <div style={{ display: 'flex', gap: '28px', marginTop: '14px' }}>
           <InlineFinancial
             label="Revenue"
-            value={deal.revenue}
+            value={deal.revenue ?? null}
             onSave={v => updateField('revenue', v)}
           />
           <InlineFinancial
             label="EBITDA"
-            value={deal.ebitda}
+            value={deal.ebitda ?? null}
             accent
             onSave={v => updateField('ebitda', v)}
           />
