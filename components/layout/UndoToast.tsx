@@ -23,6 +23,22 @@ export default function UndoToast({ stack, onUndo, onDismiss }: Props) {
     return () => clearTimeout(t)
   }, [stack, onDismiss])
 
+  // Ctrl+Z triggers the most recent undo entry
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        if (stack.length === 0) return
+        // Don't fire if user is typing in an input/textarea
+        const tag = (e.target as HTMLElement)?.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
+        e.preventDefault()
+        onUndo(stack[0].id)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [stack, onUndo])
+
   if (stack.length === 0) return null
 
   return (
@@ -62,6 +78,7 @@ export default function UndoToast({ stack, onUndo, onDismiss }: Props) {
             }}
           >
             <RotateCcw size={12} /> Undo
+            {i === 0 && <span style={{ opacity: 0.7, fontSize: '10px', marginLeft: '2px' }}>⌘Z</span>}
           </button>
           <button
             onClick={() => onDismiss(entry.id)}
