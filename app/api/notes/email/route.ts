@@ -125,43 +125,81 @@ async function processAttachment(
 }
 
 // ── Parse forwarding note for explicit instructions ───────────────────────────
-async function parseForwardingNote(bodyText: string): Promise<{
+// ── Filter out internal email addresses ───────────────────────────────────────
+function isInternal(email: string | null | undefined): boolean {
+  if (!email) return false
+  return email.toLowerCase().endsWith('@evolutionstrategy.com')
+}
+
+function filterInternalContacts(contacts: any[]): any[] {
+  return contacts.filter(c => !isInternal(c.email))
+}
+
+async function parseForwardingNote(bodyText: string, emailHeaders: { from: string; fromName: string; cc: any[] }): Promise<{
   stage: string | null
   status: string | null
   deal_type: string | null
   parent_portco: string | null
   forwarder_note: string | null
   auto_approve: boolean
+  contacts: any[]
 }> {
-  if (!bodyText?.trim()) return { stage: null, status: null, deal_type: null, parent_portco: null, forwarder_note: null, auto_approve: false }
+  const empty = { stage: null, status: null, deal_type: null, parent_portco: null, forwarder_note: null, auto_approve: false, contacts: [] }
+  if (!bodyText?.trim()) return empty
+
+  // Build CC contact list from headers directly
+  const headerContacts: any[] = emailHeaders.cc
+    .filter(c => c.Email && !isInternal(c.Email))
+    .map(c => ({
+      name:  c.Name || c.Email.split('@')[0],
+      email: c.Email,
+      firm:  null, title: null, role: 'Other', phone: null,
+    }))
 
   const response = await anthropic.messages.create({
     model: 'claude-haiku-4-5',
-    max_tokens: 300,
-    system: `Extract any explicit deal instructions from a forwarding note. Return ONLY valid JSON.
+    max_tokens: 600,
+    system: `Extract deal instructions AND contact info from a forwarding note. Return ONLY valid JSON.
 
 {
-  "stage": "exact stage or null — must be one of: Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity | Closed (Platform) | Closed (Add-On) | Pass (DOA) | Pass (Pre-LOI) | Pass (Post-LOI) | Hold",
+  "stage": "exact stage or null — one of: Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity | Closed (Platform) | Closed (Add-On) | Pass (DOA) | Pass (Pre-LOI) | Pass (Post-LOI) | Hold",
   "status": "Active | Dead | Closed | null",
   "deal_type": "platform | add-on | null",
   "parent_portco": "portfolio company name if add-on, else null",
   "forwarder_note": "any context or commentary the sender added, else null",
-  "auto_approve": true or false — true only if sender made an explicit final decision (pass, hold, close); false if just forwarding for review
+  "auto_approve": true or false — true only if sender made an explicit final decision (pass, hold, close),
+  "contacts": [
+    {
+      "name": "Full Name",
+      "email": "email or null",
+      "phone": "phone or null",
+      "firm": "company or null",
+      "title": "job title or null",
+      "role": "Source / Banker | Management | Advisor | Lender | Other"
+    }
+  ]
 }
 
-Examples:
-- "log as pass (DOA)" → stage: "Pass (DOA)", status: "Dead", auto_approve: true
-- "add this as an add-on for Amped" → deal_type: "add-on", parent_portco: "Amped", auto_approve: false
-- "put on hold" → stage: "Hold", auto_approve: true
-- "looks interesting, review later" → forwarder_note: "looks interesting, review later", auto_approve: false`,
-    messages: [{ role: 'user', content: `Forwarding note:\n${bodyText.slice(0, 800)}` }],
+For contacts: extract all named people mentioned in the email body — bankers, advisors, sellers, management.
+Do NOT include people with @evolutionstrategy.com emails.
+If no contacts found, return contacts: [].`,
+    messages: [{ role: 'user', content: `Forwarding note:\n${bodyText.slice(0, 1000)}` }],
   })
 
   try {
     const raw = response.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').replace(/```json|```/g, '').trim()
-    return JSON.parse(raw)
+    const parsed = JSON.parse(raw)
+    // Merge header CC contacts with body-extracted contacts, dedupe by email
+    const bodyContacts = filterInternalContacts(parsed.contacts ?? [])
+    const merged = [...headerContacts]
+    for (const c of bodyContacts) {
+      if (!c.email || !merged.some(m => m.email?.toLowerCase() === c.email?.toLowerCase())) {
+        merged.push(c)
+      }
+    }
+    return { ...parsed, contacts: merged }
   } catch {
-    return { stage: null, status: null, deal_type: null, parent_portco: null, forwarder_note: null, auto_approve: false }
+    return { ...empty, contacts: headerContacts }
   }
 }
 
@@ -250,11 +288,13 @@ export async function POST(req: NextRequest) {
 
   try {
     const body    = await req.json()
-    const from    = body.From    ?? body.from    ?? ''
-    const subject = body.Subject ?? body.subject ?? ''
-    const text    = body.TextBody ?? body.text   ?? body.body ?? ''
-    const date    = body.Date    ?? body.date    ?? new Date().toISOString()
+    const from    = body.From     ?? body.from    ?? ''
+    const fromName = body.FromFull?.Name ?? ''
+    const subject = body.Subject  ?? body.subject ?? ''
+    const text    = body.TextBody ?? body.text    ?? body.body ?? ''
+    const date    = body.Date     ?? body.date    ?? new Date().toISOString()
     const attachments: any[] = body.Attachments ?? []
+    const ccFull: any[] = body.CcFull ?? []
 
     const supabase  = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
     const noteDate  = new Date(date).toISOString().split('T')[0]
@@ -268,8 +308,8 @@ export async function POST(req: NextRequest) {
     })
 
     if (docAttachments.length > 0) {
-      // Parse forwarding note for instructions (runs once for all attachments)
-      const instructions = await parseForwardingNote(text)
+      // Parse forwarding note for instructions + contacts (runs once for all attachments)
+      const instructions = await parseForwardingNote(text, { from, fromName, cc: ccFull })
 
       for (const att of docAttachments) {
         const fileName    = att.Name ?? 'document'
@@ -325,6 +365,15 @@ export async function POST(req: NextRequest) {
               deal_id:    deal?.id ?? null,
             })
 
+            // Upsert contacts from both document and forwarding note
+            const allContacts = filterInternalContacts([
+              ...(extracted.contacts ?? []),
+              ...(instructions.contacts ?? []),
+            ])
+            if (allContacts.length > 0 && deal?.id) {
+              await upsertContacts(supabase, allContacts, deal.id)
+            }
+
             results.push({ type: extracted.doc_type, status: 'auto-approved', stage, file: fileName, company: extracted.company_name, deal_id: deal?.id })
           } else {
             // Save to intake queue (pending review)
@@ -353,6 +402,18 @@ export async function POST(req: NextRequest) {
               source:     'email',
               deal_id:    null,
             })
+
+            // Store contacts in extracted so queue approval can upsert them
+            const allContacts = filterInternalContacts([
+              ...(extracted.contacts ?? []),
+              ...(instructions.contacts ?? []),
+            ])
+            if (allContacts.length > 0) {
+              await supabase.from('intake_queue')
+                .update({ extracted: { ...extracted, contacts: allContacts, _stage_suggestion: instructions.stage, _forwarder_note: instructions.forwarder_note } })
+                .eq('source', 'email').eq('file_name', fileName).eq('status', 'pending')
+                .order('created_at', { ascending: false }).limit(1)
+            }
 
             results.push({ type: extracted.doc_type, status: 'queued', file: fileName, company: extracted.company_name })
           }
