@@ -75,9 +75,7 @@ export default function Sidebar() {
           boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
         }}>
           <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: '10px', height: '52px', textDecoration: 'none' }}>
-            <div style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.15)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ color: 'white', fontSize: '11px', fontWeight: 700 }}>ESP</span>
-            </div>
+            <img src="/esp-icon.svg" alt="ESP" style={{ width: '28px', height: '28px', flexShrink: 0 }} />
             <span style={{ color: 'white', fontSize: '14px', fontWeight: 700 }}>Evolution Strategy Partners</span>
           </Link>
           <button onClick={() => setMobileOpen(!mobileOpen)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'white', padding: '4px', height: '52px', display: 'flex', alignItems: 'center' }}>
@@ -113,9 +111,7 @@ export default function Sidebar() {
     }}>
       {/* Logo */}
       <Link href="/dashboard" style={{ padding: '8px 10px 20px', display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
-        <div style={{ width: '32px', height: '32px', background: 'rgba(255,255,255,0.15)', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <span style={{ color: 'white', fontSize: '11px', fontWeight: 700 }}>ESP</span>
-        </div>
+        <img src="/esp-icon.svg" alt="ESP" style={{ width: '32px', height: '32px', flexShrink: 0 }} />
         <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', fontWeight: 600, lineHeight: 1.2 }}>Evolution Strategy Partners</span>
       </Link>
 

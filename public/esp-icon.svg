@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Outer arc path -->
+  <path d="M 5,58 A 45,45 0 0,1 95,58 L 73,58 A 23,23 0 0,0 27,58 Z" fill="#E8722A"/>
+</svg>

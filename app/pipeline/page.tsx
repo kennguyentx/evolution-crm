@@ -84,8 +84,8 @@ export default function PipelinePage() {
         </div>
       </div>
 
-      {/* Pipeline rows */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '16px 24px' }}>
+      {/* Kanban board — horizontal columns */}
+      <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
         {STAGES.map(({ name, label }) => {
           const stageDeals = dealsByStage(name)
           return (
@@ -99,68 +99,43 @@ export default function PipelinePage() {
                 if (id) { updateStage(id, name); dragId.current = null }
               }}
               style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '0',
-              marginBottom: '0',
-              borderBottom: '1px solid var(--border)',
-              minHeight: '120px',
-              background: dragOverStage === name ? 'var(--accent-muted)' : undefined,
-              transition: 'background 0.15s',
-            }}>
-              {/* Stage label column */}
-              <div style={{
-                width: '140px',
-                minWidth: '140px',
-                padding: '16px 16px 16px 0',
+                width: '250px',
+                minWidth: '250px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '6px',
-                position: 'sticky',
-                left: 0,
-                background: 'var(--bg)',
-                zIndex: 1,
+                gap: '8px',
+                background: dragOverStage === name ? 'var(--accent-muted)' : 'var(--surface)',
+                border: `1px solid ${dragOverStage === name ? 'var(--accent)' : 'var(--border)'}`,
+                borderRadius: '10px',
+                padding: '12px',
+                transition: 'border-color 0.15s, background 0.15s',
+                alignSelf: 'flex-start',
               }}>
-                <span className={`badge ${stageClass(name)}`} style={{ alignSelf: 'flex-start' }}>
-                  {label}
-                </span>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  {stageDeals.length} deal{stageDeals.length !== 1 ? 's' : ''}
-                </span>
-                {stageDeals.length > 0 && (
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                    {formatCurrency(stageDeals.reduce((s, d) => s + (d.ebitda || 0), 0))} EBITDA
-                  </span>
-                )}
+              {/* Column header */}
+              <div style={{ paddingBottom: '10px', borderBottom: '1px solid var(--border)' }}>
+                <span className={`badge ${stageClass(name)}`} style={{ display: 'inline-block' }}>{label}</span>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '5px', display: 'flex', gap: '6px' }}>
+                  <span>{stageDeals.length} deal{stageDeals.length !== 1 ? 's' : ''}</span>
+                  {stageDeals.length > 0 && (
+                    <span style={{ fontFamily: 'var(--font-mono)' }}>· {formatCurrency(stageDeals.reduce((s, d) => s + (d.ebitda || 0), 0))}</span>
+                  )}
+                </div>
               </div>
 
-              {/* Cards row */}
-              <div style={{
-                flex: 1,
-                display: 'flex',
-                gap: '12px',
-                padding: '12px 0 12px 12px',
-                flexWrap: 'wrap',
-                alignItems: 'flex-start',
-              }}>
-                {stageDeals.length === 0 ? (
-                  <div style={{
-                    display: 'flex', alignItems: 'center',
-                    fontSize: '12px', color: 'var(--text-muted)',
-                    fontStyle: 'italic', padding: '8px 0',
-                  }}>
-                    {dragOverStage === name ? 'Drop to move here' : 'No deals'}
-                  </div>
-                ) : stageDeals.map(deal => (
-                  <DealCard
-                    key={deal.id}
-                    deal={deal}
-                    contacts={dealContacts[deal.id] || []}
-                    onStageChange={updateStage}
-                    onDragStart={(e) => { dragId.current = deal.id; e.dataTransfer.setData('text/plain', deal.id); e.dataTransfer.effectAllowed = 'move' }}
-                  />
-                ))}
-              </div>
+              {/* Cards */}
+              {stageDeals.length === 0 ? (
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '12px 0', textAlign: 'center' }}>
+                  {dragOverStage === name ? 'Drop here' : 'No deals'}
+                </div>
+              ) : stageDeals.map(deal => (
+                <DealCard
+                  key={deal.id}
+                  deal={deal}
+                  contacts={dealContacts[deal.id] || []}
+                  onStageChange={updateStage}
+                  onDragStart={(e) => { dragId.current = deal.id; e.dataTransfer.setData('text/plain', deal.id); e.dataTransfer.effectAllowed = 'move' }}
+                />
+              ))}
             </div>
           )
         })}
@@ -187,12 +162,11 @@ function DealCard({ deal, contacts, onStageChange, onDragStart }: {
       draggable
       onDragStart={onDragStart}
       style={{
-      width: '280px',
-      minWidth: '280px',
-      background: 'var(--surface)',
+      width: '100%',
+      background: 'var(--bg)',
       border: '1px solid var(--border)',
       borderRadius: '8px',
-      padding: '14px',
+      padding: '12px',
       boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
       transition: 'box-shadow 0.15s, border-color 0.15s',
       cursor: 'grab',
