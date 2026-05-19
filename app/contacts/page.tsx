@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase'
 import type { Contact } from '@/types'
 import { contactTypeClass } from '@/types'
 import { Plus, Search, Phone, Mail, ChevronUp, ChevronDown } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import NewContactModal from '@/components/contacts/NewContactModal'
 import UndoToast, { type UndoEntry } from '@/components/layout/UndoToast'
 
@@ -26,6 +27,7 @@ export default function ContactsPage() {
   const [sortDir, setSortDir] = useState<'asc'|'desc'>('desc')
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([])
   const supabase = createClient()
+  const router = useRouter()
 
   useEffect(() => {
     const fetchCounts = async () => {
@@ -164,6 +166,9 @@ export default function ContactsPage() {
         <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Contacts</h1>
         <button className="btn btn-primary" onClick={() => setShowNew(true)}>
           <Plus size={14} /> New Contact
+        </button>
+        <button className="btn btn-ghost" onClick={() => router.push('/contacts/dupes')} style={{ fontSize: '12px' }}>
+          Find Duplicates
         </button>
         <div style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: '12px' }}>
           {total.toLocaleString()} total

@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { Kanban, Building2, Users, BarChart3, Zap, TrendingUp, FileText, Menu, X, FileText as NoteIcon, Star, LayoutDashboard } from 'lucide-react'
+import { Kanban, Building2, Users, BarChart3, Zap, TrendingUp, FileText, Menu, X, FileText as NoteIcon, Star, LayoutDashboard, Calendar } from 'lucide-react'
 
 const NAV = [
   { href: '/dashboard',        label: 'Dashboard',         icon: LayoutDashboard },
@@ -10,11 +10,11 @@ const NAV = [
   { href: '/deals',            label: 'Deals',             icon: FileText },
   { href: '/intake',           label: 'Teaser / CIM',      icon: Zap },
   { href: '/contacts',         label: 'Contacts',          icon: Users },
-  { href: '/contacts/dupes',   label: 'Dedup Contacts',    icon: Users },
   { href: '/raises',           label: 'Capital Raises',    icon: TrendingUp },
   { href: '/raises/contacts',  label: 'Capital Contacts',  icon: BarChart3 },
   { href: '/investors',        label: 'Investors',         icon: Users },
   { href: '/portfolio',        label: 'Portfolio',         icon: Building2 },
+  { href: '/calendar',         label: 'Calendar',          icon: Calendar },
   { href: '/notes',            label: 'Notes',             icon: NoteIcon },
   { href: '/assistant',        label: 'Assistant',         icon: Star },
 ]
@@ -33,7 +33,11 @@ export default function Sidebar() {
 
   useEffect(() => { setMobileOpen(false) }, [pathname])
 
-  const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/')
+  const isActive = (href: string) => {
+    if (pathname === href) return true
+    if (!pathname.startsWith(href + '/')) return false
+    return !NAV.some(n => n.href !== href && n.href.startsWith(href + '/') && (pathname === n.href || pathname.startsWith(n.href + '/')))
+  }
 
   const NavLinks = () => (
     <>
