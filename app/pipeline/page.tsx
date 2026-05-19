@@ -92,7 +92,8 @@ export default function PipelinePage() {
               onDrop={e => {
                 e.preventDefault()
                 setDragOverStage(null)
-                if (dragId.current) { updateStage(dragId.current, name); dragId.current = null }
+                const id = e.dataTransfer.getData('text/plain') || dragId.current
+                if (id) { updateStage(id, name); dragId.current = null }
               }}
               style={{
               display: 'flex',
@@ -153,7 +154,7 @@ export default function PipelinePage() {
                     deal={deal}
                     contacts={dealContacts[deal.id] || []}
                     onStageChange={updateStage}
-                    onDragStart={() => { dragId.current = deal.id }}
+                    onDragStart={(e) => { dragId.current = deal.id; e.dataTransfer.setData('text/plain', deal.id); e.dataTransfer.effectAllowed = 'move' }}
                   />
                 ))}
               </div>
@@ -176,7 +177,7 @@ function DealCard({ deal, contacts, onStageChange, onDragStart }: {
   deal: Deal
   contacts: any[]
   onStageChange: (id: string, stage: DealStage) => void
-  onDragStart: () => void
+  onDragStart: (e: React.DragEvent) => void
 }) {
   return (
     <div
@@ -202,7 +203,7 @@ function DealCard({ deal, contacts, onStageChange, onDragStart }: {
       ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'
     }}
     >
-      <Link href={`/deals/${deal.id}`} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
+      <Link href={`/deals/${deal.id}`} draggable={false} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
 
         {/* Company + arrow */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
