@@ -24,9 +24,12 @@ function SortHeader({ label, field, current, dir, onSort, align='left' }: {
   )
 }
 
+const PAGE_LIMIT = 500
+
 export default function DealsPage() {
   const [deals, setDeals] = useState<Deal[]>([])
   const [loading, setLoading] = useState(true)
+  const [capped, setCapped] = useState(false)
   const [search, setSearch] = useState('')
   const [stageFilter, setStageFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -50,13 +53,16 @@ export default function DealsPage() {
     const col = dbCol[field] || 'created_at'
     const asc = dir === 'asc'
 
-    let query = supabase.from('deals').select('*').order(col, { ascending: asc, nullsFirst: false })
+    let query = supabase.from('deals').select('*').order(col, { ascending: asc, nullsFirst: false }).limit(PAGE_LIMIT)
     // secondary sort by created_at for stable ordering
     if (col !== 'created_at') query = (query as any).order('created_at', { ascending: false })
     if (statusFilter !== 'all') query = query.eq('status', statusFilter)
     if (stageFilter !== 'all') query = query.eq('stage', stageFilter)
     const { data } = await query
-    if (data) setDeals(data)
+    if (data) {
+      setDeals(data)
+      setCapped(data.length === PAGE_LIMIT)
+    }
     setLoading(false)
   }, [supabase, statusFilter, stageFilter, sortField, sortDir])
 
@@ -97,9 +103,14 @@ export default function DealsPage() {
       <div style={{ padding:'20px 28px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:'16px', flexShrink:0, background:'var(--surface)' }}>
         <h1 style={{ fontSize:'20px', fontWeight:700 }}>Deals</h1>
         <button className="btn btn-primary" onClick={() => setShowNewDeal(true)}><Plus size={14}/> New Deal</button>
-        <div style={{ marginLeft:'auto', fontSize:'12px', color:'var(--text-muted)' }}>
+        <div style={{ marginLeft:'auto', fontSize:'12px', color:'var(--text-muted)', display:'flex', alignItems:'center', gap:'12px' }}>
           {filtered.length} deal{filtered.length!==1?'s':''}
           {totalEbitda>0 && ` · ${formatCurrency(totalEbitda)} total EBITDA`}
+          {capped && (
+            <span style={{ color:'var(--warning, #d97706)', fontWeight:500 }}>
+              Showing first {PAGE_LIMIT} — use filters to narrow
+            </span>
+          )}
         </div>
       </div>
 

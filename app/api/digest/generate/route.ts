@@ -35,7 +35,7 @@ Write a concise, professional weekly digest in Discord-friendly markdown format.
 Keep it sharp, data-focused, and useful for a 3-person deal team. Use plain business language.`
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
+      model: 'claude-sonnet-4-6',
       max_tokens: 1200,
       messages: [{ role: 'user', content: prompt }],
     })

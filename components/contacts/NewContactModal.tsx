@@ -85,6 +85,12 @@ export default function NewContactModal({ onClose, onCreated, contact }: Contact
       await supabase.from('contacts').update(payload).eq('id', contact.id)
     } else {
       await supabase.from('contacts').insert(payload)
+      // Sync to Constant Contact (best-effort, non-blocking)
+      fetch('/api/constant-contact/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => {})
     }
 
     setSaving(false)

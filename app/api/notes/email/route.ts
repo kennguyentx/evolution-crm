@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 
     // Parse with Claude
     const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-haiku-4-5',
       max_tokens: 800,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: `Extract CRM data from this email:\n\n${emailContent}` }],
