@@ -300,6 +300,10 @@ export async function POST(req: NextRequest) {
     const noteDate  = new Date(date).toISOString().split('T')[0]
     const results: any[] = []
 
+    // Debug logging — shows up in Vercel Function logs
+    console.log(`[email-intake] from=${from} subject="${subject}" attachments=${attachments.length}`,
+      attachments.map((a: any) => ({ name: a.Name, type: a.ContentType, size: a.Content?.length ?? 0 })))
+
     // ── Path A: process document attachments ──────────────────────────────────
     const docAttachments = attachments.filter((a: any) => {
       const name = (a.Name ?? '').toLowerCase()
@@ -333,6 +337,37 @@ export async function POST(req: NextRequest) {
               const folder       = `/Evolution Strategy Partners/Deals/${safeName}${portcoSuffix}`
               dropboxPath        = await dropboxUpload(folder, fileName, buffer)
             } catch { /* non-fatal */ }
+          }
+
+          // ── Deduplication: skip if same file already processed in last 10 minutes ──
+          const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+          const { data: existingQueue } = await supabase
+            .from('intake_queue')
+            .select('id')
+            .eq('file_name', fileName)
+            .eq('from_email', from)
+            .gte('created_at', tenMinutesAgo)
+            .limit(1)
+            .maybeSingle()
+          if (existingQueue) {
+            console.log(`[email-intake] Dedup: skipping duplicate "${fileName}" from ${from}`)
+            results.push({ type: 'skipped', reason: 'duplicate within 10 min', file: fileName })
+            continue
+          }
+
+          // Also check notes table to avoid duplicate notes for the same file
+          const { data: existingNote } = await supabase
+            .from('notes')
+            .select('id')
+            .ilike('raw_text', `%File: ${fileName}%`)
+            .eq('source', 'email')
+            .gte('note_date', noteDate)
+            .limit(1)
+            .maybeSingle()
+          if (existingNote) {
+            console.log(`[email-intake] Dedup: note already exists for "${fileName}", skipping`)
+            results.push({ type: 'skipped', reason: 'note already exists', file: fileName })
+            continue
           }
 
           // If auto_approve (explicit decision from forwarder), create deal directly
@@ -429,6 +464,20 @@ export async function POST(req: NextRequest) {
     // ── Path B: no attachments — parse email body as a note ───────────────────
     if (!text && !subject) {
       return NextResponse.json({ error: 'No email content provided' }, { status: 400 })
+    }
+
+    // Dedup: skip if a note from the same sender with the same subject already exists today
+    const { data: existingBodyNote } = await supabase
+      .from('notes')
+      .select('id')
+      .eq('source', 'email')
+      .eq('note_date', noteDate)
+      .ilike('raw_text', `%Subject: ${subject}%`)
+      .limit(1)
+      .maybeSingle()
+    if (existingBodyNote) {
+      console.log(`[email-intake] Dedup: note already exists for subject "${subject}", skipping Path B`)
+      return NextResponse.json({ success: true, processed: [{ type: 'skipped', reason: 'duplicate email body' }] })
     }
 
     const emailContent = `From: ${from}\nSubject: ${subject}\nDate: ${date}\n\n${text}`.trim()
