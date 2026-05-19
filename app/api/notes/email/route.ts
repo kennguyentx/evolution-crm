@@ -124,23 +124,12 @@ async function processAttachment(
   return JSON.parse(raw)
 }
 
-// ── Parse email date preserving sender's local timezone ──────────────────────
-// Postmark sends dates like "Mon, 18 May 2026 19:30:00 -0500".
-// Using .toISOString() converts to UTC and can shift the date by a day.
-// This extracts the offset and returns YYYY-MM-DD in the sender's local time.
-function emailDateToYMD(dateStr: string): string {
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return new Date().toISOString().split('T')[0]
-  // Match trailing UTC offset: -0500, +0530, -05:00, +00:00
-  const m = dateStr.match(/([+-])(\d{2}):?(\d{2})\s*$/)
-  if (m) {
-    const sign      = m[1] === '+' ? 1 : -1
-    const offsetMin = sign * (parseInt(m[2]) * 60 + parseInt(m[3]))
-    const local     = new Date(d.getTime() + offsetMin * 60 * 1000)
-    return local.toISOString().split('T')[0]
-  }
-  // No offset found — fall back to UTC date
-  return d.toISOString().split('T')[0]
+// ── Get today's date in US Central time ───────────────────────────────────────
+// Vercel runs in UTC. Using toISOString() can return tomorrow's date for US
+// evening hours. Always format in America/Chicago (CST/CDT) so notes are
+// dated correctly regardless of when the serverless function runs.
+function todayCST(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
 }
 
 // ── Parse forwarding note for explicit instructions ───────────────────────────
@@ -317,7 +306,7 @@ export async function POST(req: NextRequest) {
     const ccFull: any[] = body.CcFull ?? []
 
     const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
-    const noteDate = emailDateToYMD(date)
+    const noteDate = todayCST()
     const results: any[] = []
 
     // Debug logging — shows up in Vercel Function logs
