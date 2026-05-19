@@ -124,6 +124,47 @@ async function processAttachment(
   return JSON.parse(raw)
 }
 
+// ── Parse forwarding note for explicit instructions ───────────────────────────
+async function parseForwardingNote(bodyText: string): Promise<{
+  stage: string | null
+  status: string | null
+  deal_type: string | null
+  parent_portco: string | null
+  forwarder_note: string | null
+  auto_approve: boolean
+}> {
+  if (!bodyText?.trim()) return { stage: null, status: null, deal_type: null, parent_portco: null, forwarder_note: null, auto_approve: false }
+
+  const response = await anthropic.messages.create({
+    model: 'claude-haiku-4-5',
+    max_tokens: 300,
+    system: `Extract any explicit deal instructions from a forwarding note. Return ONLY valid JSON.
+
+{
+  "stage": "exact stage or null — must be one of: Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity | Closed (Platform) | Closed (Add-On) | Pass (DOA) | Pass (Pre-LOI) | Pass (Post-LOI) | Hold",
+  "status": "Active | Dead | Closed | null",
+  "deal_type": "platform | add-on | null",
+  "parent_portco": "portfolio company name if add-on, else null",
+  "forwarder_note": "any context or commentary the sender added, else null",
+  "auto_approve": true or false — true only if sender made an explicit final decision (pass, hold, close); false if just forwarding for review
+}
+
+Examples:
+- "log as pass (DOA)" → stage: "Pass (DOA)", status: "Dead", auto_approve: true
+- "add this as an add-on for Amped" → deal_type: "add-on", parent_portco: "Amped", auto_approve: false
+- "put on hold" → stage: "Hold", auto_approve: true
+- "looks interesting, review later" → forwarder_note: "looks interesting, review later", auto_approve: false`,
+    messages: [{ role: 'user', content: `Forwarding note:\n${bodyText.slice(0, 800)}` }],
+  })
+
+  try {
+    const raw = response.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').replace(/```json|```/g, '').trim()
+    return JSON.parse(raw)
+  } catch {
+    return { stage: null, status: null, deal_type: null, parent_portco: null, forwarder_note: null, auto_approve: false }
+  }
+}
+
 // ── Find or create a deal by company name ────────────────────────────────────
 async function findOrCreateDeal(supabase: any, extracted: any): Promise<string> {
   // Try to find existing deal
@@ -227,48 +268,94 @@ export async function POST(req: NextRequest) {
     })
 
     if (docAttachments.length > 0) {
+      // Parse forwarding note for instructions (runs once for all attachments)
+      const instructions = await parseForwardingNote(text)
+
       for (const att of docAttachments) {
-        const fileName   = att.Name ?? 'document'
-        const buffer     = Buffer.from(att.Content, 'base64')
+        const fileName    = att.Name ?? 'document'
+        const buffer      = Buffer.from(att.Content, 'base64')
         const contentType = att.ContentType ?? ''
 
         try {
           const extracted = await processAttachment(fileName, buffer, contentType)
           if (!extracted) continue
 
+          // Apply instruction overrides to extracted data
+          if (instructions.deal_type)    extracted.deal_type    = instructions.deal_type
+          if (instructions.parent_portco) extracted.parent_portco = instructions.parent_portco
+
           // Upload to Dropbox (best-effort)
           let dropboxPath: string | null = null
           if (dropboxConfigured() && extracted.company_name) {
             try {
-              const safeName = extracted.company_name.replace(/[<>:"/\\|?*]/g, '_')
-              const folder   = `/Evolution Strategy Partners/Deals/${safeName}`
-              dropboxPath    = await dropboxUpload(folder, fileName, buffer)
+              const safeName     = extracted.company_name.replace(/[<>:"/\\|?*]/g, '_')
+              const portcoSuffix = instructions.parent_portco ? ` [${instructions.parent_portco.replace(/[<>:"/\\|?*]/g, '_')}]` : ''
+              const folder       = `/Evolution Strategy Partners/Deals/${safeName}${portcoSuffix}`
+              dropboxPath        = await dropboxUpload(folder, fileName, buffer)
             } catch { /* non-fatal */ }
           }
 
-          // Save to intake queue (pending review)
-          await supabase.from('intake_queue').insert({
-            source:       'email',
-            doc_type:     extracted.doc_type ?? 'teaser',
-            file_name:    fileName,
-            from_email:   from,
-            dropbox_path: dropboxPath,
-            extracted,
-            status:       'pending',
-          })
+          // If auto_approve (explicit decision from forwarder), create deal directly
+          if (instructions.auto_approve && instructions.stage) {
+            const stage  = instructions.stage
+            const status = instructions.status ?? (stage.startsWith('Pass') || stage.startsWith('Closed') ? (stage.startsWith('Pass') ? 'Dead' : 'Closed') : 'Active')
+            const { data: deal } = await supabase.from('deals').insert({
+              company_name:   extracted.company_name || 'Unknown (email intake)',
+              sector:         extracted.sector       || null,
+              geography:      extracted.geography    || null,
+              deal_type:      extracted.deal_type    || 'platform',
+              parent_portco:  extracted.parent_portco || null,
+              revenue:        extracted.revenue      ?? null,
+              ebitda:         extracted.ebitda       ?? null,
+              description:    extracted.description  || null,
+              stage, status,
+              cim_parsed:     extracted.doc_type === 'cim',
+              dropbox_path:   dropboxPath || null,
+              expected_close: new Date().toISOString().split('T')[0],
+            }).select('id').single()
 
-          // Log a note (no deal_id yet — will be set on approval)
-          await supabase.from('notes').insert({
-            note_date:  noteDate,
-            raw_text:   `Forwarded via email by ${from}\nSubject: ${subject}\nFile: ${fileName}`,
-            summary:    `${extracted.doc_type === 'cim' ? 'CIM' : 'Teaser'} received for ${extracted.company_name ?? 'unknown company'} via email intake. Pending review.`,
-            next_steps: 'Review in Document Intake → Pending Review',
-            logged_by:  from.split('@')[0] ?? 'email',
-            source:     'email',
-            deal_id:    null,
-          })
+            // Log note on the deal
+            await supabase.from('notes').insert({
+              note_date:  noteDate,
+              raw_text:   `Forwarded via email by ${from}\nSubject: ${subject}\nFile: ${fileName}`,
+              summary:    `${extracted.doc_type === 'cim' ? 'CIM' : 'Teaser'} received for ${extracted.company_name ?? 'unknown company'}. Auto-logged as ${stage}.${instructions.forwarder_note ? ` Note: ${instructions.forwarder_note}` : ''}`,
+              next_steps: null,
+              logged_by:  from.split('@')[0] ?? 'email',
+              source:     'email',
+              deal_id:    deal?.id ?? null,
+            })
 
-          results.push({ type: extracted.doc_type, status: 'queued', file: fileName, company: extracted.company_name })
+            results.push({ type: extracted.doc_type, status: 'auto-approved', stage, file: fileName, company: extracted.company_name, deal_id: deal?.id })
+          } else {
+            // Save to intake queue (pending review)
+            await supabase.from('intake_queue').insert({
+              source:       'email',
+              doc_type:     extracted.doc_type ?? 'teaser',
+              file_name:    fileName,
+              from_email:   from,
+              dropbox_path: dropboxPath,
+              extracted: {
+                ...extracted,
+                _stage_suggestion:  instructions.stage         || null,
+                _forwarder_note:    instructions.forwarder_note || null,
+              },
+              status: 'pending',
+            })
+
+            // Log a note (no deal_id yet — will be set on approval)
+            const noteSummary = `${extracted.doc_type === 'cim' ? 'CIM' : 'Teaser'} received for ${extracted.company_name ?? 'unknown company'} via email intake. Pending review.${instructions.forwarder_note ? ` Forwarder note: "${instructions.forwarder_note}"` : ''}`
+            await supabase.from('notes').insert({
+              note_date:  noteDate,
+              raw_text:   `Forwarded via email by ${from}\nSubject: ${subject}\nFile: ${fileName}`,
+              summary:    noteSummary,
+              next_steps: instructions.stage ? `Suggested stage: ${instructions.stage}` : 'Review in Document Intake → Pending Review',
+              logged_by:  from.split('@')[0] ?? 'email',
+              source:     'email',
+              deal_id:    null,
+            })
+
+            results.push({ type: extracted.doc_type, status: 'queued', file: fileName, company: extracted.company_name })
+          }
         } catch (attErr: any) {
           console.error(`Attachment parse error (${fileName}):`, attErr)
           results.push({ type: 'error', file: fileName, error: attErr.message })
