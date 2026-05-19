@@ -803,12 +803,39 @@ export async function POST(req: NextRequest) {
 
     // ── Confirmation flow ──────────────────────────────────────
     if (confirming) {
+      // Execute the confirmed write tool
       const result = await executeTool(confirming.tool_name, confirming.input)
+
+      // `messages` (= messages_so_far) already ends with the assistant message
+      // containing all tool_use blocks from that turn. Do NOT add another
+      // assistant message — just append tool_results for every tool_use in it.
+      const lastMsg = messages[messages.length - 1]
+      const allToolUses: any[] = Array.isArray(lastMsg?.content)
+        ? lastMsg.content.filter((b: any) => b.type === 'tool_use')
+        : []
+
+      // Build tool_results for every tool_use in the final assistant message.
+      // The write tool was already executed; run any co-occurring read tools too.
+      const toolResults = allToolUses.length > 0
+        ? await Promise.all(allToolUses.map(async (t: any) => {
+            if (t.id === confirming.tool_use_id) {
+              return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify(result) }
+            }
+            try {
+              const r = await executeTool(t.name, t.input)
+              return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify(r) }
+            } catch (err: any) {
+              return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify({ error: err.message }) }
+            }
+          }))
+        // Fallback: messages_so_far didn't end with a full assistant block (edge case)
+        : [{ type: 'tool_result' as const, tool_use_id: confirming.tool_use_id, content: JSON.stringify(result) }]
+
       const continueMessages = [
         ...messages,
-        { role: 'assistant', content: [{ type: 'tool_use', id: confirming.tool_use_id, name: confirming.tool_name, input: confirming.input }] },
-        { role: 'user', content: [{ type: 'tool_result', tool_use_id: confirming.tool_use_id, content: JSON.stringify(result) }] },
+        { role: 'user', content: toolResults },
       ]
+
       const finalResp = await anthropic.messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 2000,
