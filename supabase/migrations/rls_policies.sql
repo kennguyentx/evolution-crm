@@ -106,6 +106,13 @@ CREATE TABLE IF NOT EXISTS intake_queue (
   deal_id UUID REFERENCES deals(id)
 );
 
+-- Add message_id for Postmark idempotency (unique per inbound email)
+ALTER TABLE intake_queue ADD COLUMN IF NOT EXISTS message_id TEXT;
+ALTER TABLE intake_queue DROP CONSTRAINT IF EXISTS intake_queue_message_id_key;
+CREATE UNIQUE INDEX IF NOT EXISTS intake_queue_message_id_unique
+  ON intake_queue (message_id)
+  WHERE message_id IS NOT NULL;
+
 ALTER TABLE intake_queue ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "authenticated_all" ON intake_queue;
 CREATE POLICY "authenticated_all" ON intake_queue

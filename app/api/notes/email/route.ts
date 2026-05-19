@@ -183,7 +183,7 @@ async function parseForwardingNote(bodyText: string, emailHeaders: { from: strin
 For contacts: extract all named people mentioned in the email body — bankers, advisors, sellers, management.
 Do NOT include people with @evolutionstrategy.com emails.
 If no contacts found, return contacts: [].`,
-    messages: [{ role: 'user', content: `Forwarding note:\n${bodyText.slice(0, 1000)}` }],
+    messages: [{ role: 'user', content: `Forwarding note (text BEFORE the forwarded content, which is the user's actual instruction):\n${bodyText.split(/\n-{3,}|\nFrom:|_+\nFrom:/i)[0].slice(0, 800)}` }],
   })
 
   try {
@@ -287,22 +287,44 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body    = await req.json()
-    const from    = body.From     ?? body.from    ?? ''
+    const body     = await req.json()
+    const from     = body.From      ?? body.from    ?? ''
     const fromName = body.FromFull?.Name ?? ''
-    const subject = body.Subject  ?? body.subject ?? ''
-    const text    = body.TextBody ?? body.text    ?? body.body ?? ''
-    const date    = body.Date     ?? body.date    ?? new Date().toISOString()
+    const subject  = body.Subject   ?? body.subject ?? ''
+    const text     = body.TextBody  ?? body.text    ?? body.body ?? ''
+    const date     = body.Date      ?? body.date    ?? new Date().toISOString()
+    const messageId: string = body.MessageID ?? body.message_id ?? ''
     const attachments: any[] = body.Attachments ?? []
     const ccFull: any[] = body.CcFull ?? []
 
-    const supabase  = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
-    const noteDate  = new Date(date).toISOString().split('T')[0]
+    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+    const noteDate = new Date(date).toISOString().split('T')[0]
     const results: any[] = []
 
     // Debug logging — shows up in Vercel Function logs
-    console.log(`[email-intake] from=${from} subject="${subject}" attachments=${attachments.length}`,
+    console.log(`[email-intake] messageId=${messageId} from=${from} subject="${subject}" attachments=${attachments.length}`,
       attachments.map((a: any) => ({ name: a.Name, type: a.ContentType, size: a.Content?.length ?? 0 })))
+
+    // ── Idempotency guard — ATOMIC dedup using MessageID unique constraint ─────
+    // Prevents duplicate processing when Postmark retries or M365 double-forwards.
+    // Requires: ALTER TABLE intake_queue ADD COLUMN IF NOT EXISTS message_id TEXT UNIQUE;
+    if (messageId) {
+      const { error: lockError } = await supabase
+        .from('intake_queue')
+        .insert({
+          message_id:  messageId,
+          source:      'email',
+          status:      'processing',
+          from_email:  from,
+          file_name:   subject.slice(0, 200),
+          extracted:   {},
+        })
+      if (lockError?.code === '23505') {
+        // Unique violation — another call already claimed this messageId
+        console.log(`[email-intake] Idempotency: messageId ${messageId} already processing, skipping`)
+        return NextResponse.json({ success: true, skipped: 'duplicate messageId' })
+      }
+    }
 
     // ── Path A: process document attachments ──────────────────────────────────
     const docAttachments = attachments.filter((a: any) => {
@@ -314,6 +336,7 @@ export async function POST(req: NextRequest) {
     if (docAttachments.length > 0) {
       // Parse forwarding note for instructions + contacts (runs once for all attachments)
       const instructions = await parseForwardingNote(text, { from, fromName, cc: ccFull })
+      console.log(`[email-intake] instructions:`, JSON.stringify(instructions))
 
       for (const att of docAttachments) {
         const fileName    = att.Name ?? 'document'
