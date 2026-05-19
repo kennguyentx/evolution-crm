@@ -60,8 +60,8 @@ const DOC_SYSTEM_PROMPT = `You extract deal data from teasers and CIMs forwarded
 
 Rules:
 - doc_type: "teaser" = short marketing summary, "cim" = detailed confidential memo, "nda" = non-disclosure agreement, "other" = anything else
-- Dollar values as raw numbers (4200000 for $4.2M)
-- Null for fields not explicitly stated — do not estimate
+- Dollar values as raw numbers (4200000 for $4.2M). If a range is given (e.g. "$4–6M revenue"), use the midpoint (5000000). If described as "approximately $5M" use 5000000. If only TTM or LTM is stated, use that figure.
+- Null ONLY if no numeric hint is given anywhere in the document — do not leave null if you can infer from context
 - description: purely factual, no adjectives expressing quality`
 
 // ── Email body prompt ─────────────────────────────────────────────────────────
@@ -325,19 +325,8 @@ export async function POST(req: NextRequest) {
           if (!extracted) continue
 
           // Apply instruction overrides to extracted data
-          if (instructions.deal_type)    extracted.deal_type    = instructions.deal_type
+          if (instructions.deal_type)     extracted.deal_type    = instructions.deal_type
           if (instructions.parent_portco) extracted.parent_portco = instructions.parent_portco
-
-          // Upload to Dropbox (best-effort)
-          let dropboxPath: string | null = null
-          if (dropboxConfigured() && extracted.company_name) {
-            try {
-              const safeName     = extracted.company_name.replace(/[<>:"/\\|?*]/g, '_')
-              const portcoSuffix = instructions.parent_portco ? ` [${instructions.parent_portco.replace(/[<>:"/\\|?*]/g, '_')}]` : ''
-              const folder       = `/Evolution Strategy Partners/Deals/${safeName}${portcoSuffix}`
-              dropboxPath        = await dropboxUpload(folder, fileName, buffer)
-            } catch { /* non-fatal */ }
-          }
 
           // ── Deduplication: skip if same file already processed in last 10 minutes ──
           const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString()
@@ -368,6 +357,27 @@ export async function POST(req: NextRequest) {
             console.log(`[email-intake] Dedup: note already exists for "${fileName}", skipping`)
             results.push({ type: 'skipped', reason: 'note already exists', file: fileName })
             continue
+          }
+
+          // ── Upload to Dropbox with stage-aware folder routing ─────────────────
+          let dropboxPath: string | null = null
+          if (dropboxConfigured() && extracted.company_name) {
+            try {
+              const safeName     = extracted.company_name.replace(/[<>:"/\\|?*]/g, '_')
+              const portcoSuffix = instructions.parent_portco ? ` [${instructions.parent_portco.replace(/[<>:"/\\|?*]/g, '_')}]` : ''
+              const stage        = instructions.stage ?? ''
+              // Route to the correct top-level folder based on stage
+              let topFolder: string
+              if (stage.startsWith('Pass')) {
+                topFolder = '!Passed Deals'
+              } else if (stage.startsWith('Closed')) {
+                topFolder = 'Portfolio'
+              } else {
+                topFolder = 'Deals'
+              }
+              const folder = `/Evolution Strategy Partners/${topFolder}/${safeName}${portcoSuffix}`
+              dropboxPath  = await dropboxUpload(folder, fileName, buffer)
+            } catch { /* non-fatal */ }
           }
 
           // If auto_approve (explicit decision from forwarder), create deal directly
