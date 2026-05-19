@@ -11,7 +11,7 @@ export type DealStage =
   | 'Pass (Post-LOI)'
   | 'Hold'
 
-export type DealStatus = 'Active' | 'Dead' | 'Closed'
+export type DealStatus = 'Active' | 'Dead' | 'Closed' | 'Passed'
 
 export type ContactType = 'banker' | 'lp' | 'lender' | 'advisor' | 'management' | 'other'
 
