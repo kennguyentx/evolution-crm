@@ -236,8 +236,6 @@ export async function POST(req: NextRequest) {
           const extracted = await processAttachment(fileName, buffer, contentType)
           if (!extracted) continue
 
-          const dealId = await findOrCreateDeal(supabase, extracted)
-
           // Upload to Dropbox (best-effort)
           let dropboxPath: string | null = null
           if (dropboxConfigured() && extracted.company_name) {
@@ -248,41 +246,29 @@ export async function POST(req: NextRequest) {
             } catch { /* non-fatal */ }
           }
 
-          // If CIM, save to deal_cims
-          if (extracted.doc_type === 'cim' && dealId) {
-            await supabase.from('deal_cims').insert({
-              deal_id:      dealId,
-              file_name:    fileName,
-              dropbox_path: dropboxPath,
-              extracted,
-            })
+          // Save to intake queue (pending review)
+          await supabase.from('intake_queue').insert({
+            source:       'email',
+            doc_type:     extracted.doc_type ?? 'teaser',
+            file_name:    fileName,
+            from_email:   from,
+            dropbox_path: dropboxPath,
+            extracted,
+            status:       'pending',
+          })
 
-            // Update deal with CIM data
-            await supabase.from('deals').update({
-              revenue:      extracted.revenue      ?? undefined,
-              ebitda:       extracted.ebitda       ?? undefined,
-              description:  extracted.description  ?? undefined,
-              cim_parsed:   true,
-            }).eq('id', dealId)
-          }
-
-          // Upsert contacts
-          if (extracted.contacts?.length > 0 && dealId) {
-            await upsertContacts(supabase, extracted.contacts, dealId)
-          }
-
-          // Log a note summarizing the intake
+          // Log a note (no deal_id yet — will be set on approval)
           await supabase.from('notes').insert({
             note_date:  noteDate,
             raw_text:   `Forwarded via email by ${from}\nSubject: ${subject}\nFile: ${fileName}`,
-            summary:    `${extracted.doc_type === 'cim' ? 'CIM' : 'Teaser'} received for ${extracted.company_name ?? 'unknown company'} via email intake.`,
-            next_steps: null,
+            summary:    `${extracted.doc_type === 'cim' ? 'CIM' : 'Teaser'} received for ${extracted.company_name ?? 'unknown company'} via email intake. Pending review.`,
+            next_steps: 'Review in Document Intake → Pending Review',
             logged_by:  from.split('@')[0] ?? 'email',
             source:     'email',
-            deal_id:    dealId,
+            deal_id:    null,
           })
 
-          results.push({ type: extracted.doc_type, deal_id: dealId, file: fileName, company: extracted.company_name })
+          results.push({ type: extracted.doc_type, status: 'queued', file: fileName, company: extracted.company_name })
         } catch (attErr: any) {
           console.error(`Attachment parse error (${fileName}):`, attErr)
           results.push({ type: 'error', file: fileName, error: attErr.message })

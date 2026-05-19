@@ -804,6 +804,17 @@ function TeaserFlow() {
       await Promise.all(linkedContacts.map(c => supabase.from('contact_deal_links').insert({ contact_id: c.crmContact.id, deal_id: data.id, role: c.role })))
     }
     setDealId(data.id); setStage('done')
+
+    // Record in intake queue as approved
+    await supabase.from('intake_queue').insert({
+      source: 'upload',
+      doc_type: 'teaser',
+      file_name: fileName || 'teaser',
+      extracted: { ...edited, contacts: contacts.map(c => ({ name: c.name, firm: c.firm, role: c.role })) },
+      status: 'approved',
+      deal_id: data.id,
+      reviewed_at: new Date().toISOString(),
+    }).catch(() => {}) // non-fatal
   }
 
   const handlePasteSubmit = async () => {
@@ -1190,6 +1201,208 @@ function TeaserContactRow({ contact, onUpdate, onSearch, onLinkCrm, onAddNew, on
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ── Pending Queue ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function PendingQueue({ onApproved }: { onApproved: () => void }) {
+  const supabase = createClient()
+  const [items, setItems] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [reviewing, setReviewing] = useState<string | null>(null) // id of item being reviewed
+  const [editMap, setEditMap] = useState<Record<string, any>>({})
+  const [portcos, setPortcos] = useState<{id:string;name:string}[]>([])
+  const [processing, setProcessing] = useState<string | null>(null)
+
+  useEffect(() => {
+    load()
+    supabase.from('portfolio_companies').select('id, name').eq('status', 'Active').order('name')
+      .then(({ data }) => setPortcos(data || []))
+  }, [])
+
+  async function load() {
+    setLoading(true)
+    const res = await fetch('/api/intake/queue?status=pending')
+    const data = await res.json()
+    setItems(Array.isArray(data) ? data : [])
+    setLoading(false)
+  }
+
+  function getEdit(id: string, item: any) {
+    return editMap[id] ?? {
+      company_name: item.extracted?.company_name ?? '',
+      sector:       item.extracted?.sector ?? '',
+      geography:    item.extracted?.geography ?? '',
+      revenue:      item.extracted?.revenue ?? null,
+      ebitda:       item.extracted?.ebitda ?? null,
+      deal_type:    item.extracted?.deal_type ?? 'platform',
+      parent_portco: '',
+    }
+  }
+
+  function setEdit(id: string, patch: any) {
+    setEditMap(prev => ({ ...prev, [id]: { ...getEdit(id, items.find(i => i.id === id)), ...patch } }))
+  }
+
+  async function handleApprove(item: any) {
+    setProcessing(item.id)
+    const edited = getEdit(item.id, item)
+    const res = await fetch(`/api/intake/queue/${item.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'approve', edited }),
+    })
+    const data = await res.json()
+    setProcessing(null)
+    if (data.success) {
+      setItems(prev => prev.filter(i => i.id !== item.id))
+      setReviewing(null)
+      onApproved()
+    }
+  }
+
+  async function handleReject(id: string) {
+    setProcessing(id)
+    await fetch(`/api/intake/queue/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reject' }),
+    })
+    setProcessing(null)
+    setItems(prev => prev.filter(i => i.id !== id))
+    setReviewing(null)
+  }
+
+  if (loading) return null
+  if (items.length === 0) return null
+
+  return (
+    <div style={{ marginBottom: '32px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f59e0b', flexShrink: 0 }} />
+        <h2 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Pending Review</h2>
+        <span style={{ fontSize: '12px', color: 'var(--text-muted)', background: 'var(--surface-2)', borderRadius: '20px', padding: '2px 8px' }}>{items.length}</span>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {items.map(item => {
+          const ext = item.extracted ?? {}
+          const isOpen = reviewing === item.id
+          const edit = getEdit(item.id, item)
+          const isProcessing = processing === item.id
+
+          return (
+            <div key={item.id} className="card" style={{ padding: '0', overflow: 'hidden' }}>
+              {/* Header row */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 18px', cursor: 'pointer' }} onClick={() => setReviewing(isOpen ? null : item.id)}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '14px', fontWeight: 600 }}>{ext.company_name ?? '—'}</span>
+                    <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: item.doc_type === 'cim' ? '#7c3aed' : '#2563eb', background: item.doc_type === 'cim' ? 'rgba(124,58,237,0.08)' : 'rgba(37,99,235,0.08)', borderRadius: '4px', padding: '1px 6px' }}>{item.doc_type?.toUpperCase() ?? 'DOC'}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>via email</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    {ext.sector ?? ''}{ext.geography ? ` · ${ext.geography}` : ''}
+                    {ext.revenue ? ` · $${(ext.revenue / 1e6).toFixed(1)}M rev` : ''}
+                    {ext.ebitda  ? ` · $${(ext.ebitda  / 1e6).toFixed(1)}M EBITDA` : ''}
+                  </div>
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}>
+                  {new Date(item.created_at).toLocaleDateString()}
+                </div>
+                <ChevronRight size={14} style={{ color: 'var(--text-muted)', transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }} />
+              </div>
+
+              {/* Expanded review panel */}
+              {isOpen && (
+                <div style={{ borderTop: '1px solid var(--border)', padding: '18px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {ext.description && (
+                    <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{ext.description}</p>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div>
+                      <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>Company</label>
+                      <input className="input" style={{ fontSize: '13px' }} value={edit.company_name} onChange={e => setEdit(item.id, { company_name: e.target.value })} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>Sector</label>
+                      <select className="select" style={{ fontSize: '13px' }} value={edit.sector} onChange={e => setEdit(item.id, { sector: e.target.value })}>
+                        <option value="">Select…</option>
+                        {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>Geography</label>
+                      <input className="input" style={{ fontSize: '13px' }} value={edit.geography ?? ''} onChange={e => setEdit(item.id, { geography: e.target.value })} />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div>
+                        <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>Revenue ($M)</label>
+                        <input className="input" type="number" style={{ fontSize: '13px' }} value={edit.revenue != null ? edit.revenue / 1e6 : ''} onChange={e => setEdit(item.id, { revenue: e.target.value ? parseFloat(e.target.value) * 1e6 : null })} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>EBITDA ($M)</label>
+                        <input className="input" type="number" style={{ fontSize: '13px' }} value={edit.ebitda != null ? edit.ebitda / 1e6 : ''} onChange={e => setEdit(item.id, { ebitda: e.target.value ? parseFloat(e.target.value) * 1e6 : null })} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Deal type */}
+                  <div>
+                    <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>Deal type</label>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      {(['platform', 'add-on'] as const).map(t => (
+                        <button key={t} onClick={() => setEdit(item.id, { deal_type: t, parent_portco: t === 'platform' ? '' : edit.parent_portco })}
+                          style={{ padding: '5px 12px', fontSize: '12px', fontWeight: edit.deal_type === t ? 600 : 400, borderRadius: '5px', border: '1px solid var(--border)', cursor: 'pointer', background: edit.deal_type === t ? 'var(--accent)' : 'transparent', color: edit.deal_type === t ? '#fff' : 'var(--text-secondary)' }}>
+                          {t === 'platform' ? 'Platform' : 'Add-on'}
+                        </button>
+                      ))}
+                      {edit.deal_type === 'add-on' && (
+                        <select className="select" style={{ flex: 1, fontSize: '12px' }} value={edit.parent_portco ?? ''} onChange={e => setEdit(item.id, { parent_portco: e.target.value })}>
+                          <option value="">Select portfolio company…</option>
+                          {portcos.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                        </select>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Source info */}
+                  {item.from_email && (
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                      Forwarded by <strong>{item.from_email}</strong> · {item.file_name}
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div style={{ display: 'flex', gap: '8px', paddingTop: '4px' }}>
+                    <button
+                      onClick={() => handleApprove(item)}
+                      disabled={!!isProcessing}
+                      className="btn btn-primary"
+                      style={{ fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      {isProcessing ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={13} />}
+                      Add to Pipeline
+                    </button>
+                    <button
+                      onClick={() => handleReject(item.id)}
+                      disabled={!!isProcessing}
+                      style={{ padding: '8px 14px', fontSize: '13px', borderRadius: '7px', border: '1px solid var(--border)', background: 'white', color: 'var(--text-muted)', cursor: 'pointer' }}
+                    >
+                      Discard
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ── Main Page ─────────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1201,6 +1414,7 @@ const DOC_TYPES: { key: DocType; label: string; icon: React.ReactNode; descripti
 
 export default function DocumentIntakePage() {
   const [activeType, setActiveType] = useState<DocType>('teaser')
+  const [queueKey, setQueueKey] = useState(0)
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -1210,6 +1424,9 @@ export default function DocumentIntakePage() {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px' }}>
+        {/* Pending queue */}
+        <PendingQueue key={queueKey} onApproved={() => setQueueKey(k => k + 1)} />
+
         {/* Document type selector */}
         <div style={{ display: 'flex', gap: '12px', marginBottom: '28px', flexWrap: 'wrap' }}>
           {DOC_TYPES.map(({ key, label, icon, description, formats }) => (

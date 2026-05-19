@@ -90,3 +90,23 @@ ALTER TABLE deals ADD COLUMN IF NOT EXISTS parent_portco TEXT;
 
 -- Add user_id column to assistant_threads (safe to run multiple times)
 ALTER TABLE assistant_threads ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id);
+
+-- ── intake_queue ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS intake_queue (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  source TEXT NOT NULL,          -- 'email' | 'upload'
+  doc_type TEXT,                 -- 'teaser' | 'cim'
+  file_name TEXT,
+  from_email TEXT,
+  dropbox_path TEXT,
+  extracted JSONB NOT NULL,      -- full Claude extraction object
+  status TEXT DEFAULT 'pending', -- 'pending' | 'approved' | 'rejected'
+  reviewed_at TIMESTAMPTZ,
+  deal_id UUID REFERENCES deals(id)
+);
+
+ALTER TABLE intake_queue ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "authenticated_all" ON intake_queue;
+CREATE POLICY "authenticated_all" ON intake_queue
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
