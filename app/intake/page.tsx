@@ -28,6 +28,10 @@ interface ExtractedContact extends ParsedContact {
   showSearch?: boolean
   showAddForm?: boolean
   addForm?: { first_name: string; last_name: string; firm: string; title: string; email: string; phone: string }
+  // duplicate detection
+  mergeCandidate?: any   // existing CRM contact that is a likely match
+  mergeCandidates?: any[] // multiple possible matches
+  showMergePrompt?: boolean
 }
 
 interface ParsedDeal {
@@ -111,27 +115,71 @@ export default function IntakePage() {
 
   const autoLinkContact = async (idx: number, parsedContact: ParsedContact) => {
     if (!parsedContact.name) return
-    const parts = parsedContact.name.split(' ')
-    const { data } = await supabase.from('contacts')
-      .select('id, first_name, last_name, firm, title')
-      .or(`first_name.ilike.%${parts[0]}%,last_name.ilike.%${parts[parts.length - 1]}%`)
-      .limit(5)
-    const nameParts = parsedContact.name.split(' ')
+    const nameParts = parsedContact.name.trim().split(/\s+/)
+    const firstName = nameParts[0] || ''
+    const lastName = nameParts.slice(1).join(' ') || ''
     const defaultForm = {
-      first_name: nameParts[0] || '',
-      last_name: nameParts.slice(1).join(' ') || '',
+      first_name: firstName,
+      last_name: lastName,
       firm: parsedContact.firm || '',
       title: parsedContact.title || '',
       email: parsedContact.email || '',
       phone: parsedContact.phone || '',
     }
-    if (data && data.length === 1) {
-      updateContact(idx, { crmContact: data[0] })
-    } else if (data && data.length > 1) {
-      updateContact(idx, { searchResults: data, showSearch: true, searchQuery: parsedContact.name, addForm: defaultForm })
-    } else {
+
+    // Search by first+last name and optionally email
+    const orClauses = [`first_name.ilike.${firstName},last_name.ilike.${lastName}`]
+    if (parsedContact.email) orClauses.push(`email.ilike.${parsedContact.email}`)
+    const { data } = await supabase.from('contacts')
+      .select('id, first_name, last_name, firm, title, email, phone')
+      .or(orClauses.join(','))
+      .limit(5)
+
+    const matches = data ?? []
+
+    if (matches.length === 0) {
+      // No match — pre-fill add form
       updateContact(idx, { showAddForm: true, addForm: defaultForm })
+    } else if (matches.length === 1) {
+      // Single match — prompt merge/link/new
+      updateContact(idx, { mergeCandidate: matches[0], showMergePrompt: true, addForm: defaultForm })
+    } else {
+      // Multiple matches — show all as candidates
+      updateContact(idx, { mergeCandidates: matches, showMergePrompt: true, addForm: defaultForm })
     }
+  }
+
+  // Link to existing contact without changing any data
+  const linkExisting = (idx: number, crm: any) => {
+    updateContact(idx, { crmContact: crm, showMergePrompt: false, mergeCandidate: undefined, mergeCandidates: undefined })
+  }
+
+  // Merge: fill empty fields on existing CRM contact with parsed data, then link
+  const mergeIntoExisting = async (idx: number, crm: any) => {
+    const c = contacts[idx]
+    const patch: Record<string, any> = {}
+    if (!crm.firm  && c.firm)   patch.firm  = c.firm
+    if (!crm.title && c.title)  patch.title = c.title
+    if (!crm.email && c.email)  patch.email = c.email
+    if (!crm.phone && c.phone)  patch.phone = c.phone
+    if (Object.keys(patch).length > 0) {
+      await supabase.from('contacts').update(patch).eq('id', crm.id)
+    }
+    updateContact(idx, { crmContact: { ...crm, ...patch }, showMergePrompt: false, mergeCandidate: undefined, mergeCandidates: undefined })
+  }
+
+  // Overwrite: replace all fields on existing CRM contact with parsed data, then link
+  const overwriteExisting = async (idx: number, crm: any) => {
+    const c = contacts[idx]
+    const patch: Record<string, any> = {}
+    if (c.firm)   patch.firm  = c.firm
+    if (c.title)  patch.title = c.title
+    if (c.email)  patch.email = c.email
+    if (c.phone)  patch.phone = c.phone
+    if (Object.keys(patch).length > 0) {
+      await supabase.from('contacts').update(patch).eq('id', crm.id)
+    }
+    updateContact(idx, { crmContact: { ...crm, ...patch }, showMergePrompt: false, mergeCandidate: undefined, mergeCandidates: undefined })
   }
 
   const addNewContact = async (idx: number, contactType: string) => {
@@ -539,6 +587,10 @@ export default function IntakePage() {
                     onSearch={q => searchForContact(idx, q)}
                     onLinkCrm={crm => updateContact(idx, { crmContact: crm, showSearch: false, showAddForm: false })}
                     onAddNew={type => addNewContact(idx, type)}
+                    onLinkExisting={crm => linkExisting(idx, crm)}
+                    onMerge={crm => mergeIntoExisting(idx, crm)}
+                    onOverwrite={crm => overwriteExisting(idx, crm)}
+                    onAddNew2={() => updateContact(idx, { showMergePrompt: false, showAddForm: true, mergeCandidate: undefined, mergeCandidates: undefined })}
                     supabase={supabase}
                   />
                 ))}
@@ -637,12 +689,16 @@ export default function IntakePage() {
 
 // ── ContactRow ────────────────────────────────────────────────────────────────
 
-function ContactRow({ contact, onUpdate, onSearch, onLinkCrm, onAddNew, supabase }: {
+function ContactRow({ contact, onUpdate, onSearch, onLinkCrm, onAddNew, onLinkExisting, onMerge, onOverwrite, onAddNew2, supabase }: {
   contact: ExtractedContact
   onUpdate: (patch: Partial<ExtractedContact>) => void
   onSearch: (q: string) => void
   onLinkCrm: (crm: any) => void
   onAddNew: (type: string) => void
+  onLinkExisting: (crm: any) => void
+  onMerge: (crm: any) => void
+  onOverwrite: (crm: any) => void
+  onAddNew2: () => void
   supabase: any
 }) {
   const rowRef = useRef<HTMLDivElement>(null)
@@ -700,6 +756,70 @@ function ContactRow({ contact, onUpdate, onSearch, onLinkCrm, onAddNew, supabase
         </button>
       </div>
 
+      {/* Merge prompt — shown when auto-detection finds existing contact(s) */}
+      {contact.showMergePrompt && !contact.crmContact && (
+        <div style={{ marginTop: '10px', padding: '10px 12px', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '7px' }}>
+          {/* Single candidate */}
+          {contact.mergeCandidate && !contact.mergeCandidates && (() => {
+            const c = contact.mergeCandidate
+            return (
+              <>
+                <div style={{ fontSize: '11px', fontWeight: 600, color: '#d97706', marginBottom: '6px' }}>
+                  ⚠ Possible match found in CRM
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-primary)', marginBottom: '10px' }}>
+                  <strong>{c.first_name} {c.last_name}</strong>
+                  {c.firm ? <span style={{ color: 'var(--text-muted)' }}> · {c.firm}</span> : ''}
+                  {c.title ? <span style={{ color: 'var(--text-muted)' }}> · {c.title}</span> : ''}
+                  {c.email ? <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{c.email}</div> : ''}
+                </div>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  <button onClick={() => onLinkExisting(c)} style={{ fontSize: '11px', padding: '4px 10px', border: '1px solid var(--border)', borderRadius: '5px', background: 'var(--surface)', cursor: 'pointer', color: 'var(--text-primary)' }}>
+                    Link as-is
+                  </button>
+                  <button onClick={() => onMerge(c)} style={{ fontSize: '11px', padding: '4px 10px', border: '1px solid var(--accent)', borderRadius: '5px', background: 'var(--accent-muted)', cursor: 'pointer', color: 'var(--accent)' }}>
+                    Merge (fill empty fields)
+                  </button>
+                  <button onClick={() => onOverwrite(c)} style={{ fontSize: '11px', padding: '4px 10px', border: '1px solid #d97706', borderRadius: '5px', background: 'rgba(245,158,11,0.08)', cursor: 'pointer', color: '#d97706' }}>
+                    Overwrite fields
+                  </button>
+                  <button onClick={onAddNew2} style={{ fontSize: '11px', padding: '4px 10px', border: '1px solid var(--border)', borderRadius: '5px', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                    Add as new
+                  </button>
+                </div>
+              </>
+            )
+          })()}
+          {/* Multiple candidates */}
+          {contact.mergeCandidates && (
+            <>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: '#d97706', marginBottom: '8px' }}>
+                ⚠ {contact.mergeCandidates.length} possible matches found — choose one:
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '8px' }}>
+                {contact.mergeCandidates.map((c: any) => (
+                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px' }}>
+                    <div style={{ fontSize: '12px' }}>
+                      <strong>{c.first_name} {c.last_name}</strong>
+                      {c.firm ? <span style={{ color: 'var(--text-muted)' }}> · {c.firm}</span> : ''}
+                      {c.email ? <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}> · {c.email}</span> : ''}
+                    </div>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button onClick={() => onLinkExisting(c)} style={{ fontSize: '10px', padding: '3px 8px', border: '1px solid var(--border)', borderRadius: '4px', background: 'none', cursor: 'pointer' }}>Link</button>
+                      <button onClick={() => onMerge(c)} style={{ fontSize: '10px', padding: '3px 8px', border: '1px solid var(--accent)', borderRadius: '4px', background: 'var(--accent-muted)', cursor: 'pointer', color: 'var(--accent)' }}>Merge</button>
+                      <button onClick={() => onOverwrite(c)} style={{ fontSize: '10px', padding: '3px 8px', border: '1px solid #d97706', borderRadius: '4px', background: 'none', cursor: 'pointer', color: '#d97706' }}>Overwrite</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={onAddNew2} style={{ fontSize: '11px', padding: '4px 10px', border: '1px solid var(--border)', borderRadius: '5px', background: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                None of these — add as new
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Linked CRM contact */}
       {contact.crmContact ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
@@ -708,14 +828,14 @@ function ContactRow({ contact, onUpdate, onSearch, onLinkCrm, onAddNew, supabase
             Linked to {contact.crmContact.first_name} {contact.crmContact.last_name}
             {contact.crmContact.firm ? ` · ${contact.crmContact.firm}` : ''}
           </span>
-          <button onClick={() => onUpdate({ crmContact: undefined, showSearch: false })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
+          <button onClick={() => onUpdate({ crmContact: undefined, showSearch: false, showMergePrompt: false, mergeCandidate: undefined, mergeCandidates: undefined })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
             Change
           </button>
         </div>
       ) : (
         <>
           {/* Search / add form */}
-          {!contact.showAddForm ? (
+          {!contact.showAddForm && !contact.showMergePrompt ? (
             <div style={{ position: 'relative' }}>
               <Search size={12} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', zIndex: 1 }} />
               <input
