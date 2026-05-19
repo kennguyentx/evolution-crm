@@ -9,11 +9,11 @@ import NewDealModal from '@/components/deals/NewDealModal'
 import { moveDropboxOnStageChange } from '@/lib/dropbox-stage-move'
 
 const STAGES: { name: DealStage; label: string }[] = [
-  { name: 'Exclusivity',   label: 'Exclusivity' },
-  { name: 'LOI Submitted', label: 'LOI Submitted' },
-  { name: 'Pre-LOI',       label: 'Pre-LOI' },
-  { name: 'Reviewing',     label: 'Reviewing' },
   { name: 'Teaser',        label: 'Teaser' },
+  { name: 'Reviewing',     label: 'Reviewing' },
+  { name: 'Pre-LOI',       label: 'Pre-LOI' },
+  { name: 'LOI Submitted', label: 'LOI Submitted' },
+  { name: 'Exclusivity',   label: 'Exclusivity' },
 ]
 
 export default function PipelinePage() {

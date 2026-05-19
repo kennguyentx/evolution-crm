@@ -91,7 +91,6 @@ export default function BestPracticesPage() {
       {/* Header */}
       <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: breadcrumbs.length > 0 ? '10px' : '0' }}>
-          <BookOpen size={18} style={{ color: 'var(--accent)' }} />
           <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Best Practices</h1>
           <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '4px' }}>Dropbox library</span>
         </div>

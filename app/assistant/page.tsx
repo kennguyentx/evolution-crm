@@ -350,7 +350,6 @@ export default function AssistantPage() {
         {/* Header */}
         <div style={{ padding: '14px 22px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button onClick={() => setShowSidebar(s => !s)} className="btn btn-ghost" style={{ padding: '4px 8px', fontSize: '11px' }}>{showSidebar ? '◂' : '▸'}</button>
-          <Star size={15} style={{ color: 'var(--accent)' }} />
           <span style={{ fontSize: '15px', fontWeight: 700 }}>{activeThread?.title || 'Nexus Assistant'}</span>
           {!activeThread && <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Ask anything about your deals, contacts, raises, and portfolio</span>}
           {messages.length > 0 && (

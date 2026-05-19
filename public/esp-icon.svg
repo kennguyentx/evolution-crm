@@ -1,12 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 120">
-  <!-- Orange arc -->
-  <path d="M 3,28 Q 50,2 97,28 L 83,28 Q 50,13 17,28 Z" fill="#E8722A"/>
-  <!-- Dark purple e (even-odd: outer circle minus inner counter, plus bar) -->
-  <g fill="#3B1040" fill-rule="evenodd">
-    <!-- Outer nearly-complete circle, opening at right (mouth of e) -->
-    <!-- Center (50,84), R=34. Mouth from ~(83,72) to ~(81,98) -->
-    <path d="M 83,72 A 34,34 0 1,0 81,98 L 67,92 A 19,19 0 1,1 68,74 Z"/>
-    <!-- Bar: fills right gap between inner and outer at bar height -->
-    <rect x="68" y="72" width="15" height="8"/>
-  </g>
+  <!-- Orange thick arc -->
+  <path d="M 7,32 A 45,45 0 0,1 93,32" fill="none" stroke="#E8722A" stroke-width="15" stroke-linecap="round"/>
+  <!-- Dark purple bold e -->
+  <text x="50" y="118"
+    font-family="'Trebuchet MS', 'Calibri', 'Gill Sans MT', system-ui, sans-serif"
+    font-size="100" font-weight="700"
+    fill="#3B1040"
+    text-anchor="middle">e</text>
 </svg>
