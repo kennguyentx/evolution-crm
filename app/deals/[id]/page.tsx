@@ -1185,8 +1185,6 @@ export default function DealDetailPage() {
                 const i = item
                 const isEditing = editingInteractionId === i.id
                 return (
-              const isEditing = editingInteractionId === i.id
-              return (
                 <div key={i.id} className="card-2" style={{ padding: '14px 16px', marginBottom: '8px' }}>
                   {isEditing && editingInteraction ? (
                     <div style={{ display: 'grid', gap: '10px' }}>
