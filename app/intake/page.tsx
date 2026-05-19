@@ -46,7 +46,7 @@ function DealSelector({ onSelect }: { onSelect: (deal: any) => void }) {
   useEffect(() => {
     if (!query.trim()) { setResults([]); return }
     const t = setTimeout(async () => {
-      const { data } = await supabase.from('deals').select('id, company_name, stage, sector').ilike('company_name', `%${query}%`).in('stage', ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity']).order('updated_at', { ascending: false }).limit(8)
+      const { data } = await supabase.from('deals').select('id, company_name, stage, sector, deal_type, parent_portco').ilike('company_name', `%${query}%`).in('stage', ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity']).order('updated_at', { ascending: false }).limit(8)
       setResults(data || [])
       setOpen(true)
     }, 200)
@@ -129,6 +129,14 @@ function CIMFlow() {
   const [result, setResult] = useState<any>(null)
   const [updating, setUpdating] = useState(false)
   const [updated, setUpdated] = useState(false)
+  const [cimDealType, setCimDealType] = useState<'platform'|'add-on'>('platform')
+  const [cimPortco, setCimPortco] = useState('')
+  const [portcos, setPortcos] = useState<{id:string;name:string}[]>([])
+
+  useEffect(() => {
+    supabase.from('portfolio_companies').select('id, name').eq('status', 'Active').order('name')
+      .then(({ data }) => setPortcos(data || []))
+  }, [])
 
   const analyze = async () => {
     if (!selectedDeal) return
@@ -161,8 +169,10 @@ function CIMFlow() {
     if (result.geography)    patch.geography    = result.geography
     if (result.revenue)      patch.revenue      = result.revenue
     if (result.ebitda)       patch.ebitda       = result.ebitda
-    if (result.deal_type)    patch.deal_type    = result.deal_type
     if (result.description)  patch.description  = result.description
+    // Always use the explicitly-selected deal type (overrides Claude's guess)
+    patch.deal_type   = cimDealType
+    patch.parent_portco = cimDealType === 'add-on' && cimPortco ? cimPortco : null
     await supabase.from('deals').update(patch).eq('id', selectedDeal.id)
     setUpdated(true)
     setUpdating(false)
@@ -177,7 +187,7 @@ function CIMFlow() {
       <div style={{ width: '280px', minWidth: '280px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '16px' }}>
           <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '10px' }}>1. Select deal</div>
-          <DealSelector onSelect={setSelectedDeal} />
+          <DealSelector onSelect={d => { setSelectedDeal(d); setCimDealType(d.deal_type === 'add-on' ? 'add-on' : 'platform'); setCimPortco(d.parent_portco || '') }} />
           {selectedDeal && (
             <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Check size={12} style={{ color: 'var(--green)' }} />
@@ -189,8 +199,27 @@ function CIMFlow() {
           )}
         </div>
 
+        {/* Deal type / portco card */}
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '16px', opacity: selectedDeal ? 1 : 0.5, pointerEvents: selectedDeal ? 'auto' : 'none' }}>
-          <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '10px' }}>2. Upload CIM</div>
+          <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '8px' }}>2. Deal type</div>
+          <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+            {(['platform', 'add-on'] as const).map(t => (
+              <button key={t} onClick={() => { setCimDealType(t); if (t === 'platform') setCimPortco('') }}
+                style={{ flex: 1, padding: '5px 0', fontSize: '11px', fontWeight: cimDealType === t ? 600 : 400, borderRadius: '5px', border: '1px solid var(--border)', cursor: 'pointer', background: cimDealType === t ? 'var(--accent)' : 'transparent', color: cimDealType === t ? '#fff' : 'var(--text-secondary)', transition: 'all 0.15s' }}>
+                {t === 'platform' ? 'Platform' : 'Add-on'}
+              </button>
+            ))}
+          </div>
+          {cimDealType === 'add-on' && (
+            <select className="select" style={{ width: '100%', fontSize: '11px' }} value={cimPortco} onChange={e => setCimPortco(e.target.value)}>
+              <option value="">Select portfolio company…</option>
+              {portcos.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+            </select>
+          )}
+        </div>
+
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '16px', opacity: selectedDeal ? 1 : 0.5, pointerEvents: selectedDeal ? 'auto' : 'none' }}>
+          <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '10px' }}>3. Upload CIM</div>
           <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
             {(['upload', 'paste'] as const).map(m => (
               <button key={m} onClick={() => setInputMode(m)} style={{ flex: 1, padding: '5px', borderRadius: '6px', border: '1px solid var(--border)', background: inputMode === m ? 'var(--accent)' : 'transparent', color: inputMode === m ? 'white' : 'var(--text-muted)', fontSize: '11px', cursor: 'pointer' }}>
@@ -584,7 +613,15 @@ function TeaserFlow() {
   const [wordFile, setWordFile] = useState<File|null>(null)
   const [dropboxError, setDropboxError] = useState<string|null>(null)
   const [extraFiles, setExtraFiles] = useState<{name:string;status:'uploading'|'done'|'error';error?:string}[]>([])
+  const [dealType, setDealType] = useState<'platform'|'add-on'>('platform')
+  const [parentPortco, setParentPortco] = useState('')
+  const [portcos, setPortcos] = useState<{id:string;name:string}[]>([])
   const extraFileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    supabase.from('portfolio_companies').select('id, name').eq('status', 'Active').order('name')
+      .then(({ data }) => setPortcos(data || []))
+  }, [])
 
   useEffect(() => {
     if (!edited) return
@@ -691,10 +728,10 @@ function TeaserFlow() {
       const uploadRes = await fetch(signedUploadUrl, { method: 'PUT', headers: { 'Content-Type': mimeType }, body: file })
       if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`)
       setStage('parsing')
-      const res = await fetch('/api/intake/parse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ storagePath, fileName: file.name }) })
+      const res = await fetch('/api/intake/parse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ storagePath, fileName: file.name, deal_type: dealType, parent_portco: parentPortco || null }) })
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
-      setParsed(data); setEdited({ ...data, stage: data.stage || 'Teaser' })
+      setParsed(data); setEdited({ ...data, stage: data.stage || 'Teaser', deal_type: dealType })
       if (data.dropbox_folder) setDropboxFolder(data.dropbox_folder)
       if (data.dropbox_folder_existed) setDropboxFolderExisted(true)
       if (data.dropbox_error) setDropboxError(data.dropbox_error)
@@ -754,10 +791,11 @@ function TeaserFlow() {
     const { data, error } = await supabase.from('deals').insert({
       company_name: edited.company_name || 'Unknown Company',
       sector: edited.sector || null, geography: edited.geography || null,
-      description: edited.cim_summary || null, deal_type: edited.deal_type || 'platform',
+      description: edited.cim_summary || null, deal_type: dealType,
       revenue: edited.revenue, ebitda: edited.ebitda, cim_summary: edited.cim_summary,
       cim_parsed: true, stage: edited.stage || 'Teaser', status: 'Active',
       dropbox_path: dropboxFolder || null, expected_close: new Date().toISOString().split('T')[0],
+      parent_portco: (dealType === 'add-on' && parentPortco) ? parentPortco : null,
       source_notes: firstBanker?.crmContact?.firm || contacts.find(c => c.role === 'Source / Banker')?.firm || null,
     }).select().single()
     if (error) { setError(error.message); setStage('review'); return }
@@ -772,10 +810,10 @@ function TeaserFlow() {
     if (!pastedText.trim()) return
     setFileName('pasted text'); setStage('parsing'); setError(null)
     try {
-      const res = await fetch('/api/intake/parse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: pastedText, fileName: 'teaser.txt' }) })
+      const res = await fetch('/api/intake/parse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: pastedText, fileName: 'teaser.txt', deal_type: dealType, parent_portco: parentPortco || null }) })
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
-      setParsed(data); setEdited({ ...data, stage: data.stage || 'Teaser' })
+      setParsed(data); setEdited({ ...data, stage: data.stage || 'Teaser', deal_type: dealType })
       if (data.dropbox_folder) setDropboxFolder(data.dropbox_folder)
       if (data.dropbox_folder_existed) setDropboxFolderExisted(true)
       if (data.dropbox_error) setDropboxError(data.dropbox_error)
@@ -798,6 +836,34 @@ function TeaserFlow() {
       <div style={{ width: '280px', minWidth: '280px' }}>
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '16px' }}>
           <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '10px' }}>Upload Teaser</div>
+
+          {/* Platform / Add-on selector — always visible */}
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '5px' }}>Deal type</div>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {(['platform', 'add-on'] as const).map(t => (
+                <button key={t} onClick={() => { setDealType(t); if (t === 'platform') setParentPortco('') }}
+                  disabled={stage !== 'idle'}
+                  style={{ flex: 1, padding: '5px 0', fontSize: '11px', fontWeight: dealType === t ? 600 : 400, borderRadius: '5px', border: '1px solid var(--border)', cursor: stage === 'idle' ? 'pointer' : 'default', background: dealType === t ? 'var(--accent)' : 'transparent', color: dealType === t ? '#fff' : 'var(--text-secondary)', transition: 'all 0.15s' }}>
+                  {t === 'platform' ? 'Platform' : 'Add-on'}
+                </button>
+              ))}
+            </div>
+            {dealType === 'add-on' && (
+              <div style={{ marginTop: '6px' }}>
+                <select className="select" style={{ width: '100%', fontSize: '11px' }} value={parentPortco}
+                  onChange={e => setParentPortco(e.target.value)} disabled={stage !== 'idle'}>
+                  <option value="">Select portfolio company…</option>
+                  {portcos.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                </select>
+                {parentPortco && (
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    Dropbox folder will be named: <strong>{'{Company}'} [{parentPortco}]</strong>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {stage === 'idle' && (
             <>

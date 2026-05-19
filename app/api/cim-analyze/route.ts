@@ -183,12 +183,13 @@ Return ONLY valid JSON:
     if (!jsonMatch) throw new Error('No JSON in Claude response')
     const extracted = JSON.parse(jsonMatch[0])
 
-    // Upload to Dropbox
+    // Upload to Dropbox — use deal's existing dropbox_path (which may include a [PortcoName] suffix)
+    // falling back to deriving from company name if not set
     let dropboxPath: string | null = null
-    if (fileBuffer && deal.dropbox_path) {
+    if (fileBuffer) {
       try {
-        const safeName = deal.company_name.replace(/[<>:"/\\|?*]/g, '_')
-        const folder = `/Evolution Strategy Partners/Deals/${safeName}`
+        // deal.dropbox_path is the folder (set during teaser intake, may include [PortcoName])
+        const folder = deal.dropbox_path || `/Evolution Strategy Partners/Deals/${deal.company_name.replace(/[<>:"/\\|?*]/g, '_')}`
         dropboxPath = await dropboxUpload(folder, fileName, Buffer.from(fileBuffer))
       } catch (e) {
         console.error('Dropbox upload error (non-fatal):', e)

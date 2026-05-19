@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
   let storagePath: string | null = null
   try {
     const body = await req.json()
-    const { storagePath: sp, fileName, text: pastedText } = body
+    const { storagePath: sp, fileName, text: pastedText, deal_type: userDealType, parent_portco: userParentPortco } = body
     storagePath = sp || null
 
     let messageContent: any[]
@@ -127,6 +127,10 @@ export async function POST(req: NextRequest) {
       await supabase.storage.from(BUCKET).remove([storagePath]).catch(() => {})
     }
 
+    // Override deal_type with user's explicit selection (more reliable than Claude's guess)
+    if (userDealType) parsed.deal_type = userDealType
+    if (userParentPortco) parsed.parent_portco = userParentPortco
+
     // Upload to Dropbox (best-effort — doesn't fail the parse if Dropbox is unavailable)
     let dropbox_folder: string | null = null
     let dropbox_error: string | null = null
@@ -135,7 +139,9 @@ export async function POST(req: NextRequest) {
 
     if (dbx_configured && parsed.company_name) {
       const safeName = parsed.company_name.replace(/[<>:"/\\|?*]/g, '_')
-      const folderPath = `/Evolution Strategy Partners/Deals/${safeName}`
+      // Append [PortcoName] suffix for add-on deals so the folder is clearly scoped
+      const portcoSuffix = userParentPortco ? ` [${String(userParentPortco).replace(/[<>:"/\\|?*]/g, '_')}]` : ''
+      const folderPath = `/Evolution Strategy Partners/Deals/${safeName}${portcoSuffix}`
 
       // Check whether a folder for this company already exists in Dropbox
       dropbox_folder_existed = await dropboxFolderExists(folderPath).catch(() => false)
