@@ -44,7 +44,7 @@ export default function DashboardPage() {
       const twoWeeksOut = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0]
 
       const [{ data: dealData }, { data: raiseData }, { data: partData }, { data: evtData }] = await Promise.all([
-        supabase.from('deals').select('id, company_name, stage, ebitda, revenue, sector').eq('status', 'Active').in('stage', ACTIVE_STAGES),
+        supabase.from('deals').select('id, company_name, stage, ebitda, revenue, sector').in('stage', ACTIVE_STAGES),
         supabase.from('capital_raises').select('id, name, target_equity, target_debt, deal:deals(company_name)').eq('status', 'Open'),
         supabase.from('raise_participants').select('raise_id, committed_amount, debt_amount, status').in('status', ['invested', 'confirmed']),
         supabase.from('calendar_events')
