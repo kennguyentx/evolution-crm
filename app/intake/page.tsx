@@ -805,16 +805,18 @@ function TeaserFlow() {
     }
     setDealId(data.id); setStage('done')
 
-    // Record in intake queue as approved
-    await supabase.from('intake_queue').insert({
-      source: 'upload',
-      doc_type: 'teaser',
-      file_name: fileName || 'teaser',
-      extracted: { ...edited, contacts: contacts.map(c => ({ name: c.name, firm: c.firm, role: c.role })) },
-      status: 'approved',
-      deal_id: data.id,
-      reviewed_at: new Date().toISOString(),
-    }).catch(() => {}) // non-fatal
+    // Record in intake queue as approved (non-fatal)
+    try {
+      await supabase.from('intake_queue').insert({
+        source: 'upload',
+        doc_type: 'teaser',
+        file_name: fileName || 'teaser',
+        extracted: { ...edited, contacts: contacts.map(c => ({ name: c.name, firm: c.firm, role: c.role })) },
+        status: 'approved',
+        deal_id: data.id,
+        reviewed_at: new Date().toISOString(),
+      })
+    } catch { /* non-fatal */ }
   }
 
   const handlePasteSubmit = async () => {
