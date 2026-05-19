@@ -208,17 +208,23 @@ export default function AssistantPage() {
         }),
       })
       const data = await res.json()
-      if (data.type === 'text') {
+
+      if (data.error) {
+        setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, role: 'system', content: `Error: ${data.error}` } : m))
+      } else if (data.type === 'text') {
         const doneMsg: Message = { id: uid(), role: 'system', content: 'Done' }
         const aMsg: Message = { id: uid(), role: 'assistant', content: data.content }
         const finalApi = [...(msg.messagesSoFar || []), { role: 'assistant', content: data.content }]
+        const threadId = activeThread?.id ?? null
         setMessages(prev => {
           const updated = prev.map(m => m.id === msg.id ? doneMsg : m)
-          const final = [...updated, aMsg]
-          saveThread(activeThread?.id ?? null, final, finalApi)
-          return final
+          return [...updated, aMsg]
         })
         setApiMessages(finalApi)
+        await saveThread(threadId, [...messages.map(m => m.id === msg.id ? { id: uid(), role: 'system' as const, content: 'Done' } : m), aMsg], finalApi)
+      } else {
+        // Unexpected response — surface it so it's not silently swallowed
+        setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, role: 'system', content: `Unexpected response: ${JSON.stringify(data)}` } : m))
       }
     } catch (e: any) {
       setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, role: 'system', content: `Error: ${e.message}` } : m))
