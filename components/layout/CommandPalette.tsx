@@ -48,8 +48,8 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
       ])
       const r: Result[] = [
         ...(deals ?? []).map((d: any) => ({ id: d.id, label: d.company_name, sublabel: [d.sector, d.stage].filter(Boolean).join(' · ') || undefined, type: 'deal' as const, href: `/deals/${d.id}` })),
-        ...(contacts ?? []).map((c: any) => ({ id: c.id, label: `${c.first_name} ${c.last_name}`, sublabel: c.firm ?? undefined, type: 'contact' as const, href: `/contacts` })),
-        ...(caps ?? []).map((c: any) => ({ id: c.id, label: c.firm, sublabel: c.contact_name ?? undefined, type: 'capital_contact' as const, href: `/raises/contacts` })),
+        ...(contacts ?? []).map((c: any) => ({ id: c.id, label: `${c.first_name} ${c.last_name}`, sublabel: c.firm ?? undefined, type: 'contact' as const, href: `/contacts?open=${c.id}` })),
+        ...(caps ?? []).map((c: any) => ({ id: c.id, label: c.firm, sublabel: c.contact_name ?? undefined, type: 'capital_contact' as const, href: `/raises/contacts?firm=${encodeURIComponent(c.firm)}` })),
       ]
       setResults(r)
       setSelected(0)

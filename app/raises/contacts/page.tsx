@@ -125,7 +125,23 @@ export default function CapitalContactsPage() {
     setLoadingMore(false)
   }, [supabase, search, sourceFilter, statusFilter])
 
-  useEffect(() => { load() }, [])
+  // Initial load — also handles ?firm= from global search navigation
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const firm = params.get('firm')
+    if (firm) {
+      const decoded = decodeURIComponent(firm)
+      setSearch(decoded)
+      setExpandedFirm(decoded)
+      load(decoded)
+      // Scrub param from URL so back/forward doesn't re-trigger
+      const url = new URL(window.location.href)
+      url.searchParams.delete('firm')
+      window.history.replaceState({}, '', url.toString())
+    } else {
+      load()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Debounced search
   const crmLinkTimer = useRef<any>(null)

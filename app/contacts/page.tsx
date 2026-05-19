@@ -77,6 +77,20 @@ export default function ContactsPage() {
 
   useEffect(() => { setOffset(0); fetchContacts(true) }, [typeFilter])
 
+  // Auto-open a contact from ?open=<id> (e.g. navigated from global search)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const openId = params.get('open')
+    if (!openId) return
+    supabase.from('contacts').select('*').eq('id', openId).single().then(({ data }) => {
+      if (data) setEditingContact(data as Contact)
+    })
+    // Clean the param from the URL without a full navigation
+    const url = new URL(window.location.href)
+    url.searchParams.delete('open')
+    window.history.replaceState({}, '', url.toString())
+  }, [])
+
   useEffect(() => {
     if (!search.trim()) { setSearchResults(null); return }
     const timer = setTimeout(async () => {
