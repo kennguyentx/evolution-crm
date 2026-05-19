@@ -26,7 +26,7 @@ export async function getDropboxToken(): Promise<string> {
   return cachedToken!
 }
 
-export async function dropboxUpload(folderPath: string, fileName: string, buffer: Buffer): Promise<string> {
+export async function dropboxUpload(folderPath: string, fileName: string, buffer: Buffer | Uint8Array): Promise<string> {
   const token = await getDropboxToken()
   const fullPath = `${folderPath.replace(/\/$/, '')}/${fileName}`
 
@@ -42,7 +42,7 @@ export async function dropboxUpload(folderPath: string, fileName: string, buffer
         mute: false,
       }),
     },
-    body: buffer,
+    body: new Uint8Array(buffer),
   })
   if (!res.ok) throw new Error(`Dropbox upload failed: ${await res.text()}`)
   const result = await res.json()
