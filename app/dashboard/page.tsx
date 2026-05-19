@@ -74,7 +74,7 @@ export default function DashboardPage() {
   }))
 
   const totalEbitda = deals.reduce((s, d) => s + (d.ebitda ?? 0), 0)
-  const maxCount = Math.max(...stageSummary.map(s => s.count), 1)
+  const maxCount = Math.max(...stageSummary.map(s => s.count), 5)
 
   if (loading) return <div style={{ padding: '40px', color: 'var(--text-muted)', fontSize: '13px' }}>Loading…</div>
 
