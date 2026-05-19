@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
-import { Plus, Search, X, Check, Mail, MessageSquare, Edit3, Pencil } from 'lucide-react'
+import { Plus, Search, X, Check, Mail, MessageSquare, Edit3, Pencil, UserPlus } from 'lucide-react'
 
 type Note = {
   id: string
@@ -23,6 +23,22 @@ type Note = {
   raise?: { name: string } | null
   capital_contact?: { firm: string; contact_name: string | null } | null
 }
+
+type UnknownName = {
+  first: string; last: string; dismissed: boolean
+  showForm: boolean; form: { firm: string; title: string; contact_type: string }
+  adding: boolean; addedId: string | null
+}
+
+// Common capitalized two-word phrases that are NOT person names
+const NAME_BLOCKLIST = new Set([
+  'New York','Los Angeles','San Francisco','North Carolina','South Carolina','North America',
+  'South America','East Coast','West Coast','United States','Good Morning','Good Afternoon',
+  'Good Evening','Dear Ken','Dear Sir','Per Our','Per The','As Discussed','This Week',
+  'Last Week','Next Week','This Month','Last Month','Next Month','Monday Tuesday',
+  'Tuesday Wednesday','Wednesday Thursday','Thursday Friday','Friday Saturday',
+  'Best Regards','Kind Regards','Looking Forward','Follow Up','Follow Up',
+])
 
 const SENTIMENT_CONFIG: Record<string, { label: string; color: string }> = {
   interested: { label: 'Interested',  color: 'var(--green)' },
@@ -74,6 +90,8 @@ export default function NotesPage() {
   const [detectedDeals, setDetectedDeals] = useState<{ item: any; accepted: boolean }[]>([])
   const [editDetectedContacts, setEditDetectedContacts] = useState<{ item: any; accepted: boolean }[]>([])
   const [editDetectedDeals, setEditDetectedDeals] = useState<{ item: any; accepted: boolean }[]>([])
+  const [unknownNames, setUnknownNames] = useState<UnknownName[]>([])
+  const [editUnknownNames, setEditUnknownNames] = useState<UnknownName[]>([])
   const detectTimer = useRef<any>(null)
   const editDetectTimer = useRef<any>(null)
   const searchTimer = useRef<any>(null)
@@ -130,14 +148,27 @@ export default function NotesPage() {
   }
 
   const detectMentions = useCallback(async (text: string) => {
-    if (!text.trim()) { setDetectedContacts([]); setDetectedDeals([]); return }
+    if (!text.trim()) { setDetectedContacts([]); setDetectedDeals([]); setUnknownNames([]); return }
     const lower = text.toLowerCase()
 
-    const words = text.trim().split(/\s+/).filter(w => w.length > 1)
-    const pairs = words.slice(0, -1).map((w, i) => ({ first: w, last: words[i + 1] }))
+    // Extract capitalized "FirstName LastName" pairs — more reliable than word-by-word
+    const nameRx = /\b([A-Z][a-z]{1,20})\s+([A-Z][a-z]{1,20})\b/g
+    const candidates: { first: string; last: string; key: string }[] = []
+    const seenKeys = new Set<string>()
+    let m: RegExpExecArray | null
+    while ((m = nameRx.exec(text)) !== null) {
+      const key = `${m[1]} ${m[2]}`
+      if (!NAME_BLOCKLIST.has(key) && !seenKeys.has(key)) {
+        candidates.push({ first: m[1], last: m[2], key })
+        seenKeys.add(key)
+      }
+    }
+
     const foundContacts: { item: any; accepted: boolean }[] = []
     const foundContactIds = new Set<string>()
-    for (const pair of pairs.slice(0, 10)) {
+    const newUnknown: { first: string; last: string }[] = []
+
+    for (const pair of candidates.slice(0, 12)) {
       const { data } = await supabase
         .from('contacts')
         .select('id, first_name, last_name, firm, contact_type')
@@ -147,10 +178,19 @@ export default function NotesPage() {
       if (data?.[0] && !foundContactIds.has(data[0].id)) {
         foundContacts.push({ item: data[0], accepted: true })
         foundContactIds.add(data[0].id)
+      } else if (!data?.[0]) {
+        newUnknown.push({ first: pair.first, last: pair.last })
       }
     }
+
     setDetectedContacts(foundContacts)
     if (foundContacts[0]) setAddForm(p => ({ ...p, contact_id: foundContacts[0].item.id, contact_label: `${foundContacts[0].item.first_name} ${foundContacts[0].item.last_name}${foundContacts[0].item.firm ? ` · ${foundContacts[0].item.firm}` : ''}` }))
+
+    // Preserve dismissed / added state for names already shown
+    setUnknownNames(prev => newUnknown.map(n => {
+      const existing = prev.find(u => u.first === n.first && u.last === n.last)
+      return existing ?? { first: n.first, last: n.last, dismissed: false, showForm: false, form: { firm: '', title: '', contact_type: 'other' }, adding: false, addedId: null }
+    }))
 
     const foundDeals: { item: any; accepted: boolean }[] = []
     const foundDealIds = new Set<string>()
@@ -171,14 +211,26 @@ export default function NotesPage() {
   }
 
   const detectEditMentions = useCallback(async (text: string) => {
-    if (!text.trim()) { setEditDetectedContacts([]); setEditDetectedDeals([]); return }
+    if (!text.trim()) { setEditDetectedContacts([]); setEditDetectedDeals([]); setEditUnknownNames([]); return }
     const lower = text.toLowerCase()
 
-    const words = text.trim().split(/\s+/).filter(w => w.length > 1)
-    const pairs = words.slice(0, -1).map((w, i) => ({ first: w, last: words[i + 1] }))
+    const nameRx = /\b([A-Z][a-z]{1,20})\s+([A-Z][a-z]{1,20})\b/g
+    const candidates: { first: string; last: string; key: string }[] = []
+    const seenKeys = new Set<string>()
+    let m: RegExpExecArray | null
+    while ((m = nameRx.exec(text)) !== null) {
+      const key = `${m[1]} ${m[2]}`
+      if (!NAME_BLOCKLIST.has(key) && !seenKeys.has(key)) {
+        candidates.push({ first: m[1], last: m[2], key })
+        seenKeys.add(key)
+      }
+    }
+
     const foundContacts: { item: any; accepted: boolean }[] = []
     const foundContactIds = new Set<string>()
-    for (const pair of pairs.slice(0, 10)) {
+    const newUnknown: { first: string; last: string }[] = []
+
+    for (const pair of candidates.slice(0, 12)) {
       const { data } = await supabase
         .from('contacts')
         .select('id, first_name, last_name, firm, contact_type')
@@ -188,10 +240,18 @@ export default function NotesPage() {
       if (data?.[0] && !foundContactIds.has(data[0].id)) {
         foundContacts.push({ item: data[0], accepted: true })
         foundContactIds.add(data[0].id)
+      } else if (!data?.[0]) {
+        newUnknown.push({ first: pair.first, last: pair.last })
       }
     }
+
     setEditDetectedContacts(foundContacts)
     if (foundContacts[0]) setEditForm(p => ({ ...p, contact_id: foundContacts[0].item.id, contact_label: `${foundContacts[0].item.first_name} ${foundContacts[0].item.last_name}${foundContacts[0].item.firm ? ` · ${foundContacts[0].item.firm}` : ''}` }))
+
+    setEditUnknownNames(prev => newUnknown.map(n => {
+      const existing = prev.find(u => u.first === n.first && u.last === n.last)
+      return existing ?? { first: n.first, last: n.last, dismissed: false, showForm: false, form: { firm: '', title: '', contact_type: 'other' }, adding: false, addedId: null }
+    }))
 
     const foundDeals: { item: any; accepted: boolean }[] = []
     const foundDealIds = new Set<string>()
@@ -231,6 +291,39 @@ export default function NotesPage() {
     setter(data ?? [])
   }
 
+  const addNewContactFromNote = async (idx: number) => {
+    const u = unknownNames[idx]
+    setUnknownNames(prev => prev.map((x, i) => i === idx ? { ...x, adding: true } : x))
+    const { data } = await supabase.from('contacts').insert({
+      first_name: u.first, last_name: u.last,
+      firm: u.form.firm || null, title: u.form.title || null,
+      contact_type: u.form.contact_type || 'other',
+    }).select().single()
+    if (data) {
+      setUnknownNames(prev => prev.map((x, i) => i === idx ? { ...x, adding: false, addedId: data.id, showForm: false } : x))
+      // Auto-link to note if no contact linked yet
+      setAddForm(p => p.contact_id ? p : { ...p, contact_id: data.id, contact_label: `${data.first_name} ${data.last_name}${data.firm ? ` · ${data.firm}` : ''}` })
+    } else {
+      setUnknownNames(prev => prev.map((x, i) => i === idx ? { ...x, adding: false } : x))
+    }
+  }
+
+  const addNewContactFromEdit = async (idx: number) => {
+    const u = editUnknownNames[idx]
+    setEditUnknownNames(prev => prev.map((x, i) => i === idx ? { ...x, adding: true } : x))
+    const { data } = await supabase.from('contacts').insert({
+      first_name: u.first, last_name: u.last,
+      firm: u.form.firm || null, title: u.form.title || null,
+      contact_type: u.form.contact_type || 'other',
+    }).select().single()
+    if (data) {
+      setEditUnknownNames(prev => prev.map((x, i) => i === idx ? { ...x, adding: false, addedId: data.id, showForm: false } : x))
+      setEditForm(p => p.contact_id ? p : { ...p, contact_id: data.id, contact_label: `${data.first_name} ${data.last_name}${data.firm ? ` · ${data.firm}` : ''}` })
+    } else {
+      setEditUnknownNames(prev => prev.map((x, i) => i === idx ? { ...x, adding: false } : x))
+    }
+  }
+
   const addNote = async () => {
     if (!addForm.raw_text.trim()) return
     setSaving(true)
@@ -254,6 +347,7 @@ export default function NotesPage() {
     setAddCapContactResults([])
     setDetectedContacts([])
     setDetectedDeals([])
+    setUnknownNames([])
     setShowAddForm(false)
     setSaving(false)
   }
@@ -314,6 +408,7 @@ export default function NotesPage() {
       setEditingNoteId(null)
       setEditDetectedContacts([])
       setEditDetectedDeals([])
+      setEditUnknownNames([])
     } catch (err: any) {
       setEditError(err.message)
     } finally {
@@ -364,6 +459,55 @@ export default function NotesPage() {
                     ))}
                   </div>
                 )}
+                {/* Unknown names — prompt to add as new contact */}
+                {unknownNames.filter(u => !u.dismissed && !u.addedId).map((u, idx) => (
+                  <div key={`${u.first}-${u.last}`} style={{ marginTop: '8px', padding: '8px 10px', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '7px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <UserPlus size={12} style={{ color: '#b45309', flexShrink: 0 }} />
+                      <span style={{ fontSize: '12px', color: '#b45309', flex: 1 }}><strong>{u.first} {u.last}</strong> isn't in your contacts yet</span>
+                      <button onClick={() => setUnknownNames(p => p.map((x, i) => i === idx ? { ...x, showForm: !x.showForm } : x))}
+                        style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(245,158,11,0.4)', background: 'transparent', color: '#b45309', cursor: 'pointer' }}>
+                        {u.showForm ? 'Cancel' : 'Add contact'}
+                      </button>
+                      <button onClick={() => setUnknownNames(p => p.map((x, i) => i === idx ? { ...x, dismissed: true } : x))}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b45309', padding: '2px' }}><X size={11} /></button>
+                    </div>
+                    {u.showForm && (
+                      <div style={{ marginTop: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '6px', alignItems: 'end' }}>
+                        <div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '3px' }}>Firm</div>
+                          <input className="input" style={{ fontSize: '11px' }} placeholder="e.g. Sunbelt Advisors" value={u.form.firm}
+                            onChange={e => setUnknownNames(p => p.map((x, i) => i === idx ? { ...x, form: { ...x.form, firm: e.target.value } } : x))} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '3px' }}>Title</div>
+                          <input className="input" style={{ fontSize: '11px' }} placeholder="e.g. Managing Director" value={u.form.title}
+                            onChange={e => setUnknownNames(p => p.map((x, i) => i === idx ? { ...x, form: { ...x.form, title: e.target.value } } : x))} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '3px' }}>Type</div>
+                          <select className="select" style={{ fontSize: '11px', width: '100%' }} value={u.form.contact_type}
+                            onChange={e => setUnknownNames(p => p.map((x, i) => i === idx ? { ...x, form: { ...x.form, contact_type: e.target.value } } : x))}>
+                            <option value="banker">Banker</option>
+                            <option value="management">Management</option>
+                            <option value="lender">Lender</option>
+                            <option value="advisor">Advisor</option>
+                            <option value="lp">LP</option>
+                            <option value="other">Other</option>
+                          </select>
+                        </div>
+                        <button className="btn btn-primary" style={{ fontSize: '11px' }} onClick={() => addNewContactFromNote(idx)} disabled={u.adding}>
+                          {u.adding ? 'Adding…' : 'Add & Link'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {unknownNames.filter(u => u.addedId).map(u => (
+                  <div key={`added-${u.first}-${u.last}`} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', fontSize: '11px', color: 'var(--green)' }}>
+                    <Check size={11} /> <strong>{u.first} {u.last}</strong> added to contacts
+                  </div>
+                ))}
               </div>
               <div>
                 <label className="label">Logged by</label>
@@ -425,7 +569,7 @@ export default function NotesPage() {
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="btn btn-ghost" onClick={() => { setShowAddForm(false); setDetectedContacts([]); setDetectedDeals([]); setAddContactSearch(''); setAddContactResults([]); setAddCapContactSearch(''); setAddCapContactResults([]) }}>Cancel</button>
+              <button className="btn btn-ghost" onClick={() => { setShowAddForm(false); setDetectedContacts([]); setDetectedDeals([]); setUnknownNames([]); setAddContactSearch(''); setAddContactResults([]); setAddCapContactSearch(''); setAddCapContactResults([]) }}>Cancel</button>
               <button className="btn btn-primary" onClick={addNote} disabled={saving || !addForm.raw_text.trim()}>
                 <Check size={13} /> {saving ? 'Saving…' : 'Save'}
               </button>
@@ -590,6 +734,54 @@ export default function NotesPage() {
                                 ))}
                               </div>
                             )}
+                            {editUnknownNames.filter(u => !u.dismissed && !u.addedId).map((u, idx) => (
+                              <div key={`${u.first}-${u.last}`} style={{ marginTop: '8px', padding: '8px 10px', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '7px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <UserPlus size={12} style={{ color: '#b45309', flexShrink: 0 }} />
+                                  <span style={{ fontSize: '12px', color: '#b45309', flex: 1 }}><strong>{u.first} {u.last}</strong> isn't in your contacts yet</span>
+                                  <button onClick={() => setEditUnknownNames(p => p.map((x, i) => i === idx ? { ...x, showForm: !x.showForm } : x))}
+                                    style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(245,158,11,0.4)', background: 'transparent', color: '#b45309', cursor: 'pointer' }}>
+                                    {u.showForm ? 'Cancel' : 'Add contact'}
+                                  </button>
+                                  <button onClick={() => setEditUnknownNames(p => p.map((x, i) => i === idx ? { ...x, dismissed: true } : x))}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b45309', padding: '2px' }}><X size={11} /></button>
+                                </div>
+                                {u.showForm && (
+                                  <div style={{ marginTop: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '6px', alignItems: 'end' }}>
+                                    <div>
+                                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '3px' }}>Firm</div>
+                                      <input className="input" style={{ fontSize: '11px' }} placeholder="e.g. Sunbelt Advisors" value={u.form.firm}
+                                        onChange={e => setEditUnknownNames(p => p.map((x, i) => i === idx ? { ...x, form: { ...x.form, firm: e.target.value } } : x))} />
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '3px' }}>Title</div>
+                                      <input className="input" style={{ fontSize: '11px' }} placeholder="e.g. Managing Director" value={u.form.title}
+                                        onChange={e => setEditUnknownNames(p => p.map((x, i) => i === idx ? { ...x, form: { ...x.form, title: e.target.value } } : x))} />
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '3px' }}>Type</div>
+                                      <select className="select" style={{ fontSize: '11px', width: '100%' }} value={u.form.contact_type}
+                                        onChange={e => setEditUnknownNames(p => p.map((x, i) => i === idx ? { ...x, form: { ...x.form, contact_type: e.target.value } } : x))}>
+                                        <option value="banker">Banker</option>
+                                        <option value="management">Management</option>
+                                        <option value="lender">Lender</option>
+                                        <option value="advisor">Advisor</option>
+                                        <option value="lp">LP</option>
+                                        <option value="other">Other</option>
+                                      </select>
+                                    </div>
+                                    <button className="btn btn-primary" style={{ fontSize: '11px' }} onClick={() => addNewContactFromEdit(idx)} disabled={u.adding}>
+                                      {u.adding ? 'Adding…' : 'Add & Link'}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                            {editUnknownNames.filter(u => u.addedId).map(u => (
+                              <div key={`added-${u.first}-${u.last}`} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', fontSize: '11px', color: 'var(--green)' }}>
+                                <Check size={11} /> <strong>{u.first} {u.last}</strong> added to contacts
+                              </div>
+                            ))}
                           </div>
                           {/* Link row */}
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginBottom: '10px' }}>
@@ -647,7 +839,7 @@ export default function NotesPage() {
                           </div>
                           {editError && <div style={{ fontSize: '11px', color: 'var(--red)', marginBottom: '8px' }}>{editError}</div>}
                           <div style={{ display: 'flex', gap: '8px' }}>
-                            <button className="btn btn-ghost" style={{ fontSize: '11px' }} onClick={() => { setEditingNoteId(null); setEditDetectedContacts([]); setEditDetectedDeals([]); setEditContactSearch(''); setEditContactResults([]) }}>Cancel</button>
+                            <button className="btn btn-ghost" style={{ fontSize: '11px' }} onClick={() => { setEditingNoteId(null); setEditDetectedContacts([]); setEditDetectedDeals([]); setEditUnknownNames([]); setEditContactSearch(''); setEditContactResults([]) }}>Cancel</button>
                             <button className="btn btn-primary" style={{ fontSize: '11px' }} onClick={saveEdit} disabled={editSaving}>
                               <Check size={12} /> {editSaving ? 'Saving…' : 'Save'}
                             </button>
