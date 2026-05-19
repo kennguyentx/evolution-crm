@@ -91,17 +91,29 @@ export default function AssistantPage() {
   const [showSidebar, setShowSidebar] = useState(true)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  // Keep user ID in a ref so saveThread closures always see the current value
+  const userIdRef = useRef<string | null>(null)
 
-  useEffect(() => { loadThreads() }, [])
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) {
+        userIdRef.current = data.user.id
+      }
+      loadThreads()
+    })
+  }, [])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
   const loadThreads = async () => {
     setLoadingThreads(true)
-    const { data } = await supabase
+    let query = supabase
       .from('assistant_threads')
       .select('id, created_at, updated_at, title, user_name, messages, api_messages')
       .order('updated_at', { ascending: false })
       .limit(50)
+    // Scope to current user if we have their ID
+    if (userIdRef.current) query = query.eq('user_id', userIdRef.current)
+    const { data } = await query
     setThreads((data as Thread[]) ?? [])
     setLoadingThreads(false)
   }
@@ -134,7 +146,7 @@ export default function AssistantPage() {
       setThreads(prev => prev.map(t => t.id === threadId ? { ...t, ...payload } : t))
       return threadId
     } else {
-      const { data } = await supabase.from('assistant_threads').insert({ ...payload, title: title || 'New conversation' }).select().single()
+      const { data } = await supabase.from('assistant_threads').insert({ ...payload, title: title || 'New conversation', user_id: userIdRef.current }).select().single()
       if (data) {
         setActiveThread(data as Thread)
         setThreads(prev => [data as Thread, ...prev])
