@@ -802,123 +802,119 @@ export async function POST(req: NextRequest) {
     }
 
     const systemPrompt = SYSTEM_PROMPT()
+    const encoder = new TextEncoder()
+
+    const makeStream = (handler: (send: (event: string, data: object) => void, close: () => void) => Promise<void>): Response => {
+      let ctrl: ReadableStreamDefaultController<Uint8Array>
+      const stream = new ReadableStream<Uint8Array>({
+        start(c) { ctrl = c },
+      })
+      const send = (event: string, data: object) => {
+        try { ctrl.enqueue(encoder.encode(`data: ${JSON.stringify({ event, ...data })}\n\n`)) } catch {}
+      }
+      const close = () => { try { ctrl.close() } catch {} }
+      handler(send, close).catch(err => { send('error', { message: err?.message || String(err) }); close() })
+      return new Response(stream, {
+        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' },
+      })
+    }
 
     // ── Confirmation flow ──────────────────────────────────────
     if (confirming) {
-      // Execute the confirmed write tool
-      const result = await executeTool(confirming.tool_name, confirming.input)
+      return makeStream(async (send, close) => {
+        const result = await executeTool(confirming.tool_name, confirming.input)
+        const lastMsg = messages[messages.length - 1]
+        const allToolUses: any[] = Array.isArray(lastMsg?.content)
+          ? lastMsg.content.filter((b: any) => b.type === 'tool_use')
+          : []
+        const toolResults = allToolUses.length > 0
+          ? await Promise.all(allToolUses.map(async (t: any) => {
+              if (t.id === confirming.tool_use_id) {
+                return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify(result) }
+              }
+              try {
+                const r = await executeTool(t.name, t.input)
+                return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify(r) }
+              } catch (err: any) {
+                return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify({ error: err.message }) }
+              }
+            }))
+          : [{ type: 'tool_result' as const, tool_use_id: confirming.tool_use_id, content: JSON.stringify(result) }]
+        const continueMessages = [...messages, { role: 'user', content: toolResults }]
+        const claudeStream = anthropic.messages.stream({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 2000,
+          system: systemPrompt,
+          tools: TOOLS,
+          messages: continueMessages,
+        } as any)
+        claudeStream.on('text', (text: string) => send('chunk', { text }))
+        await claudeStream.finalMessage()
+        send('done', {})
+        close()
+      })
+    }
 
-      // `messages` (= messages_so_far) already ends with the assistant message
-      // containing all tool_use blocks from that turn. Do NOT add another
-      // assistant message — just append tool_results for every tool_use in it.
-      const lastMsg = messages[messages.length - 1]
-      const allToolUses: any[] = Array.isArray(lastMsg?.content)
-        ? lastMsg.content.filter((b: any) => b.type === 'tool_use')
-        : []
-
-      // Build tool_results for every tool_use in the final assistant message.
-      // The write tool was already executed; run any co-occurring read tools too.
-      const toolResults = allToolUses.length > 0
-        ? await Promise.all(allToolUses.map(async (t: any) => {
-            if (t.id === confirming.tool_use_id) {
-              return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify(result) }
-            }
+    // ── Agentic loop ───────────────────────────────────────────
+    return makeStream(async (send, close) => {
+      let currentMessages = [...messages]
+      const MAX_ITER = 10
+      for (let i = 0; i < MAX_ITER; i++) {
+        // Use Sonnet for first call (routing quality), Haiku for subsequent tool-only iterations
+        const model = i === 0 ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
+        const claudeStream = anthropic.messages.stream({
+          model,
+          max_tokens: 2000,
+          system: systemPrompt,
+          tools: TOOLS,
+          messages: currentMessages,
+        } as any)
+        let textSoFar = ''
+        claudeStream.on('text', (text: string) => { textSoFar += text; send('chunk', { text }) })
+        const resp = await claudeStream.finalMessage()
+        if (resp.stop_reason === 'end_turn') {
+          send('done', {})
+          close()
+          return
+        }
+        const toolUses = resp.content.filter((b: any) => b.type === 'tool_use')
+        if (toolUses.length === 0) {
+          send('done', {})
+          close()
+          return
+        }
+        const writeToolUse = toolUses.find((t: any) => WRITE_TOOLS.has(t.name)) as any
+        if (writeToolUse) {
+          send('confirmation', {
+            tool_use_id: writeToolUse.id,
+            tool_name: writeToolUse.name,
+            tool_input: writeToolUse.input,
+            preview_text: textSoFar,
+            messages_so_far: [...currentMessages, { role: 'assistant', content: resp.content }],
+          })
+          close()
+          return
+        }
+        send('status', { text: toolUses.map((t: any) => t.name).join(', ') })
+        const toolResults = await Promise.all(
+          toolUses.map(async (t: any) => {
             try {
-              const r = await executeTool(t.name, t.input)
-              return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify(r) }
+              const result = await executeTool(t.name, t.input)
+              return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify(result) }
             } catch (err: any) {
               return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify({ error: err.message }) }
             }
-          }))
-        // Fallback: messages_so_far didn't end with a full assistant block (edge case)
-        : [{ type: 'tool_result' as const, tool_use_id: confirming.tool_use_id, content: JSON.stringify(result) }]
-
-      const continueMessages = [
-        ...messages,
-        { role: 'user', content: toolResults },
-      ]
-
-      const finalResp = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 2000,
-        system: systemPrompt,
-        tools: TOOLS,
-        messages: continueMessages,
-      })
-      const text = finalResp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
-      return NextResponse.json({ type: 'text', content: text || (result.error ? `Error: ${result.error}` : 'Done.') })
-    }
-
-    // ── Agentic read loop ──────────────────────────────────────
-    let currentMessages = [...messages]
-    const MAX_ITER = 10
-
-    for (let i = 0; i < MAX_ITER; i++) {
-      const resp = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 2000,
-        system: systemPrompt,
-        tools: TOOLS,
-        messages: currentMessages,
-      })
-
-      if (resp.stop_reason === 'end_turn') {
-        const text = resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
-        return NextResponse.json({ type: 'text', content: text })
+          })
+        )
+        currentMessages = [...currentMessages, { role: 'assistant', content: resp.content }, { role: 'user', content: toolResults }]
       }
-
-      const toolUses = resp.content.filter((b: any) => b.type === 'tool_use')
-
-      // Pause for any write tool
-      const writeToolUse = toolUses.find((t: any) => WRITE_TOOLS.has(t.name)) as any
-      if (writeToolUse) {
-        const textSoFar = resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
-        return NextResponse.json({
-          type: 'confirmation',
-          tool_use_id: writeToolUse.id,
-          tool_name: writeToolUse.name,
-          tool_input: writeToolUse.input,
-          preview_text: textSoFar,
-          messages_so_far: [...currentMessages, { role: 'assistant', content: resp.content }],
-        })
-      }
-
-      if (toolUses.length === 0) {
-        // No tools called, no end_turn — shouldn't happen but bail gracefully
-        const text = resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
-        return NextResponse.json({ type: 'text', content: text || 'No response generated.' })
-      }
-
-      // Execute read tools in parallel
-      const toolResults = await Promise.all(
-        toolUses.map(async (t: any) => {
-          let content: string
-          try {
-            const result = await executeTool(t.name, t.input)
-            content = JSON.stringify(result)
-          } catch (err: any) {
-            content = JSON.stringify({ error: err.message })
-          }
-          return {
-            type: 'tool_result' as const,
-            tool_use_id: t.id,
-            content,
-          }
-        })
-      )
-
-      currentMessages = [
-        ...currentMessages,
-        { role: 'assistant', content: resp.content },
-        { role: 'user', content: toolResults },
-      ]
-    }
-
-    return NextResponse.json({ type: 'text', content: 'I reached my iteration limit. Try breaking the question into smaller parts.' })
+      send('chunk', { text: 'I reached my iteration limit. Try breaking the question into smaller parts.' })
+      send('done', {})
+      close()
+    })
 
   } catch (err: any) {
     console.error('Assistant error:', err)
-    const msg = typeof err === 'string' ? err : err?.message || JSON.stringify(err)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return NextResponse.json({ error: err?.message || String(err) }, { status: 500 })
   }
 }

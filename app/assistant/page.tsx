@@ -154,6 +154,10 @@ export default function AssistantPage() {
       threadId = saved
     }
 
+    // Add assistant placeholder message
+    const assistantMsgId = uid()
+    setMessages(prev => [...prev, { id: assistantMsgId, role: 'assistant', content: '' }])
+
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 90000)
     try {
@@ -164,38 +168,62 @@ export default function AssistantPage() {
         body: JSON.stringify({ messages: newApiMessages }),
       })
       clearTimeout(timeout)
-      const data = await res.json()
 
-      if (data.error) {
-        const errMsg: Message = { id: uid(), role: 'system', content: `Error: ${typeof data.error === 'string' ? data.error : JSON.stringify(data.error)}` }
-        const final = [...newMessages, errMsg]
-        setMessages(final)
-        await saveThread(threadId, final, newApiMessages)
-        return
-      }
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let accumulatedText = ''
 
-      if (data.type === 'text') {
-        const aMsg: Message = { id: uid(), role: 'assistant', content: data.content }
-        const final = [...newMessages, aMsg]
-        const finalApi = [...newApiMessages, { role: 'assistant', content: data.content }]
-        setMessages(final)
-        setApiMessages(finalApi)
-        await saveThread(threadId, final, finalApi, title)
-      } else if (data.type === 'confirmation') {
-        const cMsg: Message = {
-          id: uid(), role: 'confirmation', content: data.preview_text || '',
-          toolName: data.tool_name, toolInput: data.tool_input,
-          toolUseId: data.tool_use_id, messagesSoFar: data.messages_so_far,
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(line.slice(6))
+            if (data.event === 'chunk') {
+              accumulatedText += data.text
+              setMessages(prev => prev.map(m => m.id === assistantMsgId ? { ...m, content: accumulatedText } : m))
+            } else if (data.event === 'confirmation') {
+              // Remove placeholder, add confirmation message
+              setMessages(prev => {
+                const without = prev.filter(m => m.id !== assistantMsgId)
+                const cMsg: Message = {
+                  id: uid(), role: 'confirmation', content: data.preview_text || '',
+                  toolName: data.tool_name, toolInput: data.tool_input,
+                  toolUseId: data.tool_use_id, messagesSoFar: data.messages_so_far,
+                }
+                return [...without, cMsg]
+              })
+              setApiMessages(data.messages_so_far)
+              await saveThread(threadId, [], data.messages_so_far, title)
+            } else if (data.event === 'done') {
+              const finalApi = [...newApiMessages, { role: 'assistant', content: accumulatedText }]
+              setApiMessages(finalApi)
+              setMessages(prev => {
+                const snap = prev.map(m => m.id === assistantMsgId ? { ...m, content: accumulatedText } : m)
+                saveThread(threadId, snap, finalApi, title)
+                return snap
+              })
+            } else if (data.event === 'error') {
+              setMessages(prev => {
+                const without = prev.filter(m => m.id !== assistantMsgId)
+                return [...without, { id: uid(), role: 'system' as const, content: `Error: ${data.message}` }]
+              })
+            }
+          } catch {}
         }
-        const final = [...newMessages, cMsg]
-        setMessages(final)
-        setApiMessages(data.messages_so_far)
-        await saveThread(threadId, final, data.messages_so_far, title)
       }
     } catch (e: any) {
       clearTimeout(timeout)
       const errText = e.name === 'AbortError' ? 'Request timed out (90s). Try again.' : `Network error: ${e.message}`
-      setMessages(prev => [...prev, { id: uid(), role: 'system', content: errText }])
+      setMessages(prev => {
+        const without = prev.filter(m => m.id !== assistantMsgId)
+        return [...without, { id: uid(), role: 'system' as const, content: errText }]
+      })
     } finally {
       setLoading(false)
     }
@@ -206,6 +234,9 @@ export default function AssistantPage() {
     setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, content: 'Confirmed - executing...' } : m))
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 90000)
+    // Add streaming assistant placeholder
+    const assistantMsgId = uid()
+    setMessages(prev => [...prev, { id: assistantMsgId, role: 'assistant', content: '' }])
     try {
       const res = await fetch('/api/assistant', {
         method: 'POST',
@@ -217,30 +248,50 @@ export default function AssistantPage() {
         }),
       })
       clearTimeout(timeout)
-      const data = await res.json()
 
-      if (data.error) {
-        setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, role: 'system', content: `Error: ${data.error}` } : m))
-      } else if (data.type === 'text') {
-        const doneMsg: Message = { id: uid(), role: 'system', content: 'Done' }
-        const aMsg: Message = { id: uid(), role: 'assistant', content: data.content }
-        const finalApi = [...(msg.messagesSoFar || []), { role: 'assistant', content: data.content }]
-        const threadId = activeThread?.id ?? null
-        let snapshotMsgs: Message[] = []
-        setMessages(prev => {
-          const updated = prev.map(m => m.id === msg.id ? doneMsg : m)
-          snapshotMsgs = [...updated, aMsg]
-          return snapshotMsgs
-        })
-        setApiMessages(finalApi)
-        await saveThread(threadId, snapshotMsgs, finalApi)
-      } else {
-        setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, role: 'system', content: `Unexpected response: ${JSON.stringify(data)}` } : m))
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let accumulatedText = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(line.slice(6))
+            if (data.event === 'chunk') {
+              accumulatedText += data.text
+              setMessages(prev => prev.map(m => m.id === assistantMsgId ? { ...m, content: accumulatedText } : m))
+            } else if (data.event === 'done') {
+              const finalApi = [...(msg.messagesSoFar || []), { role: 'assistant', content: accumulatedText }]
+              setApiMessages(finalApi)
+              const threadId = activeThread?.id ?? null
+              setMessages(prev => {
+                const snap = prev.map(m => m.id === assistantMsgId ? { ...m, content: accumulatedText } : m)
+                saveThread(threadId, snap, finalApi)
+                return snap
+              })
+            } else if (data.event === 'error') {
+              setMessages(prev => {
+                const without = prev.filter(m => m.id !== assistantMsgId)
+                return without.map(m => m.id === msg.id ? { ...m, role: 'system' as const, content: `Error: ${data.message}` } : m)
+              })
+            }
+          } catch {}
+        }
       }
     } catch (e: any) {
       clearTimeout(timeout)
       const errText = e.name === 'AbortError' ? 'Request timed out (90s). Try again.' : `Error: ${e.message}`
-      setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, role: 'system', content: errText } : m))
+      setMessages(prev => {
+        const without = prev.filter(m => m.id !== assistantMsgId)
+        return without.map(m => m.id === msg.id ? { ...m, role: 'system' as const, content: errText } : m)
+      })
     } finally {
       setLoading(false)
     }
@@ -342,8 +393,14 @@ export default function AssistantPage() {
                       <div style={{ background: 'var(--accent)', color: '#fff', padding: '9px 13px', borderRadius: '12px 4px 12px 12px', fontSize: '13px', lineHeight: 1.6, display: 'inline-block', maxWidth: '100%' }}>{msg.content}</div>
                     )}
                     {msg.role === 'assistant' && (
-                      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', padding: '11px 15px', borderRadius: '4px 12px 12px 12px', fontSize: '13px', lineHeight: 1.7 }}
-                        dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', padding: '11px 15px', borderRadius: '4px 12px 12px 12px', fontSize: '13px', lineHeight: 1.7 }}>
+                        {msg.content
+                          ? <span dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                          : <span style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                              {[0,1,2].map(i => <span key={i} style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)', display: 'inline-block', animation: `pulse 1.2s ease-in-out ${i*0.2}s infinite` }} />)}
+                            </span>
+                        }
+                      </div>
                     )}
                     {msg.role === 'confirmation' && (
                       <div style={{ background: 'var(--surface)', border: '1px solid #f59e0b', padding: '13px 15px', borderRadius: '4px 12px 12px 12px' }}>
@@ -360,16 +417,6 @@ export default function AssistantPage() {
                   </div>
                 </div>
               ))}
-              {loading && (
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                  <div style={{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0, background: 'var(--surface-2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Bot size={13} style={{ color: 'var(--accent)' }} />
-                  </div>
-                  <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', padding: '12px 16px', borderRadius: '4px 12px 12px 12px', display: 'flex', gap: '4px', alignItems: 'center' }}>
-                    {[0,1,2].map(i => <div key={i} style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)', animation: `pulse 1.2s ease-in-out ${i*0.2}s infinite` }} />)}
-                  </div>
-                </div>
-              )}
               <div ref={bottomRef} />
             </div>
           )}
