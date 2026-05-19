@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import { X, Check } from 'lucide-react'
+import { X, Check, Search } from 'lucide-react'
 
 type Contact = {
   id: string
@@ -27,21 +27,37 @@ const FK_TABLES: { table: string; col: string }[] = [
   { table: 'calendar_events',    col: 'contact_id' },
 ]
 
+// Load ALL contacts in pages of 1000
+async function loadAllContacts(supabase: any): Promise<Contact[]> {
+  const all: Contact[] = []
+  const PAGE = 1000
+  let from = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from('contacts')
+      .select('id, first_name, last_name, email, phone, firm, title, contact_type, notes, created_at')
+      .order('created_at', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error || !data || data.length === 0) break
+    all.push(...data)
+    if (data.length < PAGE) break
+    from += PAGE
+  }
+  return all
+}
+
 export default function DupesPage() {
   const supabase = createClient()
-  const [pairs, setPairs]       = useState<DupePair[]>([])
+  const [pairs, setPairs]         = useState<DupePair[]>([])
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
-  const [loading, setLoading]   = useState(true)
-  const [acting, setActing]     = useState<string | null>(null)
-  const [done, setDone]         = useState<Set<string>>(new Set())
+  const [loading, setLoading]     = useState(true)
+  const [acting, setActing]       = useState<string | null>(null)
+  const [done, setDone]           = useState<Set<string>>(new Set())
+  const [search, setSearch]       = useState('')
 
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase
-        .from('contacts')
-        .select('id, first_name, last_name, email, phone, firm, title, contact_type, notes, created_at')
-        .order('created_at', { ascending: true })
-      const contacts: Contact[] = data ?? []
+      const contacts = await loadAllContacts(supabase)
       const found: DupePair[] = []
       const seen = new Set<string>()
 
@@ -138,9 +154,18 @@ export default function DupesPage() {
     setDone(prev => new Set([...prev, key]))
   }
 
-  const visible = pairs.filter(p => !dismissed.has(pairKey(p)) && !done.has(pairKey(p)))
-  const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const q = search.toLowerCase().trim()
+  const visible = pairs.filter(p => {
+    if (dismissed.has(pairKey(p)) || done.has(pairKey(p))) return false
+    if (!q) return true
+    const haystack = [
+      p.a.first_name, p.a.last_name, p.a.email, p.a.phone, p.a.firm,
+      p.b.first_name, p.b.last_name, p.b.email, p.b.phone, p.b.firm,
+    ].join(' ').toLowerCase()
+    return haystack.includes(q)
+  })
 
+  const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   const reasonLabel = (r: DupePair['reason']) =>
     r === 'email' ? 'Same email' : r === 'phone' ? 'Same phone' : 'Same name'
 
@@ -149,10 +174,26 @@ export default function DupesPage() {
       <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
         <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Contact Deduplication</h1>
         <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-          {loading ? 'Scanning…' : `${visible.length} potential duplicate${visible.length !== 1 ? 's' : ''} found`}
+          {loading ? 'Scanning all contacts…' : `${pairs.length - dismissed.size - done.size} potential duplicate${pairs.length - dismissed.size - done.size !== 1 ? 's' : ''} found`}
           {done.size > 0 && <span style={{ marginLeft: '12px', color: 'var(--green)' }}>· {done.size} resolved this session</span>}
         </p>
       </div>
+
+      {/* Search bar */}
+      {!loading && pairs.length > 0 && (
+        <div style={{ padding: '10px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+          <div style={{ position: 'relative', maxWidth: '320px' }}>
+            <Search size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+            <input
+              className="input"
+              placeholder="Filter by name, email, firm…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{ paddingLeft: '30px' }}
+            />
+          </div>
+        </div>
+      )}
 
       <div style={{ flex: 1, overflow: 'auto', padding: '20px 28px' }}>
         {loading ? (
@@ -160,7 +201,7 @@ export default function DupesPage() {
         ) : visible.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--text-muted)', fontSize: '13px' }}>
             <div style={{ fontSize: '28px', marginBottom: '12px' }}>✓</div>
-            No duplicates found.
+            {q ? 'No duplicates match your search.' : 'No duplicates found.'}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '960px' }}>

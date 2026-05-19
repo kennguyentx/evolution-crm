@@ -80,7 +80,11 @@ export default function IntakePage() {
       { key: 'revenue', label: 'Revenue' },
       { key: 'ebitda', label: 'EBITDA' },
     ]
-    const missing = required.filter(f => !edited[f.key])
+    const missing = required.filter(f => {
+      const val = edited[f.key]
+      if (f.key === 'revenue' || f.key === 'ebitda') return val == null
+      return !val
+    })
     setMissingFields(missing)
   }, [edited])
 
@@ -556,17 +560,17 @@ export default function IntakePage() {
                 </select>
               </IntakeField>
 
-              <IntakeField label="Revenue ($M) *" required={!edited.revenue}>
-                <input className="input" type="number" step="0.1"
-                  value={edited.revenue ? (edited.revenue / 1e6).toFixed(1) : ''}
-                  onChange={e => updateField('revenue', e.target.value ? parseFloat(e.target.value) * 1e6 : null)}
+              <IntakeField label="Revenue ($M) *" required={edited.revenue == null}>
+                <input className="input" type="number" step="any" min="0"
+                  value={edited.revenue != null ? edited.revenue / 1e6 : ''}
+                  onChange={e => updateField('revenue', e.target.value !== '' ? parseFloat(e.target.value) * 1e6 : null)}
                   placeholder="e.g. 18.5" />
               </IntakeField>
 
-              <IntakeField label="EBITDA ($M) *" required={!edited.ebitda}>
-                <input className="input" type="number" step="0.1"
-                  value={edited.ebitda ? (edited.ebitda / 1e6).toFixed(1) : ''}
-                  onChange={e => updateField('ebitda', e.target.value ? parseFloat(e.target.value) * 1e6 : null)}
+              <IntakeField label="EBITDA ($M) *" required={edited.ebitda == null}>
+                <input className="input" type="number" step="any"
+                  value={edited.ebitda != null ? edited.ebitda / 1e6 : ''}
+                  onChange={e => updateField('ebitda', e.target.value !== '' ? parseFloat(e.target.value) * 1e6 : null)}
                   placeholder="e.g. 4.2" />
               </IntakeField>
             </div>

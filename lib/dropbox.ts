@@ -51,6 +51,19 @@ export async function dropboxUpload(folderPath: string, fileName: string, buffer
 
 export async function dropboxMove(fromPath: string, toPath: string): Promise<string> {
   const token = await getDropboxToken()
+
+  // Ensure the destination parent folder exists before moving.
+  // Dropbox move_v2 errors if the parent doesn't exist.
+  // create_folder_v2 returns 409 if it already exists — that's fine, ignore it.
+  const parentFolder = toPath.substring(0, toPath.lastIndexOf('/'))
+  if (parentFolder) {
+    await fetch(`${DBX_API}/files/create_folder_v2`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: parentFolder, autorename: false }),
+    }).catch(() => {})
+  }
+
   const res = await fetch(`${DBX_API}/files/move_v2`, {
     method: 'POST',
     headers: {
@@ -59,7 +72,10 @@ export async function dropboxMove(fromPath: string, toPath: string): Promise<str
     },
     body: JSON.stringify({ from_path: fromPath, to_path: toPath, autorename: true }),
   })
-  if (!res.ok) throw new Error(`Dropbox move failed: ${await res.text()}`)
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`Dropbox move failed: ${errText}`)
+  }
   const result = await res.json()
   return (result.metadata?.path_lower ?? toPath.toLowerCase()) as string
 }

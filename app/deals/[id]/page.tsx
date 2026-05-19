@@ -178,8 +178,13 @@ export default function DealDetailPage() {
     setDeal(prev => prev ? { ...prev, stage: stage as any } : null)
     setEditingStage(false)
     if (deal) {
-      const newPath = await moveDropboxOnStageChange(supabase, dealId, deal.company_name, deal.dropbox_path, stage)
-      if (newPath && newPath !== deal.dropbox_path) setDeal(prev => prev ? { ...prev, dropbox_path: newPath } : null)
+      const { path: newPath, error: moveErr } = await moveDropboxOnStageChange(supabase, dealId, deal.company_name, deal.dropbox_path, stage)
+      if (moveErr) {
+        console.error('[Dropbox stage move]', moveErr)
+        alert(`Stage updated, but Dropbox folder move failed:\n${moveErr}`)
+      } else if (newPath && newPath !== deal.dropbox_path) {
+        setDeal(prev => prev ? { ...prev, dropbox_path: newPath } : null)
+      }
     }
 
     // Auto-create portfolio card on close

@@ -2,13 +2,7 @@
 // Calls /api/dropbox PATCH and updates deals.dropbox_path in Supabase
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-
-const PASS_STAGES = ['Pass (DOA)', 'Pass (Pre-LOI)', 'Pass (Post-LOI)']
-
-function expectedFolder(companyName: string, stage: string): string {
-  const safe = companyName.replace(/[<>:"/\\|?*]/g, '_')
-  return PASS_STAGES.includes(stage) ? `/Deals/Passed/${safe}` : `/Deals/${safe}`
-}
+import { expectedDropboxFolder } from '@/lib/dropbox'
 
 export async function moveDropboxOnStageChange(
   supabase: SupabaseClient,
@@ -16,11 +10,13 @@ export async function moveDropboxOnStageChange(
   companyName: string,
   currentDropboxPath: string | null | undefined,
   newStage: string,
-): Promise<string | null> {
-  if (!currentDropboxPath) return null
+): Promise<{ path: string | null; error: string | null }> {
+  if (!currentDropboxPath) return { path: null, error: null }
 
-  const toPath = expectedFolder(companyName, newStage)
-  if (currentDropboxPath.toLowerCase() === toPath.toLowerCase()) return currentDropboxPath
+  const toPath = expectedDropboxFolder(companyName, newStage)
+  if (currentDropboxPath.toLowerCase() === toPath.toLowerCase()) {
+    return { path: currentDropboxPath, error: null }
+  }
 
   try {
     const res = await fetch('/api/dropbox', {
@@ -28,11 +24,20 @@ export async function moveDropboxOnStageChange(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ from_path: currentDropboxPath, to_path: toPath }),
     })
-    if (!res.ok) return currentDropboxPath
-    const { path } = await res.json()
-    await supabase.from('deals').update({ dropbox_path: path }).eq('id', dealId)
-    return path
-  } catch {
-    return currentDropboxPath
+
+    const data = await res.json()
+
+    if (!res.ok) {
+      const msg = data?.error ?? `Move failed (${res.status})`
+      console.error('[Dropbox] Move failed:', msg, { from: currentDropboxPath, to: toPath })
+      return { path: currentDropboxPath, error: msg }
+    }
+
+    await supabase.from('deals').update({ dropbox_path: data.path }).eq('id', dealId)
+    return { path: data.path, error: null }
+  } catch (err: any) {
+    const msg = err?.message ?? 'Unknown error'
+    console.error('[Dropbox] Move exception:', msg)
+    return { path: currentDropboxPath, error: msg }
   }
 }

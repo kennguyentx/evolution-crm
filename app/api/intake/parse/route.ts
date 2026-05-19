@@ -98,9 +98,10 @@ export async function POST(req: NextRequest) {
     if (dbx_configured && parsed.company_name) {
       try {
         const safeName = parsed.company_name.replace(/[<>:"/\\|?*]/g, '_')
-        const folderPath = `/Evolution Strategy Partners/Deals/${safeName}`  // passed → /Evolution Strategy Partners/Deals/!Passed Deals/${safeName}
-        await dropboxUpload(folderPath, fileName, Buffer.from(buffer))
-        dropbox_folder = folderPath
+        const folderPath = `/Evolution Strategy Partners/Deals/${safeName}`
+        const uploadedFilePath = await dropboxUpload(folderPath, fileName, Buffer.from(buffer))
+        // Use the path Dropbox actually confirms (path_lower), strip filename to get folder
+        dropbox_folder = uploadedFilePath.substring(0, uploadedFilePath.lastIndexOf('/'))
       } catch (dbxErr: any) {
         dropbox_error = dbxErr.message ?? 'Unknown Dropbox error'
         console.warn('Dropbox upload failed:', dropbox_error)
