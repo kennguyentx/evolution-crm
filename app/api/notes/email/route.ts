@@ -463,29 +463,34 @@ export async function POST(req: NextRequest) {
       }
 
       // ── Step 4: Upload ALL files to Dropbox ───────────────────────────────
-      // Use the existing deal's stage (and its current folder) if one was found;
-      // otherwise fall back to the instruction stage or 'Teaser'.
+      // deals.dropbox_path stores the FOLDER path (not a file path).
+      // If the stored value ends with a filename (legacy file path), strip it.
+      function toFolder(p: string | null | undefined): string | null {
+        if (!p) return null
+        const last = p.split('/').pop() ?? ''
+        return last.includes('.') ? p.substring(0, p.lastIndexOf('/')) : p
+      }
+
       const effectiveStage = existingDeal?.stage ?? instructions.stage ?? 'Teaser'
       const companyForPath = primary.extracted.company_name
         ? (instructions.parent_portco
             ? `${primary.extracted.company_name} [${instructions.parent_portco}]`
             : primary.extracted.company_name)
         : null
-      let primaryDropboxPath: string | null = existingDeal?.dropbox_path
-        ? existingDeal.dropbox_path.substring(0, existingDeal.dropbox_path.lastIndexOf('/'))  // parent folder
-        : null
 
-      if (dropboxConfigured() && companyForPath) {
-        // If existing deal has a known dropbox_path, upload into its parent folder.
-        // Otherwise derive the folder from expectedDropboxFolder.
-        const folder = existingDeal?.dropbox_path
-          ? existingDeal.dropbox_path.substring(0, existingDeal.dropbox_path.lastIndexOf('/'))
-          : expectedDropboxFolder(companyForPath, effectiveStage)
-        console.log(`[email-intake] Dropbox target: "${folder}" (stage="${effectiveStage}", existing=${!!existingDeal})`)
+      // Resolve the target Dropbox folder
+      const targetFolder: string | null = existingDeal
+        ? (toFolder(existingDeal.dropbox_path) ?? (companyForPath ? expectedDropboxFolder(companyForPath, effectiveStage) : null))
+        : (companyForPath ? expectedDropboxFolder(companyForPath, effectiveStage) : null)
+
+      // dealFolderPath is what we store on the deal — always the folder, never a file
+      let dealFolderPath: string | null = targetFolder
+
+      if (dropboxConfigured() && targetFolder) {
+        console.log(`[email-intake] Dropbox target: "${targetFolder}" (stage="${effectiveStage}", existing=${!!existingDeal})`)
         for (const doc of extracted_docs) {
           try {
-            const path = await dropboxUpload(folder, doc.fileName, doc.buffer)
-            if (doc === primary) primaryDropboxPath = path
+            await dropboxUpload(targetFolder, doc.fileName, doc.buffer)
           } catch (dbxErr: any) {
             console.error(`[email-intake] Dropbox upload failed (${doc.fileName}):`, dbxErr?.message)
           }
@@ -506,9 +511,9 @@ export async function POST(req: NextRequest) {
         // ── Existing deal: attach CIM data and log note ──────────────────────
         const updates: Record<string, any> = {}
         if (primary.extracted.doc_type === 'cim') updates.cim_parsed = true
-        if (primary.extracted.revenue  != null && !existingDeal) updates.revenue = primary.extracted.revenue
-        if (primary.extracted.ebitda   != null && !existingDeal) updates.ebitda  = primary.extracted.ebitda
-        if (primaryDropboxPath) updates.dropbox_path = primaryDropboxPath
+        if (primary.extracted.revenue != null) updates.revenue = primary.extracted.revenue
+        if (primary.extracted.ebitda  != null) updates.ebitda  = primary.extracted.ebitda
+        if (dealFolderPath) updates.dropbox_path = dealFolderPath
         if (Object.keys(updates).length > 0) {
           await supabase.from('deals').update(updates).eq('id', existingDeal.id)
         }
@@ -519,7 +524,7 @@ export async function POST(req: NextRequest) {
             await supabase.from('deal_cims').insert({
               deal_id:      existingDeal.id,
               file_name:    primary.fileName,
-              dropbox_path: primaryDropboxPath,
+              dropbox_path: dealFolderPath,
               extracted:    primary.extracted,
             })
           } catch { /* non-fatal */ }
@@ -556,7 +561,7 @@ export async function POST(req: NextRequest) {
           description:   primary.extracted.description  || null,
           stage, status,
           cim_parsed:    primary.extracted.doc_type === 'cim',
-          dropbox_path:  primaryDropboxPath || null,
+          dropbox_path:  dealFolderPath || null,
           expected_close: new Date().toISOString().split('T')[0],
         }).select('id').single()
 
@@ -583,7 +588,7 @@ export async function POST(req: NextRequest) {
           doc_type:     primary.extracted.doc_type ?? 'teaser',
           file_name:    primary.fileName,
           from_email:   from,
-          dropbox_path: primaryDropboxPath,
+          dropbox_path: dealFolderPath,
           extracted: {
             ...primary.extracted,
             contacts:          allContacts,

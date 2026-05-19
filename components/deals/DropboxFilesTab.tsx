@@ -51,12 +51,22 @@ function FileIcon({ icon, className }: { icon: string; className?: string }) {
   }
 }
 
+// If a stored path ends with a filename (has a dot in the last segment),
+// return the parent folder instead. Handles legacy records that stored file paths.
+function normalizeFolderPath(path: string): string {
+  if (!path) return path
+  const lastSegment = path.split('/').pop() ?? ''
+  if (lastSegment.includes('.')) return path.substring(0, path.lastIndexOf('/'))
+  return path
+}
+
 export default function DropboxFilesTab({
   dealId, companyName, dropboxPath: initialPath, onPathSaved, table = 'deals',
 }: DropboxFilesTabProps) {
-  const [dropboxPath, setDropboxPath] = useState(initialPath || '')
-  const [pathInput, setPathInput] = useState(initialPath || `/${companyName}`)
-  const [showPathEdit, setShowPathEdit] = useState(!initialPath)
+  const folderPath = normalizeFolderPath(initialPath || '')
+  const [dropboxPath, setDropboxPath] = useState(folderPath)
+  const [pathInput, setPathInput] = useState(folderPath || `/${companyName}`)
+  const [showPathEdit, setShowPathEdit] = useState(!folderPath)
   const [savingPath, setSavingPath] = useState(false)
 
   const [items, setItems] = useState<DropboxItem[]>([])
