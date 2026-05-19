@@ -121,34 +121,62 @@ export default function IntakePage() {
     if (!parsedContact.name) return
     const nameParts = parsedContact.name.trim().split(/\s+/)
     const firstName = nameParts[0] || ''
-    const lastName = nameParts.slice(1).join(' ') || ''
+    const lastName  = nameParts.slice(1).join(' ') || ''
     const defaultForm = {
       first_name: firstName,
-      last_name: lastName,
-      firm: parsedContact.firm || '',
+      last_name:  lastName,
+      firm:  parsedContact.firm  || '',
       title: parsedContact.title || '',
       email: parsedContact.email || '',
       phone: parsedContact.phone || '',
     }
 
-    // Search by first+last name and optionally email
-    const orClauses = [`first_name.ilike.${firstName},last_name.ilike.${lastName}`]
-    if (parsedContact.email) orClauses.push(`email.ilike.${parsedContact.email}`)
-    const { data } = await supabase.from('contacts')
-      .select('id, first_name, last_name, firm, title, email, phone')
-      .or(orClauses.join(','))
-      .limit(5)
+    let matches: any[] = []
 
-    const matches = data ?? []
+    // 1. Email exact match — most reliable signal
+    if (parsedContact.email) {
+      const { data } = await supabase
+        .from('contacts')
+        .select('id, first_name, last_name, firm, title, email, phone')
+        .ilike('email', parsedContact.email.trim())
+        .limit(3)
+      matches = data || []
+    }
+
+    // 2. First + last name — parallel fetch, intersect client-side (AND logic)
+    if (matches.length === 0 && firstName && lastName) {
+      const [firstRes, lastRes] = await Promise.all([
+        supabase.from('contacts')
+          .select('id, first_name, last_name, firm, title, email, phone')
+          .ilike('first_name', `%${firstName}%`)
+          .limit(200),
+        supabase.from('contacts')
+          .select('id, first_name, last_name, firm, title, email, phone')
+          .ilike('last_name', `%${lastName}%`)
+          .limit(200),
+      ])
+      const firstIds = new Set((firstRes.data || []).map((c: any) => c.id))
+      matches = (lastRes.data || []).filter((c: any) => firstIds.has(c.id))
+    }
+
+    // 3. Firm + last name fallback (catches bankers where first name varies)
+    if (matches.length === 0 && parsedContact.firm && lastName) {
+      const { data } = await supabase
+        .from('contacts')
+        .select('id, first_name, last_name, firm, title, email, phone')
+        .ilike('firm', `%${parsedContact.firm.trim()}%`)
+        .ilike('last_name', `%${lastName}%`)
+        .limit(5)
+      matches = data || []
+    }
 
     if (matches.length === 0) {
-      // No match — pre-fill add form
-      updateContact(idx, { showAddForm: true, addForm: defaultForm })
+      // No CRM match found — keep search bar open so user can refine manually.
+      // Pre-fill the add form but don't auto-open it; user clicks "+ Add to CRM" if truly new.
+      updateContact(idx, { addForm: defaultForm })
     } else if (matches.length === 1) {
-      // Single match — prompt merge/link/new
       updateContact(idx, { mergeCandidate: matches[0], showMergePrompt: true, addForm: defaultForm })
     } else {
-      // Multiple matches — show all as candidates
       updateContact(idx, { mergeCandidates: matches, showMergePrompt: true, addForm: defaultForm })
     }
   }
@@ -840,16 +868,20 @@ function ContactRow({ contact, onUpdate, onSearch, onLinkCrm, onAddNew, onLinkEx
         <>
           {/* Search / add form */}
           {!contact.showAddForm && !contact.showMergePrompt ? (
-            <div style={{ position: 'relative' }}>
-              <Search size={12} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', zIndex: 1 }} />
-              <input
-                className="input"
-                placeholder={`Search CRM for ${contact.name}...`}
-                value={contact.searchQuery || ''}
-                onChange={e => onSearch(e.target.value)}
-                onFocus={() => onUpdate({ showSearch: true })}
-                style={{ paddingLeft: '28px', fontSize: '12px' }}
-              />
+            <div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px', fontStyle: 'italic' }}>
+                No CRM match found — search to confirm, or click "+ Add to CRM" if new
+              </div>
+              <div style={{ position: 'relative' }}>
+                <Search size={12} style={{ position: 'absolute', left: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', zIndex: 1 }} />
+                <input
+                  className="input"
+                  placeholder={`Search CRM for ${contact.name}...`}
+                  value={contact.searchQuery || ''}
+                  onChange={e => onSearch(e.target.value)}
+                  onFocus={() => onUpdate({ showSearch: true })}
+                  style={{ paddingLeft: '28px', fontSize: '12px' }}
+                />
               {contact.showSearch && ((contact.searchResults || []).length > 0 || (contact.searchQuery || '').length > 2) && (
                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '2px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '7px', zIndex: 50, boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }}>
                   {(contact.searchResults || []).length > 0 ? (contact.searchResults || []).map((r: any) => (
@@ -870,6 +902,7 @@ function ContactRow({ contact, onUpdate, onSearch, onLinkCrm, onAddNew, onLinkEx
                   )}
                 </div>
               )}
+              </div>
               <button className="btn btn-ghost" onClick={() => onUpdate({ showAddForm: true })} style={{ fontSize: '11px', padding: '3px 8px', marginTop: '5px' }}>
                 <Plus size={11} /> Add to CRM
               </button>
