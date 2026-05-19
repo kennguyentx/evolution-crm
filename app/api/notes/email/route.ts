@@ -369,157 +369,133 @@ export async function POST(req: NextRequest) {
     })
 
     if (docAttachments.length > 0) {
-      // Parse forwarding note for instructions + contacts (runs once for all attachments)
+      // Parse forwarding note once for all attachments
       const instructions = await parseForwardingNote(text, { from, fromName, cc: ccFull })
       console.log(`[email-intake] instructions:`, JSON.stringify(instructions))
 
-      for (const att of docAttachments) {
+      // ── Step 1: Extract all attachments in parallel ───────────────────────
+      const extracted_docs: Array<{ fileName: string; buffer: Buffer; extracted: any }> = []
+      await Promise.all(docAttachments.map(async (att: any) => {
         const fileName    = att.Name ?? 'document'
         const buffer      = Buffer.from(att.Content, 'base64')
         const contentType = att.ContentType ?? ''
-
         try {
           const extracted = await processAttachment(fileName, buffer, contentType)
-          if (!extracted) continue
-
-          // Apply instruction overrides to extracted data
-          if (instructions.deal_type)     extracted.deal_type    = instructions.deal_type
-          if (instructions.parent_portco) extracted.parent_portco = instructions.parent_portco
-
-          // ── Deduplication: skip if same file already processed in last 10 minutes ──
-          const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString()
-          const { data: existingQueue } = await supabase
-            .from('intake_queue')
-            .select('id')
-            .eq('file_name', fileName)
-            .eq('from_email', from)
-            .gte('created_at', tenMinutesAgo)
-            .limit(1)
-            .maybeSingle()
-          if (existingQueue) {
-            console.log(`[email-intake] Dedup: skipping duplicate "${fileName}" from ${from}`)
-            results.push({ type: 'skipped', reason: 'duplicate within 10 min', file: fileName })
-            continue
-          }
-
-          // Also check notes table to avoid duplicate notes for the same file
-          const { data: existingNote } = await supabase
-            .from('notes')
-            .select('id')
-            .ilike('raw_text', `%File: ${fileName}%`)
-            .eq('source', 'email')
-            .gte('note_date', noteDate)
-            .limit(1)
-            .maybeSingle()
-          if (existingNote) {
-            console.log(`[email-intake] Dedup: note already exists for "${fileName}", skipping`)
-            results.push({ type: 'skipped', reason: 'note already exists', file: fileName })
-            continue
-          }
-
-          // ── Upload to Dropbox with stage-aware folder routing ─────────────────
-          let dropboxPath: string | null = null
-          if (dropboxConfigured() && extracted.company_name) {
-            try {
-              const effectiveStage = instructions.stage ?? 'Teaser'
-              const companyForPath = instructions.parent_portco
-                ? `${extracted.company_name} [${instructions.parent_portco}]`
-                : extracted.company_name
-              // Use canonical folder logic from lib/dropbox to stay consistent with UI moves
-              const folder = expectedDropboxFolder(companyForPath, effectiveStage)
-              console.log(`[email-intake] Dropbox target: "${folder}" (stage="${effectiveStage}")`)
-              dropboxPath  = await dropboxUpload(folder, fileName, buffer)
-            } catch (dbxErr: any) {
-              console.error(`[email-intake] Dropbox upload failed:`, dbxErr?.message)
-            }
-          }
-
-          // If auto_approve (explicit decision from forwarder), create deal directly
-          if (instructions.auto_approve && instructions.stage) {
-            const stage  = instructions.stage
-            const status = instructions.status ?? (stage.startsWith('Pass') || stage.startsWith('Closed') ? (stage.startsWith('Pass') ? 'Dead' : 'Closed') : 'Active')
-            const { data: deal } = await supabase.from('deals').insert({
-              company_name:   extracted.company_name || 'Unknown (email intake)',
-              sector:         extracted.sector       || null,
-              geography:      extracted.geography    || null,
-              deal_type:      extracted.deal_type    || 'platform',
-              parent_portco:  extracted.parent_portco || null,
-              revenue:        extracted.revenue      ?? null,
-              ebitda:         extracted.ebitda       ?? null,
-              description:    extracted.description  || null,
-              stage, status,
-              cim_parsed:     extracted.doc_type === 'cim',
-              dropbox_path:   dropboxPath || null,
-              expected_close: new Date().toISOString().split('T')[0],
-            }).select('id').single()
-
-            // Log note on the deal
-            await supabase.from('notes').insert({
-              note_date:  noteDate,
-              raw_text:   `Forwarded via email by ${from}\nSubject: ${subject}\nFile: ${fileName}`,
-              summary:    `${extracted.doc_type === 'cim' ? 'CIM' : 'Teaser'} received for ${extracted.company_name ?? 'unknown company'}. Auto-logged as ${stage}.${instructions.forwarder_note ? ` Note: ${instructions.forwarder_note}` : ''}`,
-              next_steps: null,
-              logged_by:  from.split('@')[0] ?? 'email',
-              source:     'email',
-              deal_id:    deal?.id ?? null,
-            })
-
-            // Upsert contacts from both document and forwarding note
-            const allContacts = filterInternalContacts([
-              ...(extracted.contacts ?? []),
-              ...(instructions.contacts ?? []),
-            ])
-            if (allContacts.length > 0 && deal?.id) {
-              await upsertContacts(supabase, allContacts, deal.id)
-            }
-
-            results.push({ type: extracted.doc_type, status: 'auto-approved', stage, file: fileName, company: extracted.company_name, deal_id: deal?.id })
-          } else {
-            // Save to intake queue (pending review)
-            await supabase.from('intake_queue').insert({
-              source:       'email',
-              doc_type:     extracted.doc_type ?? 'teaser',
-              file_name:    fileName,
-              from_email:   from,
-              dropbox_path: dropboxPath,
-              extracted: {
-                ...extracted,
-                _stage_suggestion:  instructions.stage         || null,
-                _forwarder_note:    instructions.forwarder_note || null,
-              },
-              status: 'pending',
-            })
-
-            // Log a note (no deal_id yet — will be set on approval)
-            const noteSummary = `${extracted.doc_type === 'cim' ? 'CIM' : 'Teaser'} received for ${extracted.company_name ?? 'unknown company'} via email intake. Pending review.${instructions.forwarder_note ? ` Forwarder note: "${instructions.forwarder_note}"` : ''}`
-            await supabase.from('notes').insert({
-              note_date:  noteDate,
-              raw_text:   `Forwarded via email by ${from}\nSubject: ${subject}\nFile: ${fileName}`,
-              summary:    noteSummary,
-              next_steps: instructions.stage ? `Suggested stage: ${instructions.stage}` : 'Review in Document Intake → Pending Review',
-              logged_by:  from.split('@')[0] ?? 'email',
-              source:     'email',
-              deal_id:    null,
-            })
-
-            // Store contacts in extracted so queue approval can upsert them
-            const allContacts = filterInternalContacts([
-              ...(extracted.contacts ?? []),
-              ...(instructions.contacts ?? []),
-            ])
-            if (allContacts.length > 0) {
-              await supabase.from('intake_queue')
-                .update({ extracted: { ...extracted, contacts: allContacts, _stage_suggestion: instructions.stage, _forwarder_note: instructions.forwarder_note } })
-                .eq('source', 'email').eq('file_name', fileName).eq('status', 'pending')
-                .order('created_at', { ascending: false }).limit(1)
-            }
-
-            results.push({ type: extracted.doc_type, status: 'queued', file: fileName, company: extracted.company_name })
-          }
-        } catch (attErr: any) {
-          console.error(`Attachment parse error (${fileName}):`, attErr)
-          results.push({ type: 'error', file: fileName, error: attErr.message })
+          if (extracted) extracted_docs.push({ fileName, buffer, extracted })
+        } catch (e: any) {
+          console.error(`[email-intake] Extract error (${fileName}):`, e?.message)
+          results.push({ type: 'error', file: fileName, error: e?.message })
         }
+      }))
+
+      if (extracted_docs.length === 0) {
+        return NextResponse.json({ success: true, processed: results })
+      }
+
+      // ── Step 2: Find primary doc (teaser or CIM) — NDAs are supporting ────
+      const primary = extracted_docs.find(d =>
+        d.extracted.doc_type === 'teaser' || d.extracted.doc_type === 'cim'
+      ) ?? extracted_docs[0] // fallback: first doc if no teaser/CIM
+      const supporting = extracted_docs.filter(d => d !== primary)
+
+      // Apply instruction overrides to primary
+      if (instructions.deal_type)     primary.extracted.deal_type    = instructions.deal_type
+      if (instructions.parent_portco) primary.extracted.parent_portco = instructions.parent_portco
+
+      // Track all file names for the note
+      const allFileNames = extracted_docs.map(d => d.fileName).join(', ')
+
+      // ── Step 3: Upload ALL files to same Dropbox folder ───────────────────
+      const effectiveStage = instructions.stage ?? 'Teaser'
+      const companyForPath = primary.extracted.company_name
+        ? (instructions.parent_portco
+          ? `${primary.extracted.company_name} [${instructions.parent_portco}]`
+          : primary.extracted.company_name)
+        : null
+      let primaryDropboxPath: string | null = null
+
+      if (dropboxConfigured() && companyForPath) {
+        const folder = expectedDropboxFolder(companyForPath, effectiveStage)
+        console.log(`[email-intake] Dropbox target: "${folder}" (stage="${effectiveStage}")`)
+        for (const doc of extracted_docs) {
+          try {
+            const path = await dropboxUpload(folder, doc.fileName, doc.buffer)
+            if (doc === primary) primaryDropboxPath = path
+          } catch (dbxErr: any) {
+            console.error(`[email-intake] Dropbox upload failed (${doc.fileName}):`, dbxErr?.message)
+          }
+        }
+      }
+
+      // Merge contacts from all docs + forwarding note
+      const allContacts = filterInternalContacts([
+        ...extracted_docs.flatMap(d => d.extracted.contacts ?? []),
+        ...(instructions.contacts ?? []),
+      ])
+
+      // ── Step 4: Create ONE deal or queue entry for the whole email ─────────
+      if (instructions.auto_approve && instructions.stage) {
+        const stage  = instructions.stage
+        const status = instructions.status ?? (stage.startsWith('Pass') ? 'Dead' : stage.startsWith('Closed') ? 'Closed' : 'Active')
+        const { data: deal } = await supabase.from('deals').insert({
+          company_name:  primary.extracted.company_name || 'Unknown (email intake)',
+          sector:        primary.extracted.sector       || null,
+          geography:     primary.extracted.geography    || null,
+          deal_type:     primary.extracted.deal_type    || 'platform',
+          parent_portco: primary.extracted.parent_portco || null,
+          revenue:       primary.extracted.revenue      ?? null,
+          ebitda:        primary.extracted.ebitda       ?? null,
+          description:   primary.extracted.description  || null,
+          stage, status,
+          cim_parsed:    primary.extracted.doc_type === 'cim',
+          dropbox_path:  primaryDropboxPath || null,
+          expected_close: new Date().toISOString().split('T')[0],
+        }).select('id').single()
+
+        await supabase.from('notes').insert({
+          note_date:  noteDate,
+          raw_text:   `Forwarded via email by ${from}\nSubject: ${subject}\nFiles: ${allFileNames}`,
+          summary:    `${primary.extracted.doc_type === 'cim' ? 'CIM' : 'Teaser'} received for ${primary.extracted.company_name ?? 'unknown company'}. Auto-logged as ${stage}.${supporting.length > 0 ? ` Also received: ${supporting.map(d => d.fileName).join(', ')}.` : ''}${instructions.forwarder_note ? ` Note: ${instructions.forwarder_note}` : ''}`,
+          next_steps: null,
+          logged_by:  from.split('@')[0] ?? 'email',
+          source:     'email',
+          deal_id:    deal?.id ?? null,
+        })
+
+        if (allContacts.length > 0 && deal?.id) {
+          await upsertContacts(supabase, allContacts, deal.id)
+        }
+
+        results.push({ type: primary.extracted.doc_type, status: 'auto-approved', stage, files: allFileNames, company: primary.extracted.company_name, deal_id: deal?.id })
+      } else {
+        // Save ONE pending queue entry (primary doc), supporting files listed inside
+        await supabase.from('intake_queue').insert({
+          source:       'email',
+          doc_type:     primary.extracted.doc_type ?? 'teaser',
+          file_name:    primary.fileName,
+          from_email:   from,
+          dropbox_path: primaryDropboxPath,
+          extracted: {
+            ...primary.extracted,
+            contacts:             allContacts,
+            _supporting_files:    supporting.map(d => d.fileName),
+            _stage_suggestion:    instructions.stage         || null,
+            _forwarder_note:      instructions.forwarder_note || null,
+          },
+          status: 'pending',
+        })
+
+        await supabase.from('notes').insert({
+          note_date:  noteDate,
+          raw_text:   `Forwarded via email by ${from}\nSubject: ${subject}\nFiles: ${allFileNames}`,
+          summary:    `${primary.extracted.doc_type === 'cim' ? 'CIM' : 'Teaser'} received for ${primary.extracted.company_name ?? 'unknown company'} via email intake. Pending review.${supporting.length > 0 ? ` Also received: ${supporting.map(d => d.fileName).join(', ')}.` : ''}${instructions.forwarder_note ? ` Forwarder note: "${instructions.forwarder_note}"` : ''}`,
+          next_steps: instructions.stage ? `Suggested stage: ${instructions.stage}` : 'Review in Document Intake → Pending Review',
+          logged_by:  from.split('@')[0] ?? 'email',
+          source:     'email',
+          deal_id:    null,
+        })
+
+        results.push({ type: primary.extracted.doc_type, status: 'queued', files: allFileNames, company: primary.extracted.company_name })
       }
 
       return NextResponse.json({ success: true, processed: results })
