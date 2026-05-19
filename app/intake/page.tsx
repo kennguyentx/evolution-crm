@@ -841,7 +841,7 @@ function TeaserFlow() {
                 {linkedCount > 0 && <div style={{ fontSize: '11px', color: 'var(--green)' }}>{linkedCount} linked to CRM</div>}
               </div>
               {contacts.map((c, idx) => (
-                <TeaserContactRow key={idx} contact={c} onUpdate={patch => updateContact(idx, patch)} onSearch={q => searchForContact(idx, q)} onLinkCrm={crm => updateContact(idx, { crmContact: crm, showSearch: false, showAddForm: false })} onAddNew={type => addNewContact(idx, type)} onLinkExisting={crm => linkExisting(idx, crm)} onMerge={crm => mergeExisting(idx, crm)} onOverwrite={crm => overwriteExisting(idx, crm)} onAddNew2={() => updateContact(idx, { showMergePrompt: false, showAddForm: true, mergeCandidate: undefined, mergeCandidates: undefined })} supabase={supabase} />
+                <TeaserContactRow key={idx} contact={c} onUpdate={(patch: Partial<ExtractedContact>) => updateContact(idx, patch)} onSearch={(q: string) => searchForContact(idx, q)} onLinkCrm={(crm: any) => updateContact(idx, { crmContact: crm, showSearch: false, showAddForm: false })} onAddNew={(type: string) => addNewContact(idx, type)} onLinkExisting={(crm: any) => linkExisting(idx, crm)} onMerge={(crm: any) => mergeExisting(idx, crm)} onOverwrite={(crm: any) => overwriteExisting(idx, crm)} onAddNew2={() => updateContact(idx, { showMergePrompt: false, showAddForm: true, mergeCandidate: undefined, mergeCandidates: undefined })} supabase={supabase} />
               ))}
             </div>
           )}
