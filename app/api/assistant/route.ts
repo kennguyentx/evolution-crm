@@ -288,22 +288,22 @@ const TOOLS: any[] = [
   },
   {
     name: 'browse_best_practices',
-    description: 'List folders and files in the Best Practices library stored in Dropbox. Use with no subfolder to see all categories (e.g. Credit Agreements, LOI Templates, Financial Models). Then drill into a category to find specific documents. Always call this before read_best_practices_file to get the exact file path.',
+    description: 'REQUIRED FIRST STEP for any question about standard terms, covenants, market benchmarks, LOI structure, diligence, or best practices. Lists folders and files in the Best Practices Dropbox library. Call with no subfolder to see all categories (Credit Agreements, LOI Templates, Financial Models, Diligence Checklists, etc.). Then call again with a subfolder name to drill in and get exact file paths for read_best_practices_file.',
     input_schema: {
       type: 'object',
       properties: {
-        subfolder: { type: 'string', description: 'Optional subfolder name or path relative to Best Practices root (e.g. "Credit Agreements"). Omit to list all top-level categories.' },
+        subfolder: { type: 'string', description: 'Optional subfolder name relative to Best Practices root (e.g. "Credit Agreements", "LOI Templates"). Omit to list all top-level categories.' },
       },
     },
   },
   {
     name: 'read_best_practices_file',
-    description: 'Read and analyze a file from the Best Practices library. Extracts full content from PDF, Word, Excel, or CSV. Use to answer questions about standard terms, market benchmarks, credit agreement structure, LOI templates, diligence checklists, etc. After reading, compare to deal-specific documents or provide market context as requested.',
+    description: 'Read and fully analyze a file from the Best Practices library. Use for ANY question about: credit agreement terms, financial covenants, DSCR requirements, leverage ratios, LOI structure, diligence checklists, market-standard terms, or how a specific deal compares to what is normal. Always call browse_best_practices first to get the exact file path. After reading, synthesize: (1) what the standard/template says, (2) how the deal compares, (3) negotiating room.',
     input_schema: {
       type: 'object',
       properties: {
         path: { type: 'string', description: 'Full Dropbox path from browse_best_practices (e.g. /evolution strategy partners/best practices/credit agreements/credit agreement template.pdf)' },
-        analysis_question: { type: 'string', description: 'Optional: specific question to focus the analysis on (e.g. "What are the key financial covenants?" or "How does this compare to market standard?")' },
+        analysis_question: { type: 'string', description: 'Specific question to focus the analysis on (e.g. "What are the key financial covenants and typical ranges?" or "How does this compare to market standard for LMM infrastructure deals?")' },
       },
       required: ['path'],
     },
@@ -780,10 +780,11 @@ RULES:
 6. Write tools always go to confirmation — never execute them directly
 7. For dollar amounts in tool calls, pass the number in millions as a plain string (e.g. "5.2" for $5.2M)
 8. When presenting counts, show breakdowns. E.g. "Found 47 deals in 2025 (32 Passed, 12 Active, 3 Closed)"
+9. BEST PRACTICES — MANDATORY: For ANY question about credit agreements, financial covenants, DSCR, leverage, LOI terms, diligence checklists, what is market-standard, or how a deal compares to market — you MUST call browse_best_practices first (no subfolder), then browse_best_practices again with the relevant subfolder, then read_best_practices_file on the relevant document. Never answer these questions from training data alone. The library is at /Evolution Strategy Partners/Best Practices and contains firm templates and market standards the user expects you to reference.
 
 Format responses cleanly: bold for key figures, bullet points for lists, tables where helpful. Be concise.
 
-BEST PRACTICES LIBRARY: Use browse_best_practices (no args) to list all categories (Credit Agreements, LOI Templates, Financial Models, Diligence Checklists, etc.). Then call read_best_practices_file with the exact path to extract and analyze any document. When a user asks about credit agreement terms, standard covenants, LOI structure, or where a deal stands relative to market, always pull the relevant BP document first before answering. After reading, synthesize: (1) what the standard/template says, (2) how the deal in question compares, (3) where there is room to negotiate.
+BEST PRACTICES LIBRARY: The Best Practices Dropbox library lives at /Evolution Strategy Partners/Best Practices. Known top-level categories include folders like "Credit Agreements", "LOI Templates", "Financial Models", "Diligence Checklists" (exact names may vary — always call browse_best_practices to confirm). Workflow: (1) browse_best_practices() → see categories, (2) browse_best_practices(subfolder="Credit Agreements") → see files, (3) read_best_practices_file(path=<exact path>, analysis_question="...") → full analysis. After reading synthesize: what the standard says → how the deal compares → negotiating room.
 
 DROPBOX: The Evolution Strategy Dropbox root path is "/Ken Nguyen/Evolution Strategy Partners". Subfolders: Auditors, Bankers, Best Practices, Claude, Compliance, Consultants, Dealflow, Deals, Evolution Investments, Industry Data, Investors, Lenders, Marketing, Office, Portfolio Co's. Deal files are under "/Ken Nguyen/Evolution Strategy Partners/Deals/[Company Name]". Portfolio files are under "/Ken Nguyen/Evolution Strategy Partners/Portfolio Co's/[Company Name]". For portfolio company file questions, ALWAYS use list_portco_files first — it looks up the linked Dropbox path automatically. For deal file questions use list_deal_files. Only use list_files for general browsing. If Dropbox access fails, report what you already found in this session rather than saying you need to try again later.
 
