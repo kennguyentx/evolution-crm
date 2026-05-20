@@ -303,7 +303,7 @@ async function processBodyText(bodyText, subject) {
     max_tokens: 2000,
     system:     DOC_SYSTEM_PROMPT,
     messages:   [{ role: 'user', content: [
-      { type: 'text', text: `EMAIL SUBJECT: ${subject || '(none)'}\n\nEMAIL BODY:\n${clean}\n\nThis is a teaser email with no PDF attachment — extract whatever deal data is present. Return only valid JSON.` },
+      { type: 'text', text: `EMAIL SUBJECT: ${subject || '(none)'}\n\nEMAIL BODY:\n${clean}\n\nThis is a teaser email with no PDF attachment — extract whatever deal data is present. Return only valid JSON.\n\nIMPORTANT: If no formal company name is stated but the subject or body describes the business (e.g. "U.S. façade systems specialty contractor platform", "Southeast HVAC services business"), use that descriptor as the company_name. Never leave company_name blank if a meaningful description exists.` },
     ]}],
   })
 
@@ -780,6 +780,7 @@ async function handleEmailIntake(req, res) {
             _supporting_files: supporting.map(d => d.fileName),
             _stage_suggestion: instructions.stage         || null,
             _forwarder_note:   instructions.forwarder_note || null,
+            _email_subject:    subject || null,
           },
           status: 'pending',
         })

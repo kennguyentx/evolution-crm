@@ -1236,7 +1236,10 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
 
   function getEdit(id: string, item: any) {
     return editMap[id] ?? {
-      company_name: item.extracted?.company_name || 'Unknown',
+      company_name: item.extracted?.company_name ||
+        (item.extracted?._email_subject
+          ? item.extracted._email_subject.replace(/^(fw|fwd|re)\s*:\s*/i, '').trim()
+          : 'Unknown'),
       sector:       item.extracted?.sector ?? '',
       geography:    item.extracted?.geography ?? '',
       revenue:      item.extracted?.revenue ?? null,
