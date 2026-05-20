@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import type { Deal, DealStage } from '@/types'
 import { formatCurrency, stageClass } from '@/types'
-import { Plus, ChevronRight } from 'lucide-react'
+import { Plus, ChevronRight, Mail, X, Send, Check } from 'lucide-react'
 import Link from 'next/link'
 import NewDealModal from '@/components/deals/NewDealModal'
 import { moveDropboxOnStageChange } from '@/lib/dropbox-stage-move'
@@ -24,6 +24,15 @@ export default function PipelinePage() {
   const [showNewDeal, setShowNewDeal] = useState(false)
   const [dragOverStage, setDragOverStage] = useState<DealStage | null>(null)
   const dragId = useRef<string | null>(null)
+
+  // Email settings state
+  const [showEmailPanel, setShowEmailPanel] = useState(false)
+  const [recipients, setRecipients] = useState<string[]>([])
+  const [newEmail, setNewEmail] = useState('')
+  const [savingRecipients, setSavingRecipients] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [sendResult, setSendResult] = useState<'success' | 'error' | null>(null)
+
   const supabase = createClient()
   const isMobile = useIsMobile()
 
@@ -57,6 +66,52 @@ export default function PipelinePage() {
 
   useEffect(() => { fetchDeals() }, [fetchDeals])
 
+  // Load recipients from app_settings on mount
+  useEffect(() => {
+    supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'pipeline_email_recipients')
+      .single()
+      .then(({ data }) => {
+        if (data?.value) setRecipients(data.value as string[])
+      })
+  }, [])
+
+  const saveRecipients = async (list: string[]) => {
+    setSavingRecipients(true)
+    await fetch('/api/pipeline/weekly-email', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipients: list }),
+    })
+    setSavingRecipients(false)
+  }
+
+  const addEmail = () => {
+    const trimmed = newEmail.trim().toLowerCase()
+    if (!trimmed || recipients.includes(trimmed)) { setNewEmail(''); return }
+    const updated = [...recipients, trimmed]
+    setRecipients(updated)
+    setNewEmail('')
+    saveRecipients(updated)
+  }
+
+  const removeEmail = (email: string) => {
+    const updated = recipients.filter(r => r !== email)
+    setRecipients(updated)
+    saveRecipients(updated)
+  }
+
+  const sendNow = async () => {
+    setSending(true)
+    setSendResult(null)
+    const res = await fetch('/api/pipeline/weekly-email', { method: 'POST' })
+    setSendResult(res.ok ? 'success' : 'error')
+    setSending(false)
+    setTimeout(() => setSendResult(null), 4000)
+  }
+
   const dealsByStage = (stage: DealStage) => deals.filter(d => d.stage === stage)
 
   const updateStage = async (dealId: string, stage: DealStage) => {
@@ -73,7 +128,7 @@ export default function PipelinePage() {
       {/* Header */}
       <div style={{
         padding: isMobile ? '14px 16px' : '20px 28px',
-        borderBottom: '1px solid var(--border)',
+        borderBottom: showEmailPanel ? 'none' : '1px solid var(--border)',
         display: 'flex', alignItems: 'center', gap: '16px',
         flexShrink: 0, background: 'var(--surface)',
       }}>
@@ -84,7 +139,80 @@ export default function PipelinePage() {
         <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
           {deals.length} active deal{deals.length !== 1 ? 's' : ''}
         </div>
+        <button
+          className="btn btn-ghost"
+          style={{ marginLeft: 'auto', fontSize: '12px', gap: '5px' }}
+          onClick={() => setShowEmailPanel(p => !p)}
+        >
+          <Mail size={13} /> {isMobile ? '' : 'Weekly Email'}
+        </button>
       </div>
+
+      {/* Email settings panel */}
+      {showEmailPanel && (
+        <div style={{ padding: isMobile ? '16px' : '20px 28px', borderBottom: '1px solid var(--border)', background: 'var(--surface-2)', flexShrink: 0 }}>
+          <div style={{ maxWidth: '560px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+              <div className="label" style={{ margin: 0 }}>Weekly Pipeline Email</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto' }}>Sends every Monday 8am ET</div>
+            </div>
+
+            {/* Recipient chips */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+              {recipients.map(r => (
+                <span key={r} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', background: 'var(--accent-muted)', color: 'var(--accent)', border: '1px solid rgba(79,40,75,0.2)', borderRadius: '999px', padding: '3px 10px 3px 12px' }}>
+                  {r}
+                  <button onClick={() => removeEmail(r)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', color: 'var(--accent)', opacity: 0.6 }}>
+                    <X size={11} />
+                  </button>
+                </span>
+              ))}
+              {recipients.length === 0 && (
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No recipients yet</span>
+              )}
+            </div>
+
+            {/* Add email input */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+              <input
+                className="input"
+                type="email"
+                placeholder="Add email address..."
+                value={newEmail}
+                onChange={e => setNewEmail(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addEmail()}
+                style={{ maxWidth: '280px' }}
+              />
+              <button className="btn btn-ghost" onClick={addEmail} style={{ fontSize: '12px' }}>
+                Add
+              </button>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <button
+                className="btn btn-primary"
+                onClick={sendNow}
+                disabled={sending || recipients.length === 0}
+                style={{ fontSize: '12px' }}
+              >
+                <Send size={12} /> {sending ? 'Sending...' : 'Send Now'}
+              </button>
+              {sendResult === 'success' && (
+                <span style={{ fontSize: '12px', color: 'var(--green)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Check size={13} /> Sent to {recipients.length} recipient{recipients.length !== 1 ? 's' : ''}
+                </span>
+              )}
+              {sendResult === 'error' && (
+                <span style={{ fontSize: '12px', color: 'var(--red)' }}>Send failed — check logs</span>
+              )}
+              {savingRecipients && (
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Saving...</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mobile scroll hint */}
       <div style={{ display: isMobile ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', padding: '6px 16px', background: 'var(--accent-muted)', borderBottom: '1px solid var(--border)', fontSize: '11px', color: 'var(--accent)', flexShrink: 0 }}>
