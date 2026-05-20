@@ -1,0 +1,17 @@
+{
+  "name": "evolution-crm-email-server",
+  "version": "1.0.0",
+  "description": "Standalone email intake server for Evolution CRM (handles large CIM PDFs)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "@supabase/supabase-js": "^2.49.4",
+    "dotenv": "^16.4.7",
+    "express": "^4.19.2",
+    "jszip": "^3.10.1"
+  }
+}
