@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { formatCurrency } from '@/types'
 import { ArrowLeft, Plus, X, Check, Search } from 'lucide-react'
 import Link from 'next/link'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 const STATUSES = ['Interested', 'Soft Circle', 'Committed', 'Funded', 'Passed']
 const STATUS_COLORS: Record<string, string> = {
@@ -16,6 +17,7 @@ export default function RaiseDetailPage() {
   const params = useParams()
   const raiseId = params.id as string
   const supabase = createClient()
+  const isMobile = useIsMobile()
 
   const [raise, setRaise] = useState<any>(null)
   const [commitments, setCommitments] = useState<any[]>([])
@@ -94,7 +96,7 @@ export default function RaiseDetailPage() {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '16px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+      <div style={{ padding: isMobile ? '12px 16px' : '16px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
         <Link href="/raises" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '12px', textDecoration: 'none', marginBottom: '10px' }}>
           <ArrowLeft size={12} /> Capital Raises
         </Link>
@@ -104,7 +106,7 @@ export default function RaiseDetailPage() {
           <span style={{ fontSize: '11px', padding: '3px 10px', borderRadius: '999px', background: raise.status === 'Closed' ? 'rgba(39,174,96,0.1)' : 'var(--accent-muted)', color: raise.status === 'Closed' ? 'var(--green)' : 'var(--accent)' }}>{raise.status}</span>
         </div>
 
-        <div style={{ display: 'flex', gap: '28px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: isMobile ? '16px' : '28px', flexWrap: 'wrap' }}>
           {[
             { label: 'Target Equity', value: formatCurrency(raise.target_equity) },
             { label: 'Target Debt', value: formatCurrency(raise.target_debt) },
@@ -173,7 +175,7 @@ export default function RaiseDetailPage() {
               )}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
               {entities.length > 0 && (
                 <div>
                   <label className="label">Investing Entity</label>

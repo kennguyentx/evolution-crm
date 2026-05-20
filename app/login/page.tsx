@@ -27,7 +27,7 @@ export default function LoginPage() {
       justifyContent: 'center',
       background: 'var(--bg)',
     }}>
-      <div style={{ width: '380px' }}>
+      <div style={{ maxWidth: '380px', width: '90%' }}>
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: '36px' }}>
           <img

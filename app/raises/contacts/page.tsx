@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { Plus, Search, X, Check, Phone, Mail, ChevronDown, ChevronRight, UserPlus } from 'lucide-react'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 type Contact = {
   id: string
@@ -63,6 +64,7 @@ function groupByFirm(contacts: Contact[]): { firm: string; rows: Contact[] }[] {
 
 export default function CapitalContactsPage() {
   const supabase = createClient()
+  const isMobile = useIsMobile()
   const [contacts, setContacts] = useState<Contact[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -369,7 +371,7 @@ export default function CapitalContactsPage() {
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
 
       {/* Header */}
-      <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+      <div style={{ padding: isMobile ? '14px 16px' : '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '14px' }}>
           <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Capital Contacts</h1>
           <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={() => setShowAddForm(!showAddForm)}>
@@ -457,9 +459,9 @@ export default function CapitalContactsPage() {
         </div>
       )}
 
-      {/* Column headers */}
+      {/* Column headers — hidden on mobile */}
       <div style={{
-        display: 'grid',
+        display: isMobile ? 'none' : 'grid',
         gridTemplateColumns: '2fr 1fr 1.5fr 1.5fr 1fr 1fr 80px',
         padding: '7px 28px',
         fontSize: '10px', fontWeight: 600,
@@ -496,7 +498,10 @@ export default function CapitalContactsPage() {
               {/* Firm row */}
               <div
                 className="table-row"
-                style={{
+                style={isMobile ? {
+                  display: 'flex', flexDirection: 'column', padding: '12px 16px',
+                  cursor: 'pointer', background: isExpanded ? 'var(--surface-2)' : undefined,
+                } : {
                   display: 'grid',
                   gridTemplateColumns: '2fr 1fr 1.5fr 1.5fr 1fr 1fr 80px',
                   padding: '10px 28px',
@@ -506,50 +511,75 @@ export default function CapitalContactsPage() {
                 }}
                 onClick={() => toggleFirm(firm, rows)}
               >
-                {/* Firm + contacts */}
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    {isExpanded ? <ChevronDown size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} /> : <ChevronRight size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
-                    <span style={{ fontWeight: 600, fontSize: '13px' }}>{firm}</span>
-                  </div>
-                  {rows.filter(r => r.contact_name).length > 0 && (
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', paddingLeft: '18px' }}>
-                      {rows.filter(r => r.contact_name).map(r => r.contact_name).join(', ')}
+                {isMobile ? (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {isExpanded ? <ChevronDown size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} /> : <ChevronRight size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
+                      <span style={{ fontWeight: 700, fontSize: '14px' }}>{firm}</span>
+                      <span className={`text-[9px] font-semibold rounded-full px-2 py-0.5 ${SOURCE_COLORS[first.source] ?? ''}`} style={{ marginLeft: 'auto' }}>
+                        {SOURCE_LABELS[first.source] ?? first.source}
+                      </span>
                     </div>
-                  )}
-                </div>
+                    {rows.filter(r => r.contact_name).length > 0 && (
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px', paddingLeft: '18px' }}>
+                        {rows.filter(r => r.contact_name).map(r => r.contact_name).join(', ')}
+                      </div>
+                    )}
+                    {(first.firm_type || first.firm_focus) && (
+                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '3px', paddingLeft: '18px' }}>
+                        {first.firm_type}{first.firm_focus ? ` · ${first.firm_focus}` : ''}
+                      </div>
+                    )}
+                    {allCalls.length > 0 && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', paddingLeft: '18px' }}>{allCalls.length} call{allCalls.length !== 1 ? 's' : ''}</div>}
+                  </>
+                ) : (
+                  <>
+                    {/* Firm + contacts */}
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {isExpanded ? <ChevronDown size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} /> : <ChevronRight size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
+                        <span style={{ fontWeight: 600, fontSize: '13px' }}>{firm}</span>
+                      </div>
+                      {rows.filter(r => r.contact_name).length > 0 && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', paddingLeft: '18px' }}>
+                          {rows.filter(r => r.contact_name).map(r => r.contact_name).join(', ')}
+                        </div>
+                      )}
+                    </div>
 
-                {/* Type */}
-                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{first.firm_type || '—'}</div>
+                    {/* Type */}
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{first.firm_type || '—'}</div>
 
-                {/* Focus / Pref */}
-                <div>
-                  {first.firm_focus && <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{first.firm_focus}</div>}
-                  {first.investment_pref && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '1px' }}>{first.investment_pref}</div>}
-                  {!first.firm_focus && !first.investment_pref && <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                </div>
+                    {/* Focus / Pref */}
+                    <div>
+                      {first.firm_focus && <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{first.firm_focus}</div>}
+                      {first.investment_pref && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '1px' }}>{first.investment_pref}</div>}
+                      {!first.firm_focus && !first.investment_pref && <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                    </div>
 
-                {/* Notes preview */}
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '260px' }}>
-                  {firstNotes || '—'}
-                </div>
+                    {/* Notes preview */}
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '260px' }}>
+                      {firstNotes || '—'}
+                    </div>
 
-                {/* Conf / Lead */}
-                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                  {rows.map(r => r.conf_lead).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ') || '—'}
-                </div>
+                    {/* Conf / Lead */}
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                      {rows.map(r => r.conf_lead).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ') || '—'}
+                    </div>
 
-                {/* Source badge */}
-                <div>
-                  <span className={`text-[9px] font-semibold rounded-full px-2 py-0.5 ${SOURCE_COLORS[first.source] ?? ''}`}>
-                    {SOURCE_LABELS[first.source] ?? first.source}
-                  </span>
-                </div>
+                    {/* Source badge */}
+                    <div>
+                      <span className={`text-[9px] font-semibold rounded-full px-2 py-0.5 ${SOURCE_COLORS[first.source] ?? ''}`}>
+                        {SOURCE_LABELS[first.source] ?? first.source}
+                      </span>
+                    </div>
 
-                {/* Call count */}
-                <div style={{ textAlign: 'right', fontSize: '11px', color: 'var(--text-muted)' }}>
-                  {allCalls.length > 0 && <span>{allCalls.length} call{allCalls.length !== 1 ? 's' : ''}</span>}
-                </div>
+                    {/* Call count */}
+                    <div style={{ textAlign: 'right', fontSize: '11px', color: 'var(--text-muted)' }}>
+                      {allCalls.length > 0 && <span>{allCalls.length} call{allCalls.length !== 1 ? 's' : ''}</span>}
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Expanded detail */}

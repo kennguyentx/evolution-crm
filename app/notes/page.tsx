@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { Plus, Search, X, Check, Mail, MessageSquare, Edit3, Pencil, UserPlus } from 'lucide-react'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 type Note = {
   id: string
@@ -60,6 +61,7 @@ const PAGE = 50
 
 export default function NotesPage() {
   const supabase = createClient()
+  const isMobile = useIsMobile()
   const [notes, setNotes] = useState<Note[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -420,7 +422,7 @@ export default function NotesPage() {
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
 
       {/* Header */}
-      <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: '16px' }}>
+      <div style={{ padding: isMobile ? '14px 16px' : '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: '16px' }}>
         <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Notes</h1>
         <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={() => setShowAddForm(!showAddForm)}>
           <Plus size={13} /> Add Note
@@ -642,18 +644,20 @@ export default function NotesPage() {
 
               return (
                 <div key={note.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                  <div className="table-row" style={{ padding: '14px 28px', display: 'grid', gridTemplateColumns: '100px 1fr auto', gap: '16px', alignItems: 'start', cursor: 'pointer' }}
+                  <div className="table-row" style={{ padding: isMobile ? '12px 16px' : '14px 28px', display: 'grid', gridTemplateColumns: isMobile ? '1fr auto' : '100px 1fr auto', gap: '12px', alignItems: 'start', cursor: 'pointer' }}
                     onClick={() => setExpandedId(isExpanded ? null : note.id)}>
 
-                    {/* Date + source */}
-                    <div>
-                      <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{fmtDate(note.note_date)}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
-                        <SrcIcon size={11} style={{ color: 'var(--text-muted)' }} />
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'capitalize' }}>{note.source}</span>
+                    {/* Date + source — hidden on mobile (shown below summary instead) */}
+                    {!isMobile && (
+                      <div>
+                        <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{fmtDate(note.note_date)}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
+                          <SrcIcon size={11} style={{ color: 'var(--text-muted)' }} />
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'capitalize' }}>{note.source}</span>
+                        </div>
+                        {note.logged_by && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{note.logged_by}</div>}
                       </div>
-                      {note.logged_by && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{note.logged_by}</div>}
-                    </div>
+                    )}
 
                     {/* Summary + links */}
                     <div>

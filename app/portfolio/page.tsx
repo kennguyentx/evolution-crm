@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase'
 import { formatCurrency } from '@/types'
 import { TrendingUp, TrendingDown, Building2, Plus, X, Check } from 'lucide-react'
 import Link from 'next/link'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 export default function PortfolioPage() {
   const [companies, setCompanies] = useState<any[]>([])
@@ -18,6 +19,7 @@ export default function PortfolioPage() {
   })
 
   const supabase = createClient()
+  const isMobile = useIsMobile()
 
   const fetchData = useCallback(async () => {
     const { data: cos } = await supabase
@@ -71,7 +73,7 @@ export default function PortfolioPage() {
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ padding: isMobile ? '14px 16px' : '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: '12px' }}>
         <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Portfolio</h1>
         <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={() => setShowAdd(true)}>
           <Plus size={13} /> New Company
@@ -158,8 +160,8 @@ export default function PortfolioPage() {
       )}
 
       {/* Company grid */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: isMobile ? '16px' : '24px 28px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
           {companies.map((company: any) => {
             const fin = latestFinancials[company.id]
             const ebitdaVsBudget = fin?.ebitda && fin?.ebitda_budget ? ((fin.ebitda - fin.ebitda_budget) / fin.ebitda_budget) * 100 : null

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase'
 import { formatCurrencyFull as formatCurrency } from '@/types'
 import { Plus, Search, X, Check } from 'lucide-react'
 import Link from 'next/link'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 const INVESTOR_TYPES = ['Individual', 'Family Office', 'Institutional', 'Fund of Funds', 'Other']
 
@@ -20,6 +21,7 @@ export default function InvestorsPage() {
     phone: '', investor_type: 'Individual', notes: ''
   })
   const supabase = createClient()
+  const isMobile = useIsMobile()
 
   const fetchInvestors = async () => {
     const [{ data }, { data: entityData }] = await Promise.all([
@@ -94,7 +96,7 @@ export default function InvestorsPage() {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: '16px' }}>
+      <div style={{ padding: isMobile ? '14px 16px' : '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: '16px' }}>
         <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Investors</h1>
         <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={() => setShowForm(!showForm)}>
           <Plus size={14} /> Add Investor
@@ -154,7 +156,7 @@ export default function InvestorsPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '8px 28px', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+      <div style={{ display: isMobile ? 'none' : 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '8px 28px', fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
         {[
           { key: 'name', label: 'Investor', align: 'left' },
           { key: 'totalInvested', label: 'Deployed', align: 'right' },
@@ -178,27 +180,38 @@ export default function InvestorsPage() {
           <>
             {filtered.map(inv => (
               <Link key={inv.id} href={`/investors/${inv.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                <div className="table-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '8px 28px', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontWeight: 500, fontSize: '13px' }}>{inv.first_name} {inv.last_name}</div>
-                    {inv.firm && (
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>{inv.firm}</div>
-                    )}
-                    {inv.entities && inv.entities.length > 0 && (
-                      <div style={{ marginTop: '3px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                        {inv.entities.map((e: any) => (
-                          <span key={e.id} style={{ fontSize: '10px', color: 'var(--text-muted)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '4px', padding: '1px 6px' }}>
-                            {e.name}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                {isMobile ? (
+                  <div className="table-row" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-primary)' }}>{inv.first_name} {inv.last_name}</div>
+                    {inv.firm && <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{inv.firm}</div>}
+                    <div style={{ display: 'flex', gap: '16px', marginTop: '6px' }}>
+                      {inv.totalInvested > 0 && <div style={{ fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>Deployed: </span><span style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent)', fontWeight: 600 }}>{formatCurrency(inv.totalInvested)}</span></div>}
+                      {inv.totalCommitted > 0 && <div style={{ fontSize: '11px' }}><span style={{ color: 'var(--text-muted)' }}>Committed: </span><span style={{ fontFamily: 'var(--font-mono)' }}>{formatCurrency(inv.totalCommitted)}</span></div>}
+                    </div>
                   </div>
-                  <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '12px', color: inv.totalInvested > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>{inv.totalInvested > 0 ? formatCurrency(inv.totalInvested) : '—'}</div>
-                  <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)' }}>{inv.totalCommitted > 0 ? formatCurrency(inv.totalCommitted) : '—'}</div>
-                  <div style={{ textAlign: 'right', fontSize: '12px', color: 'var(--text-secondary)' }}>{inv.dealCount > 0 ? inv.dealCount : '—'}</div>
-                  <div style={{ textAlign: 'right', fontSize: '11px', color: 'var(--accent)' }}>View →</div>
-                </div>
+                ) : (
+                  <div className="table-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '8px 28px', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: 500, fontSize: '13px' }}>{inv.first_name} {inv.last_name}</div>
+                      {inv.firm && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>{inv.firm}</div>
+                      )}
+                      {inv.entities && inv.entities.length > 0 && (
+                        <div style={{ marginTop: '3px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                          {inv.entities.map((e: any) => (
+                            <span key={e.id} style={{ fontSize: '10px', color: 'var(--text-muted)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '4px', padding: '1px 6px' }}>
+                              {e.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '12px', color: inv.totalInvested > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>{inv.totalInvested > 0 ? formatCurrency(inv.totalInvested) : '—'}</div>
+                    <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)' }}>{inv.totalCommitted > 0 ? formatCurrency(inv.totalCommitted) : '—'}</div>
+                    <div style={{ textAlign: 'right', fontSize: '12px', color: 'var(--text-secondary)' }}>{inv.dealCount > 0 ? inv.dealCount : '—'}</div>
+                    <div style={{ textAlign: 'right', fontSize: '11px', color: 'var(--accent)' }}>View →</div>
+                  </div>
+                )}
               </Link>
             ))}
 

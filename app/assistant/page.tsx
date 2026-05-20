@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { Send, Bot, User, AlertTriangle, Check, X, RefreshCw, Star, Clock, Plus, Trash2 } from 'lucide-react'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 type Message = {
   id: string
@@ -89,6 +90,7 @@ export default function AssistantPage() {
   const [loading, setLoading] = useState(false)
   const [loadingThreads, setLoadingThreads] = useState(true)
   const [showSidebar, setShowSidebar] = useState(true)
+  const isMobile = useIsMobile()
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   // Keep user ID in a ref so saveThread closures always see the current value
@@ -336,7 +338,7 @@ export default function AssistantPage() {
 
       {/* Thread sidebar */}
       {showSidebar && (
-        <div style={{ width: '220px', flexShrink: 0, borderRight: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ width: '220px', flexShrink: 0, borderRight: '1px solid var(--border)', background: 'var(--surface)', display: isMobile ? 'none' : 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '14px 12px 10px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Threads</span>
             <button onClick={newThread} className="btn btn-ghost" style={{ padding: '3px 7px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '3px' }}>

@@ -4,6 +4,7 @@ import { useDropzone } from 'react-dropzone'
 import { Upload, Check, AlertCircle, ChevronRight, Search, Plus, X, FileText, FileSearch, FileCheck, Loader2, AlertTriangle, ChevronDown, ExternalLink } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -120,6 +121,7 @@ function FileDropZone({ accept, onFile, file, onClear, hint, getRootProps: exter
 
 function CIMFlow() {
   const supabase = createClient()
+  const isMobile = useIsMobile()
   const [selectedDeal, setSelectedDeal] = useState<any>(null)
   const [file, setFile] = useState<File | null>(null)
   const [pastedText, setPastedText] = useState('')
@@ -182,9 +184,9 @@ function CIMFlow() {
   const highDiscrep   = discrepancies.filter((d: any) => d.significance === 'high').length
 
   return (
-    <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: 'flex-start' }}>
       {/* Left panel */}
-      <div style={{ width: '280px', minWidth: '280px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ width: isMobile ? '100%' : '280px', minWidth: isMobile ? undefined : '280px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '16px' }}>
           <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '10px' }}>1. Select deal</div>
           <DealSelector onSelect={d => { setSelectedDeal(d); setCimDealType(d.deal_type === 'add-on' ? 'add-on' : 'platform'); setCimPortco(d.parent_portco || '') }} />
@@ -441,6 +443,7 @@ function NDAMarkupItem({ item }: { item: any }) {
 }
 
 function NDAFlow() {
+  const isMobile = useIsMobile()
   const [selectedDeal, setSelectedDeal] = useState<any>(null)
   const [file, setFile] = useState<File | null>(null)
   const [pastedText, setPastedText] = useState('')
@@ -471,8 +474,8 @@ function NDAFlow() {
   const sorted = result ? [...(result.markup || [])].sort((a: any, b: any) => (sigOrder[a.significance] ?? 3) - (sigOrder[b.significance] ?? 3)) : []
 
   return (
-    <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
-      <div style={{ width: '280px', minWidth: '280px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: 'flex-start' }}>
+      <div style={{ width: isMobile ? '100%' : '280px', minWidth: isMobile ? undefined : '280px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '16px' }}>
           <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '10px' }}>1. Select deal <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></div>
           <DealSelector onSelect={setSelectedDeal} />
@@ -596,6 +599,7 @@ function NDAFlow() {
 
 function TeaserFlow() {
   const supabase = createClient()
+  const isMobile = useIsMobile()
   const [stage, setStage] = useState<'idle'|'uploading'|'parsing'|'review'|'saving'|'done'>('idle')
   const [parsed, setParsed] = useState<ParsedDeal|null>(null)
   const [edited, setEdited] = useState<ParsedDeal|null>(null)
@@ -843,10 +847,10 @@ function TeaserFlow() {
   const reset = () => { setStage('idle'); setParsed(null); setEdited(null); setDealId(null); setError(null); setFileName(''); setContacts([]); setDuplicateDeals([]); setIgnoreDuplicate(false); setDropboxFolder(null); setDropboxFolderExisted(false); setDropboxError(null); setExtraFiles([]); setPastedText('') }
 
   return (
-    <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '24px', alignItems: 'flex-start' }}>
 
       {/* Left panel */}
-      <div style={{ width: '280px', minWidth: '280px' }}>
+      <div style={{ width: isMobile ? '100%' : '280px', minWidth: isMobile ? undefined : '280px' }}>
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '16px' }}>
           <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '10px' }}>Upload Teaser</div>
 
@@ -1415,17 +1419,18 @@ const DOC_TYPES: { key: DocType; label: string; icon: React.ReactNode; descripti
 ]
 
 export default function DocumentIntakePage() {
+  const isMobile = useIsMobile()
   const [activeType, setActiveType] = useState<DocType>('teaser')
   const [queueKey, setQueueKey] = useState(0)
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+      <div style={{ padding: isMobile ? '14px 16px' : '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
         <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>Document Intake</h1>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: isMobile ? '16px' : '24px 28px' }}>
         {/* Pending queue */}
         <PendingQueue key={queueKey} onApproved={() => setQueueKey(k => k + 1)} />
 

@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 // ─── Types ───────────────────────────────────────────────────
 // Matches existing capital_raises table (target_equity, target_debt, close_date, status = 'Open'|'Closed')
@@ -855,6 +856,7 @@ function NewRaiseModal({
 
 export default function RaisesPage() {
   const supabase = createClient()
+  const isMobile = useIsMobile()
   const [raises, setRaises] = useState<Raise[]>([])
   const [selectedRaise, setSelectedRaise] = useState<Raise | null>(null)
   const [participants, setParticipants] = useState<Participant[]>([])
@@ -959,7 +961,7 @@ export default function RaisesPage() {
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: '16px' }}>
+      <div style={{ padding: isMobile ? '14px 16px' : '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: '16px' }}>
         <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Capital Raises</h1>
         <button
           onClick={() => setShowNewRaise(true)}

@@ -8,11 +8,13 @@ import Link from 'next/link'
 import { useDropzone } from 'react-dropzone'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 import DropboxFilesTab from '@/components/deals/DropboxFilesTab'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 export default function PortfolioCompanyPage() {
   const params = useParams()
   const companyId = params.id as string
   const supabase = createClient()
+  const isMobile = useIsMobile()
 
   const [company, setCompany] = useState<any>(null)
   const [financials, setFinancials] = useState<any[]>([])
@@ -242,7 +244,7 @@ export default function PortfolioCompanyPage() {
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <div style={{ padding: '16px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+      <div style={{ padding: isMobile ? '12px 16px' : '16px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
         <Link href="/portfolio" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '12px', textDecoration: 'none', marginBottom: '10px' }}>
           <ArrowLeft size={12} /> Portfolio
         </Link>
@@ -302,7 +304,7 @@ export default function PortfolioCompanyPage() {
                 Upload financials or add periods to see trend charts
               </div>
             )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
               <div className="card" style={{ padding: '20px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
                   <div className="label">Company Details</div>

@@ -7,6 +7,7 @@ import { Plus, Search, Phone, Mail, ChevronUp, ChevronDown } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import NewContactModal from '@/components/contacts/NewContactModal'
 import UndoToast, { type UndoEntry } from '@/components/layout/UndoToast'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 const CONTACT_TYPES = ['banker', 'lp', 'lender', 'advisor', 'management', 'other']
 const PAGE_SIZE = 100
@@ -28,6 +29,7 @@ export default function ContactsPage() {
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([])
   const supabase = createClient()
   const router = useRouter()
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     const fetchCounts = async () => {
@@ -172,7 +174,7 @@ export default function ContactsPage() {
 
       {/* Header — New Contact button next to title */}
       <div style={{
-        padding: '20px 28px',
+        padding: isMobile ? '14px 16px' : '20px 28px',
         borderBottom: '1px solid var(--border)',
         display: 'flex', alignItems: 'center', gap: '16px',
         flexShrink: 0, background: 'var(--surface)',
@@ -203,15 +205,15 @@ export default function ContactsPage() {
       </div>
 
       {/* Search */}
-      <div style={{ padding: '10px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
-        <div style={{ position: 'relative', maxWidth: '320px' }}>
+      <div style={{ padding: isMobile ? '10px 16px' : '10px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+        <div style={{ position: 'relative', maxWidth: isMobile ? '100%' : '320px' }}>
           <Search size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input className="input" placeholder="Search name, firm, email..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: '30px' }} />
         </div>
       </div>
 
       {/* Table header */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 90px 80px', padding: '8px 28px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+      <div style={{ display: isMobile ? 'none' : 'grid', gridTemplateColumns: '2fr 1fr 1fr 90px 80px', padding: '8px 28px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
         {([['name','Name'],['firm','Firm / Title'],['type','Type'],['created_at','Added']] as ['name'|'firm'|'type'|'created_at', string][]).map(([field, label]) => (
           <div key={field} onClick={() => handleSort(field)} style={{ display:'flex', alignItems:'center', gap:'4px', cursor:'pointer', userSelect:'none', color: sortField===field?'var(--accent)':'var(--text-muted)' }}>
             {label}
@@ -230,30 +232,57 @@ export default function ContactsPage() {
         ) : (
           <>
             {sortedDisplayed.map(contact => (
-              <div
-                key={contact.id}
-                className="table-row"
-                style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 90px 80px', padding: '12px 28px', cursor: 'pointer' }}
-                onClick={() => setEditingContact(contact)}
-              >
-                <div>
-                  <div style={{ fontWeight: 500, fontSize: '13px' }}>{contact.first_name} {contact.last_name}</div>
+              isMobile ? (
+                <div
+                  key={contact.id}
+                  className="table-row"
+                  style={{ padding: '12px 16px', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)' }}
+                  onClick={() => setEditingContact(contact)}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-primary)' }}>{contact.first_name} {contact.last_name}</div>
+                      <div style={{ marginTop: '3px' }}>
+                        <span className={`badge ${contactTypeClass(contact.contact_type)}`}>{contact.contact_type}</span>
+                      </div>
+                      {(contact.firm || contact.title) && (
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                          {contact.firm}{contact.firm && contact.title ? ' · ' : ''}{contact.title}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }} onClick={e => e.stopPropagation()}>
+                        {contact.email && <a href={`mailto:${contact.email}`} style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px', fontSize: '11px' }}><Mail size={12} /></a>}
+                        {contact.phone && <a href={`tel:${contact.phone}`} style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '3px', fontSize: '11px' }}><Phone size={12} /></a>}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div style={{ alignSelf: 'center' }}>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{contact.firm || '—'}</div>
-                  {contact.title && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{contact.title}</div>}
+              ) : (
+                <div
+                  key={contact.id}
+                  className="table-row"
+                  style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 90px 80px', padding: '12px 28px', cursor: 'pointer' }}
+                  onClick={() => setEditingContact(contact)}
+                >
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: '13px' }}>{contact.first_name} {contact.last_name}</div>
+                  </div>
+                  <div style={{ alignSelf: 'center' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{contact.firm || '—'}</div>
+                    {contact.title && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{contact.title}</div>}
+                  </div>
+                  <div style={{ alignSelf: 'center' }}>
+                    <span className={`badge ${contactTypeClass(contact.contact_type)}`}>{contact.contact_type}</span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', alignSelf: 'center', fontFamily: 'var(--font-mono)' }}>
+                    {contact.created_at ? new Date(contact.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'2-digit' }) : '—'}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignSelf: 'center' }} onClick={e => e.stopPropagation()}>
+                    {contact.email && <a href={`mailto:${contact.email}`} style={{ color: 'var(--text-muted)' }}><Mail size={13} /></a>}
+                    {contact.phone && <a href={`tel:${contact.phone}`} style={{ color: 'var(--text-muted)' }}><Phone size={13} /></a>}
+                  </div>
                 </div>
-                <div style={{ alignSelf: 'center' }}>
-                  <span className={`badge ${contactTypeClass(contact.contact_type)}`}>{contact.contact_type}</span>
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', alignSelf: 'center', fontFamily: 'var(--font-mono)' }}>
-                  {contact.created_at ? new Date(contact.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'2-digit' }) : '—'}
-                </div>
-                <div style={{ display: 'flex', gap: '8px', alignSelf: 'center' }} onClick={e => e.stopPropagation()}>
-                  {contact.email && <a href={`mailto:${contact.email}`} style={{ color: 'var(--text-muted)' }}><Mail size={13} /></a>}
-                  {contact.phone && <a href={`tel:${contact.phone}`} style={{ color: 'var(--text-muted)' }}><Phone size={13} /></a>}
-                </div>
-              </div>
+              )
             ))}
             {searchResults === null && sortedDisplayed.length < displayTotal && (
               <div style={{ padding: '20px 28px', textAlign: 'center' }}>

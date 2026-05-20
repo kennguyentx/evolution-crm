@@ -7,6 +7,7 @@ import { Plus, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import NewDealModal from '@/components/deals/NewDealModal'
 import { moveDropboxOnStageChange } from '@/lib/dropbox-stage-move'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 const STAGES: { name: DealStage; label: string }[] = [
   { name: 'Teaser',        label: 'Teaser' },
@@ -24,6 +25,7 @@ export default function PipelinePage() {
   const [dragOverStage, setDragOverStage] = useState<DealStage | null>(null)
   const dragId = useRef<string | null>(null)
   const supabase = createClient()
+  const isMobile = useIsMobile()
 
   const fetchDeals = useCallback(async () => {
     const { data } = await supabase
@@ -70,7 +72,7 @@ export default function PipelinePage() {
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div style={{
-        padding: '20px 28px',
+        padding: isMobile ? '14px 16px' : '20px 28px',
         borderBottom: '1px solid var(--border)',
         display: 'flex', alignItems: 'center', gap: '16px',
         flexShrink: 0, background: 'var(--surface)',
@@ -84,8 +86,13 @@ export default function PipelinePage() {
         </div>
       </div>
 
+      {/* Mobile scroll hint */}
+      <div style={{ display: isMobile ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', padding: '6px 16px', background: 'var(--accent-muted)', borderBottom: '1px solid var(--border)', fontSize: '11px', color: 'var(--accent)', flexShrink: 0 }}>
+        ← Scroll to see all stages →
+      </div>
+
       {/* Kanban board — horizontal columns */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+      <div style={{ flex: 1, overflow: 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch', padding: isMobile ? '12px 12px' : '16px 20px', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
         {STAGES.map(({ name, label }) => {
           const stageDeals = dealsByStage(name)
           return (
@@ -99,8 +106,8 @@ export default function PipelinePage() {
                 if (id) { updateStage(id, name); dragId.current = null }
               }}
               style={{
-                width: '250px',
-                minWidth: '250px',
+                width: isMobile ? '200px' : '250px',
+                minWidth: isMobile ? '200px' : '250px',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '8px',

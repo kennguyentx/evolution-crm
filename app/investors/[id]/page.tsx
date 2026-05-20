@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { formatCurrencyFull as formatCurrency } from '@/types'
 import { ArrowLeft, Plus, X, Check, Building2, Edit2, Trash2 } from 'lucide-react'
 import Link from 'next/link'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 const INVESTOR_TYPES = ['Individual', 'Family Office', 'Institutional', 'Fund of Funds', 'Other']
 const ENTITY_TYPES = ['LLC', 'LP', 'Trust', 'Individual', 'Corp', 'Other']
@@ -15,6 +16,7 @@ export default function InvestorPage() {
   const router = useRouter()
   const investorId = params.id as string
   const supabase = createClient()
+  const isMobile = useIsMobile()
 
   const [investor, setInvestor] = useState<any>(null)
   const [entities, setEntities] = useState<any[]>([])
@@ -164,7 +166,7 @@ export default function InvestorPage() {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '16px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+      <div style={{ padding: isMobile ? '12px 16px' : '16px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
         <Link href="/investors" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '12px', textDecoration: 'none', marginBottom: '10px' }}>
           <ArrowLeft size={12} /> Investors
         </Link>
@@ -217,7 +219,7 @@ export default function InvestorPage() {
 
         {/* OVERVIEW — editable profile */}
         {activeTab === 'overview' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', maxWidth: '900px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '20px', maxWidth: '900px' }}>
             <div className="card" style={{ padding: '20px' }}>
               <div className="label" style={{ marginBottom: '16px' }}>Profile</div>
               <InlineEdit field="firm" value={investor.firm || ''} label="Firm" />

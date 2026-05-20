@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 type CalEvent = {
   id: string
@@ -46,6 +47,7 @@ const emptyForm = () => ({
 
 export default function CalendarPage() {
   const supabase = createClient()
+  const isMobile = useIsMobile()
   const today = new Date()
   const [year, setYear] = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth())
@@ -186,56 +188,92 @@ export default function CalendarPage() {
       </div>
 
       {/* Calendar */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '16px 28px 28px' }}>
-        {/* Day headers */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: '4px' }}>
-          {DAYS.map(d => (
-            <div key={d} style={{ fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', padding: '4px 8px', textAlign: 'center' }}>{d}</div>
-          ))}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '1px', background: 'var(--border)', border: '1px solid var(--border)', borderRadius: '10px', overflow: 'hidden' }}>
-          {cells.map((day, i) => {
-            const dayEvs = day ? eventsOnDay(day) : []
-            const isToday = day ? dateStr(day) === todayStr : false
-            return (
-              <div key={i}
-                onClick={() => day && openAdd(day)}
-                style={{ minHeight: '96px', background: 'var(--surface)', padding: '6px 6px 4px', cursor: day ? 'pointer' : 'default' }}
-                onMouseEnter={e => day && ((e.currentTarget as HTMLElement).style.background = 'var(--surface-2)')}
-                onMouseLeave={e => day && ((e.currentTarget as HTMLElement).style.background = 'var(--surface)')}
-              >
-                {day && (
-                  <>
-                    <div style={{
-                      width: '24px', height: '24px', borderRadius: '50%', marginBottom: '4px',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '12px', fontWeight: isToday ? 700 : 400,
-                      color: isToday ? 'white' : 'var(--text-secondary)',
-                      background: isToday ? 'var(--accent)' : 'transparent',
-                    }}>{day}</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      {dayEvs.slice(0, 3).map(ev => (
-                        <button key={ev.id}
-                          onClick={e => { e.stopPropagation(); openEdit(ev) }}
-                          style={{
-                            display: 'block', width: '100%', textAlign: 'left', fontSize: '10px',
-                            padding: '2px 5px', borderRadius: '3px', border: 'none', cursor: 'pointer',
-                            background: TYPE_COLORS[ev.event_type] + '20',
-                            color: TYPE_COLORS[ev.event_type],
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          }}>
-                          {ev.start_time && <span style={{ marginRight: '3px', opacity: 0.75 }}>{ev.start_time.slice(0, 5)}</span>}
-                          {ev.title}
-                        </button>
-                      ))}
-                      {dayEvs.length > 3 && <div style={{ fontSize: '9px', color: 'var(--text-muted)', paddingLeft: '3px' }}>+{dayEvs.length - 3} more</div>}
-                    </div>
-                  </>
-                )}
-              </div>
-            )
-          })}
-        </div>
+      <div style={{ flex: 1, overflow: 'auto', padding: isMobile ? '12px 16px' : '16px 28px 28px' }}>
+        {isMobile ? (
+          /* Mobile: list view grouped by day */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
+              const dayEvs = eventsOnDay(day)
+              const ds = dateStr(day)
+              const isToday = ds === todayStr
+              if (dayEvs.length === 0) return null
+              return (
+                <div key={day}>
+                  <div style={{ padding: '8px 12px', background: isToday ? 'var(--accent-muted)' : 'var(--surface-2)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: isToday ? 'var(--accent)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: 700, color: isToday ? 'white' : 'var(--text-primary)', flexShrink: 0 }}>{day}</div>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{new Date(year, month, day).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
+                  </div>
+                  {dayEvs.map(ev => (
+                    <button key={ev.id} onClick={() => openEdit(ev)}
+                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px 10px 20px', borderBottom: '1px solid var(--border-subtle)', borderLeft: `3px solid ${TYPE_COLORS[ev.event_type]}`, background: 'var(--surface)', cursor: 'pointer', border: 'none', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: 'var(--border-subtle)' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>{ev.title}</div>
+                      {ev.start_time && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{ev.start_time.slice(0, 5)}{ev.end_time ? ` – ${ev.end_time.slice(0, 5)}` : ''}</div>}
+                      <div style={{ fontSize: '11px', color: TYPE_COLORS[ev.event_type], marginTop: '2px', textTransform: 'capitalize' }}>{ev.event_type}</div>
+                    </button>
+                  ))}
+                </div>
+              )
+            })}
+            {events.length === 0 && !loading && (
+              <div style={{ padding: '40px 12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>No events this month. Tap a day to add one.</div>
+            )}
+            <div style={{ padding: '16px 12px', textAlign: 'center' }}>
+              <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={() => openAdd(today.getDate())}>+ Add event</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Day headers */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: '4px' }}>
+              {DAYS.map(d => (
+                <div key={d} style={{ fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', padding: '4px 8px', textAlign: 'center' }}>{d}</div>
+              ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '1px', background: 'var(--border)', border: '1px solid var(--border)', borderRadius: '10px', overflow: 'hidden' }}>
+              {cells.map((day, i) => {
+                const dayEvs = day ? eventsOnDay(day) : []
+                const isToday = day ? dateStr(day) === todayStr : false
+                return (
+                  <div key={i}
+                    onClick={() => day && openAdd(day)}
+                    style={{ minHeight: '96px', background: 'var(--surface)', padding: '6px 6px 4px', cursor: day ? 'pointer' : 'default' }}
+                    onMouseEnter={e => day && ((e.currentTarget as HTMLElement).style.background = 'var(--surface-2)')}
+                    onMouseLeave={e => day && ((e.currentTarget as HTMLElement).style.background = 'var(--surface)')}
+                  >
+                    {day && (
+                      <>
+                        <div style={{
+                          width: '24px', height: '24px', borderRadius: '50%', marginBottom: '4px',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '12px', fontWeight: isToday ? 700 : 400,
+                          color: isToday ? 'white' : 'var(--text-secondary)',
+                          background: isToday ? 'var(--accent)' : 'transparent',
+                        }}>{day}</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          {dayEvs.slice(0, 3).map(ev => (
+                            <button key={ev.id}
+                              onClick={e => { e.stopPropagation(); openEdit(ev) }}
+                              style={{
+                                display: 'block', width: '100%', textAlign: 'left', fontSize: '10px',
+                                padding: '2px 5px', borderRadius: '3px', border: 'none', cursor: 'pointer',
+                                background: TYPE_COLORS[ev.event_type] + '20',
+                                color: TYPE_COLORS[ev.event_type],
+                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                              }}>
+                              {ev.start_time && <span style={{ marginRight: '3px', opacity: 0.75 }}>{ev.start_time.slice(0, 5)}</span>}
+                              {ev.title}
+                            </button>
+                          ))}
+                          {dayEvs.length > 3 && <div style={{ fontSize: '9px', color: 'var(--text-muted)', paddingLeft: '3px' }}>+{dayEvs.length - 3} more</div>}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Event form modal */}

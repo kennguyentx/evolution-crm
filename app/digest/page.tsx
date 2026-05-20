@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import type { Deal } from '@/types'
 import { formatCurrency } from '@/types'
 import { BarChart3, RefreshCw, Send, TrendingUp, Activity } from 'lucide-react'
@@ -18,6 +19,7 @@ const STAGE_COLORS: Record<string, string> = {
 
 export default function DigestPage() {
   const supabase = createClient()
+  const isMobile = useIsMobile()
   const [deals, setDeals] = useState<Deal[]>([])
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
@@ -109,9 +111,9 @@ export default function DigestPage() {
         </div>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: isMobile ? '16px' : '24px 28px' }}>
         {/* KPI row */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '28px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '16px', marginBottom: '28px' }}>
           {[
             { label: 'Active Deals', value: activeDeals.length, sub: `${activeDeals.filter(d => ['LOI','Diligence','Closing'].includes(d.stage)).length} in advanced stages` },
             { label: 'Pipeline EBITDA', value: formatCurrency(activeDeals.reduce((s, d) => s + (d.ebitda || 0), 0)), sub: 'across active deals' },
@@ -126,7 +128,7 @@ export default function DigestPage() {
           ))}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
           {/* Pipeline chart */}
           <div className="card" style={{ padding: '20px' }}>
             <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '16px' }}>

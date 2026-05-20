@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { Folder, FileText, Table2, Monitor, File, Download, ChevronRight, Home, Loader2, AlertCircle, ExternalLink, BookOpen } from 'lucide-react'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 const BP_ROOT = '/Evolution Strategy Partners/Best Practices'
 
@@ -33,6 +34,7 @@ function formatSize(bytes?: number) {
 }
 
 export default function BestPracticesPage() {
+  const isMobile = useIsMobile()
   const [currentPath, setCurrentPath] = useState(BP_ROOT)
   const [items, setItems] = useState<DropboxItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -89,7 +91,7 @@ export default function BestPracticesPage() {
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+      <div style={{ padding: isMobile ? '14px 16px' : '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: breadcrumbs.length > 0 ? '10px' : '0' }}>
           <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Best Practices</h1>
           <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '4px' }}>Dropbox library</span>
@@ -124,7 +126,7 @@ export default function BestPracticesPage() {
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: isMobile ? '16px' : '24px 28px' }}>
         {loading && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-muted)', fontSize: '13px' }}>
             <Loader2 size={15} style={{ animation: 'spin 1s linear infinite' }} /> Loading…
@@ -147,7 +149,7 @@ export default function BestPracticesPage() {
             {folders.length > 0 && (
               <>
                 {isRoot ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px', marginBottom: files.length > 0 ? '24px' : '0' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', marginBottom: files.length > 0 ? '24px' : '0' }}>
                     {folders.map(folder => (
                       <button
                         key={folder.path}
