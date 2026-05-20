@@ -45,6 +45,7 @@ export interface Deal {
   notes?: string
   pass_reason?: string
   parent_company_id?: string | null
+  parent_portco?: string | null
   dropbox_path?: string | null
 }
 
