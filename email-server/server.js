@@ -19,6 +19,54 @@ function serviceClient() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 }
 
+// ── New deal notification ─────────────────────────────────────────────────────
+const DEAL_NOTIFY_RECIPIENTS = ['ken@evolutionstrategy.com', 'sean@evolutionstrategy.com']
+
+async function sendDealNotification({ companyName, stage, status, sector, geography, revenue, ebitda, askingPrice, askingMultiple, description, banker, dealId, isPending }) {
+  const serverToken = process.env.POSTMARK_SERVER_TOKEN
+  const fromEmail   = process.env.FROM_EMAIL || 'deals@evolutionstrategy.com'
+  if (!serverToken) return
+
+  const fmt = n => n >= 1e6 ? `$${(n / 1e6).toFixed(1)}m` : n >= 1e3 ? `$${(n / 1e3).toFixed(0)}k` : `$${n}`
+
+  const lines = []
+  lines.push(`New deal logged: ${companyName}`)
+  lines.push(`Stage: ${stage}${status && status !== 'Active' ? ` (${status})` : ''}`)
+  if (sector || geography) lines.push(`${[sector, geography].filter(Boolean).join(' · ')}`)
+  if (revenue || ebitda) {
+    const fins = []
+    if (revenue)      fins.push(`Rev: ${fmt(revenue)}`)
+    if (ebitda)       fins.push(`EBITDA: ${fmt(ebitda)}`)
+    if (askingPrice)  fins.push(`Asking: ${fmt(askingPrice)}`)
+    if (askingMultiple) fins.push(`${askingMultiple.toFixed(1)}x`)
+    lines.push(fins.join('  '))
+  }
+  if (banker) lines.push(`Banker: ${banker}`)
+  if (description) lines.push(`\n${description.slice(0, 200)}${description.length > 200 ? '...' : ''}`)
+  if (isPending) lines.push(`\n⚠️  Pending review — check Document Intake in the CRM.`)
+  if (dealId) lines.push(`\nView: ${process.env.NEXT_PUBLIC_APP_URL || 'https://evolution-crm.vercel.app'}/deals/${dealId}`)
+
+  const subject = isPending
+    ? `New Deal (Pending Review): ${companyName}`
+    : `New Deal Logged: ${companyName} — ${stage}`
+
+  await fetch('https://api.postmarkapp.com/email', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-Postmark-Server-Token': serverToken,
+    },
+    body: JSON.stringify({
+      From: fromEmail,
+      To: DEAL_NOTIFY_RECIPIENTS.join(', '),
+      Subject: subject,
+      TextBody: lines.join('\n'),
+      MessageStream: 'outbound',
+    }),
+  }).catch(e => console.warn('[deal-notify] Postmark error:', e?.message))
+}
+
 // ── Dropbox helpers (inlined — no Next.js import available) ──────────────────
 const DBX_CONTENT = 'https://content.dropboxapi.com/2'
 const DBX_API     = 'https://api.dropboxapi.com/2'
@@ -699,6 +747,24 @@ async function handleEmailIntake(req, res) {
         })
 
         if (allContacts.length > 0 && deal?.id) await upsertContacts(supabase, allContacts, deal.id)
+
+        const bankerContact = allContacts.find(c => c.role === 'Source / Banker')
+        const bankerStr = bankerContact ? `${bankerContact.name}${bankerContact.firm ? ` · ${bankerContact.firm}` : ''}` : null
+        sendDealNotification({
+          companyName:    primary.extracted.company_name || `Unknown — ${subject.slice(0, 40)}`,
+          stage, status,
+          sector:         primary.extracted.sector       || null,
+          geography:      primary.extracted.geography    || null,
+          revenue:        primary.extracted.revenue      || null,
+          ebitda:         primary.extracted.ebitda       || null,
+          askingPrice:    primary.extracted.asking_price || null,
+          askingMultiple: primary.extracted.asking_multiple || null,
+          description:    primary.extracted.description  || null,
+          banker:         bankerStr,
+          dealId:         deal?.id,
+          isPending:      false,
+        }).catch(e => console.warn('[deal-notify] Error:', e?.message))
+
         results.push({ type: primary.extracted.doc_type, status: 'auto-approved', stage, files: allFileNames, deal_id: deal?.id })
 
       } else {
@@ -727,6 +793,24 @@ async function handleEmailIntake(req, res) {
           source:     'email',
           deal_id:    null,
         })
+
+        const bankerContactQ = allContacts.find(c => c.role === 'Source / Banker')
+        const bankerStrQ = bankerContactQ ? `${bankerContactQ.name}${bankerContactQ.firm ? ` · ${bankerContactQ.firm}` : ''}` : null
+        sendDealNotification({
+          companyName:    primary.extracted.company_name || `Unknown — ${subject.slice(0, 40)}`,
+          stage:          instructions.stage || 'Teaser',
+          status:         null,
+          sector:         primary.extracted.sector    || null,
+          geography:      primary.extracted.geography || null,
+          revenue:        primary.extracted.revenue   || null,
+          ebitda:         primary.extracted.ebitda    || null,
+          askingPrice:    primary.extracted.asking_price || null,
+          askingMultiple: primary.extracted.asking_multiple || null,
+          description:    primary.extracted.description || null,
+          banker:         bankerStrQ,
+          dealId:         null,
+          isPending:      true,
+        }).catch(e => console.warn('[deal-notify] Error:', e?.message))
 
         results.push({ type: primary.extracted.doc_type, status: 'queued', files: allFileNames, company: primary.extracted.company_name })
       }
