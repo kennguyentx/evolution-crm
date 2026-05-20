@@ -286,7 +286,7 @@ async function parseForwardingNote(bodyText, emailHeaders) {
   "deal_type": "platform | add-on | null",
   "parent_portco": "string or null — name of our EXISTING PORTFOLIO COMPANY that would acquire this target. Set when sender uses language like 'add-on for Amped', 'under Amped', 'bolt-on for Amped', 'for the Amped platform'. This is NOT the target company — it is the acquirer we already own.",
   "forwarder_note": "any context or commentary the sender added, else null",
-  "auto_approve": true or false — true only if sender made an explicit final decision (pass, hold, close),
+  "auto_approve": true or false — true if sender made an explicit final decision. Examples that ARE auto_approve: "log as pass", "pass", "pass doa", "log as teaser", "log it", "log as reviewing", "add to pipeline", "log as hold". When in doubt and a stage is given, set true.,
   "contacts": [
     { "name": "Full Name", "email": "email or null", "phone": "phone or null", "firm": "company or null", "title": "job title or null", "role": "Source / Banker | Management | Advisor | Lender | Other" }
   ]
@@ -584,6 +584,8 @@ async function handleEmailIntake(req, res) {
       console.log(`[email-intake] Dropbox upload target="${uploadFolder}" existing=${!!existingDeal}`)
       if (dropboxConfigured() && uploadFolder) {
         for (const doc of extracted_docs) {
+          // Skip virtual email-body doc — nothing to upload to Dropbox
+          if (doc.fileName === 'email-body' || doc.buffer.length === 0) continue
           try {
             await dropboxUpload(uploadFolder, doc.fileName, doc.buffer)
             console.log(`[email-intake] Uploaded ${doc.fileName} ✓`)
