@@ -199,6 +199,7 @@ Rules: factual only, no opinions, null/[] if nothing found.`
 async function processAttachment(fileName, buffer, contentType) {
   const isPDF  = contentType.includes('pdf')  || fileName.toLowerCase().endsWith('.pdf')
   const isDOCX = contentType.includes('word') || /\.docx?$/i.test(fileName)
+  const isImage = contentType.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(fileName)
 
   let messageContent
   if (isPDF) {
@@ -212,6 +213,16 @@ async function processAttachment(fileName, buffer, contentType) {
       { type: 'text', text: `DOCUMENT (${fileName}):\n${text}` },
       { type: 'text', text: 'Extract deal data from the document above. Return only valid JSON.' },
     ]
+  } else if (isImage) {
+    // Normalise the media type — Anthropic accepts jpeg/png/gif/webp only
+    const ext = fileName.split('.').pop()?.toLowerCase()
+    const mediaType = contentType.startsWith('image/')
+      ? contentType.split(';')[0].trim()
+      : (ext === 'jpg' ? 'image/jpeg' : `image/${ext}`)
+    messageContent = [
+      { type: 'image', source: { type: 'base64', media_type: mediaType, data: buffer.toString('base64') } },
+      { type: 'text', text: `Extract deal data from this image (${fileName}). It may contain a financial summary table, teaser graphic, or deal overview. Return only valid JSON.` },
+    ]
   } else {
     return null
   }
@@ -221,6 +232,31 @@ async function processAttachment(fileName, buffer, contentType) {
     max_tokens: 3000,
     system:     DOC_SYSTEM_PROMPT,
     messages:   [{ role: 'user', content: messageContent }],
+  })
+
+  const raw = response.content
+    .filter(b => b.type === 'text').map(b => b.text).join('')
+    .replace(/```json|```/g, '').trim()
+  return JSON.parse(raw)
+}
+
+// ── Extract deal data from a plain email body (no attachment) ─────────────────
+async function processBodyText(bodyText, subject) {
+  // Strip HTML tags, collapse whitespace, cap length
+  const clean = bodyText
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
+    .slice(0, 5000)
+
+  const response = await anthropic.messages.create({
+    model:      'claude-haiku-4-5',
+    max_tokens: 2000,
+    system:     DOC_SYSTEM_PROMPT,
+    messages:   [{ role: 'user', content: [
+      { type: 'text', text: `EMAIL SUBJECT: ${subject || '(none)'}\n\nEMAIL BODY:\n${clean}\n\nThis is a teaser email with no PDF attachment — extract whatever deal data is present. Return only valid JSON.` },
+    ]}],
   })
 
   const raw = response.content
@@ -420,8 +456,27 @@ async function handleEmailIntake(req, res) {
         }
       }
 
+      // If no extractable docs at all, try the email body as a teaser source
       if (extracted_docs.filter(d => d.extracted.doc_type !== 'nda').length === 0 && ndaAttachments.length === 0) {
-        return res.json({ success: true, processed: results })
+        const htmlBody = body.HtmlBody ?? body.html ?? ''
+        const rawBody  = htmlBody || text
+        if (rawBody.trim().length > 100) {
+          try {
+            console.log('[email-intake] No extractable attachments — attempting body text extraction…')
+            const extracted = await processBodyText(rawBody, subject)
+            if (extracted && (extracted.company_name || extracted.description)) {
+              extracted_docs.push({ fileName: 'email-body', buffer: Buffer.from(''), extracted })
+              console.log(`[email-intake] Body extraction: doc_type=${extracted.doc_type} company="${extracted.company_name}"`)
+            } else {
+              return res.json({ success: true, processed: results })
+            }
+          } catch (e) {
+            console.error('[email-intake] Body extraction error:', e?.message)
+            return res.json({ success: true, processed: results })
+          }
+        } else {
+          return res.json({ success: true, processed: results })
+        }
       }
 
       const primary    = extracted_docs.find(d => d.extracted.doc_type === 'teaser' || d.extracted.doc_type === 'cim')
