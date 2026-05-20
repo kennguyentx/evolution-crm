@@ -189,11 +189,11 @@ const EMAIL_SYSTEM_PROMPT = `You extract structured information from forwarded e
   "summary": "string — 1-3 sentence factual summary",
   "next_steps": "string or null — explicit action items or follow-ups",
   "deal_names": ["string array — company or deal names mentioned"],
-  "contact_names": ["string array — personal names in First Last format"],
+  "contact_names": ["string array — ONLY real human person names in First Last format. Do NOT include business descriptions, product names, job titles, or phrases from the email body. Examples of valid entries: 'Gary Rayberg', 'Brian Meyer'. Examples of INVALID entries: 'Successful Large', 'Capacity Electrical', 'Financial Information', 'General Contractors'."],
   "logged_by": "string or null — first name of person who forwarded this"
 }
 
-Rules: factual only, no opinions, null/[] if nothing found.`
+Rules: factual only, no opinions, null/[] if nothing found. For contact_names — if in doubt whether something is a real person name, leave it out.`
 
 // ── Process a single attachment through Claude ───────────────────────────────
 async function processAttachment(fileName, buffer, contentType) {
@@ -394,14 +394,18 @@ async function handleEmailIntake(req, res) {
       }
     }
 
-    // ── Path A: process document attachments ─────────────────────────────────
+    // ── Path A: process document attachments OR body-only teaser ─────────────
     const docAttachments = attachments.filter(a => {
       const name = (a.Name ?? '').toLowerCase()
       const ct   = (a.ContentType ?? '').toLowerCase()
       return ct.includes('pdf') || ct.includes('word') || name.endsWith('.pdf') || /\.docx?$/.test(name)
+        || ct.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/.test(name)
     })
 
-    if (docAttachments.length > 0) {
+    const htmlBody    = body.HtmlBody ?? body.html ?? ''
+    const hasBodyText = (htmlBody || text).trim().length > 100
+
+    if (docAttachments.length > 0 || hasBodyText) {
       const instructions = await parseForwardingNote(text, { from, fromName, cc: ccFull })
       console.log(`[email-intake] instructions:`, JSON.stringify(instructions))
 
@@ -458,8 +462,7 @@ async function handleEmailIntake(req, res) {
 
       // If no extractable docs at all, try the email body as a teaser source
       if (extracted_docs.filter(d => d.extracted.doc_type !== 'nda').length === 0 && ndaAttachments.length === 0) {
-        const htmlBody = body.HtmlBody ?? body.html ?? ''
-        const rawBody  = htmlBody || text
+        const rawBody = htmlBody || text
         if (rawBody.trim().length > 100) {
           try {
             console.log('[email-intake] No extractable attachments — attempting body text extraction…')
