@@ -1218,6 +1218,7 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
   const [editMap, setEditMap] = useState<Record<string, any>>({})
   const [portcos, setPortcos] = useState<{id:string;name:string}[]>([])
   const [processing, setProcessing] = useState<string | null>(null)
+  const [approveError, setApproveError] = useState<string | null>(null)
 
   useEffect(() => {
     load()
@@ -1235,7 +1236,7 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
 
   function getEdit(id: string, item: any) {
     return editMap[id] ?? {
-      company_name: item.extracted?.company_name ?? '',
+      company_name: item.extracted?.company_name || 'Unknown',
       sector:       item.extracted?.sector ?? '',
       geography:    item.extracted?.geography ?? '',
       revenue:      item.extracted?.revenue ?? null,
@@ -1251,19 +1252,26 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
 
   async function handleApprove(item: any) {
     setProcessing(item.id)
+    setApproveError(null)
     const edited = getEdit(item.id, item)
-    const res = await fetch(`/api/intake/queue/${item.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'approve', edited }),
-    })
-    const data = await res.json()
-    setProcessing(null)
-    if (data.success) {
-      setItems(prev => prev.filter(i => i.id !== item.id))
-      setReviewing(null)
-      onApproved()
+    try {
+      const res = await fetch(`/api/intake/queue/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approve', edited }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setItems(prev => prev.filter(i => i.id !== item.id))
+        setReviewing(null)
+        onApproved()
+      } else {
+        setApproveError(data.error || 'Something went wrong — check Supabase logs')
+      }
+    } catch (e: any) {
+      setApproveError(e?.message || 'Network error')
     }
+    setProcessing(null)
   }
 
   async function handleReject(id: string) {
@@ -1332,10 +1340,8 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
                     </div>
                     <div>
                       <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>Sector</label>
-                      <select className="select" style={{ fontSize: '13px' }} value={edit.sector} onChange={e => setEdit(item.id, { sector: e.target.value })}>
-                        <option value="">Select…</option>
-                        {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
+                      <input className="input" list="pending-sector-opts" style={{ fontSize: '13px' }} value={edit.sector} onChange={e => setEdit(item.id, { sector: e.target.value })} placeholder="Type or select…" />
+                      <datalist id="pending-sector-opts">{SECTORS.map(s => <option key={s} value={s} />)}</datalist>
                     </div>
                     <div>
                       <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>Geography</label>
@@ -1398,6 +1404,13 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
                       Discard
                     </button>
                   </div>
+
+                  {/* Approve error */}
+                  {approveError && reviewing === item.id && (
+                    <div style={{ marginTop: '8px', padding: '8px 12px', borderRadius: '7px', background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: '13px' }}>
+                      ⚠️ {approveError}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
