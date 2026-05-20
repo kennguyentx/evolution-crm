@@ -56,7 +56,7 @@ export default function DealDetailPage() {
   const [loadingNews, setLoadingNews] = useState(false)
   const [newsError, setNewsError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview'|'diligence'|'contacts'|'capital'|'activity'|'documents'|'nda'|'news'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview'|'diligence'|'contacts'|'capital'|'activity'|'documents'|'nda'>('overview')
   const [editingStage, setEditingStage] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [editingContact, setEditingContact] = useState<any>(null)
@@ -559,7 +559,6 @@ export default function DealDetailPage() {
     { key: 'activity',  label: `Activity (${interactions.length})` },
     { key: 'documents',  label: `Documents (${documents.length})` },
     { key: 'nda',        label: 'NDA' },
-    { key: 'news',       label: `News${news.length > 0 ? ` (${news.length})` : ''}` },
   ]
 
   return (
@@ -725,6 +724,73 @@ export default function DealDetailPage() {
               )}
             </div>
           </div>{/* end 2-col grid */}
+
+            {/* NEWS & RESEARCH */}
+            <div className="card" style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <div>
+                  <div className="label">News & Market Intelligence</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Recent news, sector trends, and PE activity</div>
+                </div>
+                <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={pullNews} disabled={loadingNews}>
+                  {loadingNews ? '⏳ Searching…' : news.length > 0 ? '↺ Refresh' : '⬇ Pull news'}
+                </button>
+              </div>
+              {newsError && <div style={{ fontSize: '12px', color: 'var(--red)', marginBottom: '12px' }}>{newsError}</div>}
+              {loadingNews && <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>Searching for news about {deal.company_name} and the {deal.sector || 'sector'}… takes 15–30 seconds.</div>}
+              {!loadingNews && news.length === 0 && !newsError && (
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>Click "Pull news" to search for recent news, industry trends, and PE activity relevant to this deal.</div>
+              )}
+              {news.length > 0 && (() => {
+                const categories = [
+                  { key: 'company',         label: 'Company',         color: '#6366f1' },
+                  { key: 'sector_news',     label: 'Sector',          color: '#0ea5e9' },
+                  { key: 'pe_activity',     label: 'PE Activity',     color: '#f59e0b' },
+                  { key: 'market_research', label: 'Market Research', color: '#10b981' },
+                ]
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {categories.map(cat => {
+                      const items = news.filter((n: any) => n.category === cat.key)
+                      if (!items.length) return null
+                      return (
+                        <div key={cat.key}>
+                          <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: cat.color, marginBottom: '6px', marginTop: '4px' }}>{cat.label}</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                            {items.map((item: any, i: number) => (
+                              <div key={i} style={{ padding: '10px 12px', background: 'var(--surface-2)', borderRadius: '7px', borderLeft: `3px solid ${cat.color}` }}>
+                                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    {item.url
+                                      ? <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', textDecoration: 'none', lineHeight: 1.4, display: 'block' }} onMouseEnter={e => (e.currentTarget.style.color = cat.color)} onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-primary)')}>{item.title} ↗</a>
+                                      : <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.4 }}>{item.title}</div>
+                                    }
+                                    {item.summary && <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '3px', lineHeight: 1.5 }}>{item.summary}</div>}
+                                  </div>
+                                  <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{item.source}</div>
+                                    {item.date && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{item.date}</div>}
+                                    {item.sentiment && item.sentiment !== 'neutral' && (
+                                      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: item.sentiment === 'positive' ? '#10b981' : '#ef4444', marginTop: '3px' }}>{item.sentiment}</div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {newsNotes && (
+                      <div style={{ marginTop: '8px', padding: '10px 12px', background: 'var(--surface-2)', borderRadius: '7px', borderLeft: '3px solid var(--border)' }}>
+                        <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: '5px' }}>Market Synthesis</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{newsNotes}</div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+            </div>
 
             {/* COMPS */}
             <div className="card" style={{ padding: '20px' }}>
@@ -1327,121 +1393,6 @@ export default function DealDetailPage() {
   <NDATab dealId={dealId} companyName={deal.company_name} />
 )}
 
-{/* NEWS & RESEARCH */}
-{activeTab === 'news' && (
-  <div style={{ padding: '24px 28px', maxWidth: '860px' }}>
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-      <div>
-        <div className="label">News & Market Intelligence</div>
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-          Recent news, sector trends, and PE activity — sourced live via web search
-        </div>
-      </div>
-      <button
-        className="btn btn-ghost"
-        style={{ fontSize: '12px', flexShrink: 0 }}
-        onClick={pullNews}
-        disabled={loadingNews}
-      >
-        {loadingNews ? '⏳ Searching…' : news.length > 0 ? '↺ Refresh' : '⬇ Pull news'}
-      </button>
-    </div>
-
-    {newsError && (
-      <div style={{ fontSize: '12px', color: 'var(--red)', marginBottom: '12px' }}>{newsError}</div>
-    )}
-
-    {loadingNews && (
-      <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-        Searching for news about {deal.company_name} and the {deal.sector || 'sector'}… takes 15–30 seconds.
-      </div>
-    )}
-
-    {!loadingNews && news.length === 0 && !newsError && (
-      <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-        Click "Pull news" to search for recent news, industry trends, and PE activity relevant to this deal.
-      </div>
-    )}
-
-    {news.length > 0 && (() => {
-      const categories: { key: string; label: string; color: string }[] = [
-        { key: 'company',         label: 'Company',        color: '#6366f1' },
-        { key: 'sector_news',     label: 'Sector',         color: '#0ea5e9' },
-        { key: 'pe_activity',     label: 'PE Activity',    color: '#f59e0b' },
-        { key: 'market_research', label: 'Market Research', color: '#10b981' },
-      ]
-      return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {categories.map(cat => {
-            const items = news.filter(n => n.category === cat.key)
-            if (!items.length) return null
-            return (
-              <div key={cat.key}>
-                <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: cat.color, marginBottom: '6px', marginTop: '4px' }}>
-                  {cat.label}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                  {items.map((item, i) => (
-                    <div key={i} style={{
-                      padding: '12px 14px',
-                      background: 'var(--surface-2)',
-                      borderRadius: '8px',
-                      borderLeft: `3px solid ${cat.color}`,
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          {item.url ? (
-                            <a
-                              href={item.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', textDecoration: 'none', lineHeight: 1.4, display: 'block' }}
-                              onMouseEnter={e => (e.currentTarget.style.color = cat.color)}
-                              onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-primary)')}
-                            >
-                              {item.title} ↗
-                            </a>
-                          ) : (
-                            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.4 }}>{item.title}</div>
-                          )}
-                          {item.summary && (
-                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.5 }}>{item.summary}</div>
-                          )}
-                        </div>
-                        <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                          <div style={{ fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{item.source}</div>
-                          {item.date && <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>{item.date}</div>}
-                          {item.sentiment && item.sentiment !== 'neutral' && (
-                            <div style={{
-                              fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
-                              color: item.sentiment === 'positive' ? '#10b981' : '#ef4444',
-                              marginTop: '4px',
-                            }}>
-                              {item.sentiment}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          })}
-
-          {newsNotes && (
-            <div style={{ marginTop: '16px', padding: '12px 14px', background: 'var(--surface-2)', borderRadius: '8px', borderLeft: '3px solid var(--border)' }}>
-              <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: '6px' }}>
-                Market Synthesis
-              </div>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{newsNotes}</div>
-            </div>
-          )}
-        </div>
-      )
-    })()}
-  </div>
-)}
 
       </div>{/* closes TAB CONTENT div */}
 
