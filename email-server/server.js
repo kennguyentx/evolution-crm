@@ -398,8 +398,17 @@ async function handleEmailIntake(req, res) {
     const docAttachments = attachments.filter(a => {
       const name = (a.Name ?? '').toLowerCase()
       const ct   = (a.ContentType ?? '').toLowerCase()
-      return ct.includes('pdf') || ct.includes('word') || name.endsWith('.pdf') || /\.docx?$/.test(name)
-        || ct.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/.test(name)
+      const isPdfOrDoc = ct.includes('pdf') || ct.includes('word') || name.endsWith('.pdf') || /\.docx?$/.test(name)
+      const isImage    = ct.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/.test(name)
+      if (!isPdfOrDoc && !isImage) return false
+      // Skip inline email images: generic auto-named files (image001.png etc.)
+      // and very small images that are almost certainly logos/signatures/spacers
+      if (isImage && !isPdfOrDoc) {
+        const sizeBytes = a.Content?.length ? Math.ceil(a.Content.length * 3 / 4) : 0
+        if (/^image\d+\.(png|jpe?g|gif|webp)$/i.test(a.Name ?? '')) return false
+        if (sizeBytes < 30000) return false  // < ~30KB — too small to be a real document
+      }
+      return true
     })
 
     const htmlBody    = body.HtmlBody ?? body.html ?? ''
@@ -539,10 +548,13 @@ async function handleEmailIntake(req, res) {
 
       // ── Dropbox folder resolution ─────────────────────────────────────────
       const effectiveStage = existingDeal?.stage ?? instructions.stage ?? 'Teaser'
-      const companyForPath = primary.extracted.company_name
+      // Use extracted company name, or fall back to subject line (strip FW:/RE: prefixes)
+      const companyNameForPath = primary.extracted.company_name
+        || subject.replace(/^(fw|re|fwd)\s*:\s*/i, '').trim().slice(0, 60) || null
+      const companyForPath = companyNameForPath
         ? (instructions.parent_portco
-            ? `${primary.extracted.company_name} [${instructions.parent_portco}]`
-            : primary.extracted.company_name)
+            ? `${companyNameForPath} [${instructions.parent_portco}]`
+            : companyNameForPath)
         : null
 
       // Validate the stored dropbox_path has a real multi-segment path.
