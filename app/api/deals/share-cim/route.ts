@@ -41,14 +41,16 @@ async function generatePreview(body: any) {
   const multipleStr = asking_multiple ? `${asking_multiple.toFixed(1)}x EBITDA` : null
 
   // Format historical financials as a readable table for the prompt
+  // Forecast rows get a (P) tag so Claude labels them as projected in the output
   const histTable = (historical_financials as any[] | null | undefined)?.length
     ? (historical_financials as any[]).map((h: any) => {
-        const rev  = h.revenue ? `$${(h.revenue / 1e6).toFixed(1)}M rev` : 'N/A rev'
-        const ebit = h.ebitda  ? `$${(h.ebitda  / 1e6).toFixed(1)}M EBITDA` : 'N/A EBITDA'
+        const tag  = h.is_forecast ? ' (P)' : ''
+        const rev  = h.revenue != null ? `$${(h.revenue / 1e6).toFixed(1)}M rev` : 'N/A rev'
+        const ebit = h.ebitda  != null ? `$${(h.ebitda  / 1e6).toFixed(1)}M EBITDA` : 'N/A EBITDA'
         const mgn  = h.ebitda_margin != null
           ? `${(h.ebitda_margin * 100).toFixed(1)}% margin`
           : (h.revenue && h.ebitda ? `${((h.ebitda / h.revenue) * 100).toFixed(1)}% margin` : '')
-        return `  ${h.year}: ${rev} / ${ebit}${mgn ? ` / ${mgn}` : ''}`
+        return `  ${h.year}${tag}: ${rev} / ${ebit}${mgn ? ` / ${mgn}` : ''}`
       }).join('\n')
     : null
 
@@ -87,12 +89,12 @@ BUSINESS
 [2–3 sentences: what the company does, specific services or end markets, operating states/regions, years in business or founding if mentioned]
 
 FINANCIALS
-[Present as a labeled table using tabs/spacing, e.g.:
-  Revenue:  $Xm (20XX) / $Xm (20XX) / $Xm (LTM)
-  EBITDA:   $Xm / $Xm / $Xm
-  Margin:   X% / X% / X%
+[Present as a labeled table. Use the pre-formatted Historical Financials rows above — copy them verbatim, replacing (P) with "(Proj.)". Then add Asking on its own line.
+  Revenue:  $Xm (2022) / $Xm (2023) / $Xm (LTM) / $Xm (Proj. 2025)
+  EBITDA:   $Xm / $Xm / $Xm / $Xm
+  Margin:   X% / X% / X% / X%
   Asking:   $Xm at X.Xx EBITDA
-Extract 2–3 years of data from financial_summary or cim_summary if available. If only one year is available, show it. Use "N/A" for fields with no data.]
+If no structured rows are available, extract from the narrative text. Use "N/A" only when a figure is genuinely absent.]
 
 OPERATIONS
 [Labeled lines only — omit any line where data is not available:

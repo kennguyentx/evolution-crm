@@ -41,10 +41,11 @@ const DOC_SYSTEM_PROMPT = `You extract deal data from teasers and CIMs forwarded
   "financial_summary": "string or null — 2-3 sentence narrative on margins, growth trend, and any notable items (CIM only)",
   "historical_financials": [
     {
-      "year": "string — e.g. '2022', '2023', 'LTM', 'TTM', 'Budget 2025'",
+      "year": "string — e.g. '2022', '2023', 'LTM', 'TTM', 'Budget 2025', 'Forecast 2026', 'Proj. 2025'",
       "revenue": "number in raw dollars or null",
       "ebitda": "number in raw dollars or null",
-      "ebitda_margin": "number as decimal (0.22 for 22%) or null"
+      "ebitda_margin": "number as decimal (0.22 for 22%) or null",
+      "is_forecast": "boolean — true if this row is a projection, budget, or forecast; false for actuals and LTM/TTM"
     }
   ],
   "customer_concentration": "string or null — describe top customer %, customer count, or 'no single customer >X%' (CIM only)",
@@ -71,7 +72,7 @@ const DOC_SYSTEM_PROMPT = `You extract deal data from teasers and CIMs forwarded
 Rules:
 - doc_type: "teaser" = short marketing summary, "cim" = detailed confidential memo, "nda" = non-disclosure agreement, "other" = anything else
 - Dollar values as raw numbers (4200000 for $4.2M). If a range is given (e.g. "$4–6M revenue"), use the midpoint (5000000). If described as "approximately $5M" use 5000000.
-- historical_financials: extract EVERY year shown in a financial table or summary — typically 2-3 historical years plus LTM/TTM. Order oldest to newest. Use [] if only one year is available or this is a teaser.
+- historical_financials: extract EVERY row shown in a financial table or summary — historical years, LTM/TTM, AND any projections, budgets, or forecasts. Order chronologically (actuals first, then LTM/TTM, then forecasts). Use [] if only one year is available or this is a teaser. Mark is_forecast=true for any projected/budget/forecast row.
 - revenue/ebitda at the top level: always the most recent / LTM figure from historical_financials.
 - Null ONLY if no numeric hint is given anywhere in the document — do not leave null if you can infer from context.
 - description: purely factual, no adjectives expressing quality.`
