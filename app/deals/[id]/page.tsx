@@ -556,8 +556,8 @@ export default function DealDetailPage() {
     { key: 'diligence', label: `Diligence${diligence.length > 0 ? ` (${diligencePct}%)` : ''}` },
     { key: 'contacts',  label: `Contacts (${linkedContacts.length})` },
     { key: 'capital',   label: `Capital (${capital.length})` },
-    { key: 'activity',  label: `Activity (${interactions.length})` },
-    { key: 'documents',  label: `Documents (${documents.length})` },
+    { key: 'activity',  label: `Activity (${interactions.length + dealNotes.length})` },
+    { key: 'documents',  label: 'Documents' },
     { key: 'nda',        label: 'NDA' },
   ]
 
