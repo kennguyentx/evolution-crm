@@ -50,21 +50,32 @@ async function sendDealNotification({ companyName, stage, status, sector, geogra
     ? `New Deal (Pending Review): ${companyName}`
     : `New Deal Logged: ${companyName} — ${stage}`
 
-  await fetch('https://api.postmarkapp.com/email', {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-Postmark-Server-Token': serverToken,
-    },
-    body: JSON.stringify({
-      From: fromEmail,
-      To: DEAL_NOTIFY_RECIPIENTS.join(', '),
-      Subject: subject,
-      TextBody: lines.join('\n'),
-      MessageStream: 'outbound',
-    }),
-  }).catch(e => console.warn('[deal-notify] Postmark error:', e?.message))
+  console.log(`[deal-notify] Sending to ${DEAL_NOTIFY_RECIPIENTS.join(', ')} — "${subject}"`)
+  try {
+    const pmRes = await fetch('https://api.postmarkapp.com/email', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-Postmark-Server-Token': serverToken,
+      },
+      body: JSON.stringify({
+        From: fromEmail,
+        To: DEAL_NOTIFY_RECIPIENTS.join(', '),
+        Subject: subject,
+        TextBody: lines.join('\n'),
+        MessageStream: 'outbound',
+      }),
+    })
+    const pmData = await pmRes.json()
+    if (pmRes.ok) {
+      console.log(`[deal-notify] Sent OK — MessageID: ${pmData.MessageID}`)
+    } else {
+      console.error(`[deal-notify] Postmark error ${pmRes.status}:`, JSON.stringify(pmData))
+    }
+  } catch (e) {
+    console.error('[deal-notify] Fetch failed:', e?.message)
+  }
 }
 
 // ── Dropbox helpers (inlined — no Next.js import available) ──────────────────
