@@ -256,3 +256,32 @@ html, body {
     overflow: auto !important;
   }
 }
+
+/* ─── Extended Mobile Optimizations ──────────────── */
+@media (max-width: 768px) {
+  /* Prevent iOS zoom on input focus */
+  input.input, select.select, textarea.input { font-size: 16px !important; }
+
+  /* Tab bars: horizontal scroll, hide scrollbar */
+  .tab-bar {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+  }
+  .tab-bar::-webkit-scrollbar { display: none; }
+
+  /* Tables inside cards: horizontal scroll */
+  .table-scroll-mobile {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Reduce default page padding */
+  .page-pad { padding-left: 16px !important; padding-right: 16px !important; }
+
+  /* Stack any flex row that uses this class */
+  .mobile-col { flex-direction: column !important; }
+
+  /* Full-width modals on mobile */
+  .modal-card { width: 96vw !important; max-width: 96vw !important; }
+}

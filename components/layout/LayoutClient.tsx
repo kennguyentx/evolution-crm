@@ -6,8 +6,10 @@ import Sidebar from './Sidebar'
 import CommandPalette from './CommandPalette'
 import QuickLog from './QuickLog'
 import { Plus } from 'lucide-react'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 export default function LayoutClient({ children }: { children: React.ReactNode }) {
+  const isMobile = useIsMobile()
   const [session, setSession] = useState<any>(undefined)
   const [showPalette, setShowPalette] = useState(false)
   const [showQuickLog, setShowQuickLog] = useState(false)
@@ -60,8 +62,13 @@ export default function LayoutClient({ children }: { children: React.ReactNode }
         onClick={() => setShowQuickLog(true)}
         title="Log interaction (quick)"
         style={{
-          position: 'fixed', bottom: '28px', right: '28px', zIndex: 100,
-          width: '48px', height: '48px', borderRadius: '50%',
+          position: 'fixed',
+          bottom: isMobile ? 'calc(20px + env(safe-area-inset-bottom))' : '28px',
+          right: isMobile ? '20px' : '28px',
+          zIndex: 100,
+          width: isMobile ? '44px' : '48px',
+          height: isMobile ? '44px' : '48px',
+          borderRadius: '50%',
           background: '#4F284B', color: 'white',
           border: 'none', cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',

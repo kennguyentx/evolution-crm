@@ -7,6 +7,7 @@ import { Plus, Search, ChevronUp, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 import NewDealModal from '@/components/deals/NewDealModal'
 import UndoToast, { type UndoEntry } from '@/components/layout/UndoToast'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 const ALL_STAGES: DealStage[] = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
 
@@ -36,6 +37,7 @@ function SortHeader({ label, field, current, dir, onSort, align='left' }: {
 }
 
 export default function DealsPage() {
+  const isMobile = useIsMobile()
   const [deals, setDeals]         = useState<Deal[]>([])
   const [total, setTotal]         = useState(0)
   const [groupCounts, setGroupCounts] = useState<Record<string, number>>({})
@@ -148,20 +150,20 @@ export default function DealsPage() {
   return (
     <div style={{ height:'100vh', display:'flex', flexDirection:'column' }}>
       {/* Header */}
-      <div style={{ padding:'20px 28px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:'16px', flexShrink:0, background:'var(--surface)' }}>
+      <div style={{ padding: isMobile ? '14px 16px' : '20px 28px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:'16px', flexShrink:0, background:'var(--surface)' }}>
         <h1 style={{ fontSize:'20px', fontWeight:700 }}>Deals</h1>
         <button className="btn btn-primary" onClick={() => setShowNewDeal(true)}><Plus size={14}/> New Deal</button>
         <div style={{ marginLeft:'auto', fontSize:'12px', color:'var(--text-muted)', display:'flex', alignItems:'center', gap:'16px' }}>
-          <span>{total.toLocaleString()} total</span>
-          {groupCounts.pipeline ? <span>{groupCounts.pipeline.toLocaleString()} in pipeline</span> : null}
-          {groupCounts.passed   ? <span>{groupCounts.passed.toLocaleString()} passed</span>      : null}
-          {groupCounts.closed   ? <span>{groupCounts.closed.toLocaleString()} closed</span>      : null}
-          {totalEbitda > 0 && <span>· {formatCurrency(totalEbitda)} EBITDA shown</span>}
+          {!isMobile && <span>{total.toLocaleString()} total</span>}
+          {!isMobile && (groupCounts.pipeline ? <span>{groupCounts.pipeline.toLocaleString()} in pipeline</span> : null)}
+          {!isMobile && (groupCounts.passed   ? <span>{groupCounts.passed.toLocaleString()} passed</span>      : null)}
+          {!isMobile && (groupCounts.closed   ? <span>{groupCounts.closed.toLocaleString()} closed</span>      : null)}
+          {!isMobile && totalEbitda > 0 && <span>· {formatCurrency(totalEbitda)} EBITDA shown</span>}
         </div>
       </div>
 
       {/* Group filter chips */}
-      <div style={{ padding:'12px 28px', display:'flex', gap:'8px', flexWrap:'wrap', borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--surface)' }}>
+      <div style={{ padding: isMobile ? '10px 16px' : '12px 28px', display:'flex', gap:'8px', flexWrap:'wrap', borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--surface)' }}>
         {(['all', 'pipeline', 'closed', 'passed', 'hold'] as GroupFilter[]).map(g => (
           <button key={g} onClick={() => { setGroupFilter(g); setStageFilter('all') }}
             style={{ padding:'4px 10px', borderRadius:'999px', border:`1px solid ${groupFilter===g?'var(--accent)':'var(--border)'}`, background: groupFilter===g?'var(--accent-muted)':'transparent', cursor:'pointer', fontSize:'11px', color: groupFilter===g?'var(--accent)':'var(--text-secondary)', textTransform:'uppercase', letterSpacing:'0.05em', fontWeight:500 }}>
@@ -171,19 +173,19 @@ export default function DealsPage() {
       </div>
 
       {/* Search + stage filter */}
-      <div style={{ padding:'10px 28px', borderBottom:'1px solid var(--border)', display:'flex', gap:'12px', alignItems:'center', flexShrink:0 }}>
-        <div style={{ position:'relative', flex:'0 0 280px' }}>
+      <div style={{ padding: isMobile ? '10px 16px' : '10px 28px', borderBottom:'1px solid var(--border)', display:'flex', flexDirection: isMobile ? 'column' : 'row', gap:'12px', alignItems: isMobile ? 'stretch' : 'center', flexShrink:0 }}>
+        <div style={{ position:'relative', flex: isMobile ? '1 1 auto' : '0 0 280px' }}>
           <Search size={13} style={{ position:'absolute', left:'10px', top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)' }}/>
           <input className="input" placeholder="Search company, sector..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft:'30px' }}/>
         </div>
-        <select className="select" style={{ width:'160px' }} value={stageFilter} onChange={e => { setStageFilter(e.target.value); setGroupFilter('all') }}>
+        <select className="select" style={{ width: isMobile ? '100%' : '160px' }} value={stageFilter} onChange={e => { setStageFilter(e.target.value); setGroupFilter('all') }}>
           <option value="all">All Stages</option>
           {ALL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
       </div>
 
       {/* Table header */}
-      <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr 100px 110px 140px 90px', padding:'8px 28px', borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--surface)' }}>
+      <div style={{ display: isMobile ? 'none' : 'grid', gridTemplateColumns:'2fr 1fr 1fr 100px 110px 140px 90px', padding:'8px 28px', borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--surface)' }}>
         {([['company_name','Company','left'],['sector','Sector','left'],['geography','Geography','left'],['ebitda','EBITDA','right'],['revenue','Revenue','right'],['stage','Stage','left'],['created_at','Added','left']] as [SortField,string,'left'|'right'][]).map(([field,label,align]) => (
           <div key={field} style={{ ...hdr, paddingLeft: field==='stage'?'12px':0 }}>
             <SortHeader label={label} field={field} current={sortField} dir={sortDir} onSort={handleSort} align={align}/>
@@ -199,20 +201,41 @@ export default function DealsPage() {
           <>
             {filtered.map(deal => (
               <Link key={deal.id} href={`/deals/${deal.id}`} style={{ textDecoration:'none', color:'inherit' }}>
-                <div className="table-row" style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr 100px 110px 140px 90px', padding:'12px 28px' }}>
-                  <div>
-                    <div style={{ fontWeight:500, color:'var(--text-primary)', fontSize:'13px' }}>{deal.company_name}</div>
-                    {deal.source_notes && <div style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'2px' }}>{deal.source_notes}</div>}
+                {isMobile ? (
+                  // Mobile card
+                  <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '5px', background: 'var(--surface)' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'var(--surface)'}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>{deal.company_name}</div>
+                      <span className={`badge ${stageClass(deal.stage)}`} style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{deal.stage}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                      {deal.sector && <span>{deal.sector}</span>}
+                      {deal.geography && <span>· {deal.geography}</span>}
+                    </div>
+                    <div style={{ display: 'flex', gap: '16px', fontSize: '12px', marginTop: '2px' }}>
+                      {deal.ebitda  && <span style={{ color: 'var(--accent)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>EBITDA {formatCurrency(deal.ebitda)}</span>}
+                      {deal.revenue && <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>Rev {formatCurrency(deal.revenue)}</span>}
+                    </div>
                   </div>
-                  <div style={{ fontSize:'12px', color:'var(--text-secondary)', alignSelf:'center' }}>{deal.sector||'—'}</div>
-                  <div style={{ fontSize:'12px', color:'var(--text-secondary)', alignSelf:'center' }}>{deal.geography||'—'}</div>
-                  <div style={{ textAlign:'right', fontFamily:'var(--font-mono)', fontSize:'12px', color:'var(--accent)', alignSelf:'center' }}>{formatCurrency(deal.ebitda)}</div>
-                  <div style={{ textAlign:'right', fontFamily:'var(--font-mono)', fontSize:'12px', color:'var(--text-secondary)', alignSelf:'center' }}>{formatCurrency(deal.revenue)}</div>
-                  <div style={{ alignSelf:'center', paddingLeft:'12px' }}><span className={`badge ${stageClass(deal.stage)}`}>{deal.stage}</span></div>
-                  <div style={{ fontSize:'11px', color:'var(--text-muted)', alignSelf:'center', fontFamily:'var(--font-mono)' }}>
-                    {(() => { const d = (deal as any).sourced_date || deal.created_at; return d ? new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'2-digit' }) : '—' })()}
+                ) : (
+                  // Desktop row
+                  <div className="table-row" style={{ display:'grid', gridTemplateColumns:'2fr 1fr 1fr 100px 110px 140px 90px', padding:'12px 28px' }}>
+                    <div>
+                      <div style={{ fontWeight:500, color:'var(--text-primary)', fontSize:'13px' }}>{deal.company_name}</div>
+                      {deal.source_notes && <div style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'2px' }}>{deal.source_notes}</div>}
+                    </div>
+                    <div style={{ fontSize:'12px', color:'var(--text-secondary)', alignSelf:'center' }}>{deal.sector||'—'}</div>
+                    <div style={{ fontSize:'12px', color:'var(--text-secondary)', alignSelf:'center' }}>{deal.geography||'—'}</div>
+                    <div style={{ textAlign:'right', fontFamily:'var(--font-mono)', fontSize:'12px', color:'var(--accent)', alignSelf:'center' }}>{formatCurrency(deal.ebitda)}</div>
+                    <div style={{ textAlign:'right', fontFamily:'var(--font-mono)', fontSize:'12px', color:'var(--text-secondary)', alignSelf:'center' }}>{formatCurrency(deal.revenue)}</div>
+                    <div style={{ alignSelf:'center', paddingLeft:'12px' }}><span className={`badge ${stageClass(deal.stage)}`}>{deal.stage}</span></div>
+                    <div style={{ fontSize:'11px', color:'var(--text-muted)', alignSelf:'center', fontFamily:'var(--font-mono)' }}>
+                      {(() => { const d = (deal as any).sourced_date || deal.created_at; return d ? new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'2-digit' }) : '—' })()}
+                    </div>
                   </div>
-                </div>
+                )}
               </Link>
             ))}
             {hasMore && (

@@ -14,6 +14,7 @@ import NDATab from '@/components/deals/NDATab'
 import NewContactModal from '@/components/contacts/NewContactModal'
 import UndoToast, { type UndoEntry } from '@/components/layout/UndoToast'
 import { moveDropboxOnStageChange } from '@/lib/dropbox-stage-move'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 
 const STAGES = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
@@ -32,6 +33,7 @@ const DEFAULT_DILIGENCE = [
 ]
 
 export default function DealDetailPage() {
+  const isMobile = useIsMobile()
   const params = useParams()
   const router = useRouter()
   const dealId = params.id as string
@@ -674,7 +676,7 @@ export default function DealDetailPage() {
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
 
       {/* HEADER */}
-      <div style={{ padding: '16px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+      <div style={{ padding: isMobile ? '14px 16px' : '16px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
           <Link href="/deals" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '12px', textDecoration: 'none' }}>
             <ArrowLeft size={12} /> Deals
@@ -684,7 +686,7 @@ export default function DealDetailPage() {
             <ArrowLeft size={12} /> Pipeline
           </Link>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', rowGap: isMobile ? '8px' : '16px' }}>
           <EditableInline value={deal.company_name} onSave={v => updateField('company_name', v)} style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' }} />
           <div style={{ position: 'relative' }}>
             <button className={`badge ${stageClass(deal.stage)}`} style={{ cursor: 'pointer', fontSize: '12px', padding: '4px 12px', border: '1px solid currentColor', background: 'transparent' }} onClick={() => setEditingStage(!editingStage)}>
@@ -728,7 +730,7 @@ export default function DealDetailPage() {
           {deal.sector && <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{deal.sector}</span>}
           {deal.geography && <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>· {deal.geography}</span>}
         </div>
-        <div style={{ display: 'flex', gap: '28px', marginTop: '14px' }}>
+        <div style={{ display: 'flex', gap: isMobile ? '16px' : '28px', marginTop: '14px' }}>
           <InlineFinancial
             label="Revenue"
             value={deal.revenue ?? null}
@@ -744,21 +746,21 @@ export default function DealDetailPage() {
       </div>
 
       {/* TABS */}
-      <div style={{ display: 'flex', padding: '0 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+      <div className="tab-bar" style={{ display: 'flex', padding: isMobile ? '0 16px' : '0 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
         {tabs.map(tab => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} style={{ padding: '11px 16px', border: 'none', background: 'transparent', fontSize: '13px', cursor: 'pointer', color: activeTab === tab.key ? 'var(--accent)' : 'var(--text-muted)', borderBottom: activeTab === tab.key ? '2px solid var(--accent)' : '2px solid transparent', fontFamily: 'var(--font-sans)', fontWeight: activeTab === tab.key ? 600 : 400 }}>
+          <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} style={{ padding: isMobile ? '10px 12px' : '11px 16px', border: 'none', background: 'transparent', fontSize: '13px', cursor: 'pointer', color: activeTab === tab.key ? 'var(--accent)' : 'var(--text-muted)', borderBottom: activeTab === tab.key ? '2px solid var(--accent)' : '2px solid transparent', fontFamily: 'var(--font-sans)', fontWeight: activeTab === tab.key ? 600 : 400, whiteSpace: 'nowrap' }}>
             {tab.label}
           </button>
         ))}
       </div>
 
       {/* TAB CONTENT */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '24px 28px' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: isMobile ? '16px' : '24px 28px' }}>
 
         {/* OVERVIEW */}
         {activeTab === 'overview' && (
           <div style={{ maxWidth: '900px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
             <div className="card" style={{ padding: '20px' }}>
               <div className="label" style={{ marginBottom: '16px' }}>Deal Details</div>
               <div style={{ marginBottom: '14px' }}>
@@ -964,7 +966,7 @@ export default function DealDetailPage() {
 
               {comps.length > 0 && (
                 <>
-                  <div style={{ overflowX: 'auto' }}>
+                  <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
                       <thead>
                         <tr style={{ borderBottom: '1px solid var(--border)' }}>

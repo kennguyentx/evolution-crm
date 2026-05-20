@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
 import type { DealStage } from '@/types'
 import { formatCurrency } from '@/types'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 const ACTIVE_STAGES: DealStage[] = ['Teaser', 'Reviewing', 'Pre-LOI', 'LOI Submitted', 'Exclusivity']
 const FUNNEL_STAGES = ['Teaser', 'Reviewing', 'Pre-LOI', 'LOI Submitted', 'Exclusivity'] as DealStage[]
@@ -34,6 +35,7 @@ const fmtShort = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('en
 const daysSince = (d: string) => Math.floor((Date.now() - new Date(d + 'T12:00:00').getTime()) / 86400000)
 
 export default function DashboardPage() {
+  const isMobile = useIsMobile()
   const supabase = createClient()
   const [deals, setDeals] = useState<DealRow[]>([])
   const [raises, setRaises] = useState<RaiseRow[]>([])
@@ -138,17 +140,17 @@ export default function DashboardPage() {
   return (
     <div style={{ height: '100vh', overflow: 'auto' }}>
       {/* Header */}
-      <div style={{ padding: '24px 28px 0', borderBottom: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0 }}>
+      <div style={{ padding: isMobile ? '16px 16px 0' : '24px 28px 0', borderBottom: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0 }}>
         <h1 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '4px' }}>Dashboard</h1>
         <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '20px' }}>
           {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
         </p>
       </div>
 
-      <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      <div style={{ padding: isMobile ? '16px' : '24px 28px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
         {/* Summary metrics — 4 cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '12px' }}>
           {[
             { label: 'Active deals',    value: deals.length,              sub: `${ACTIVE_STAGES.length} stages tracked`,                  href: '/pipeline' },
             { label: 'Pipeline EBITDA', value: formatCurrency(totalEbitda), sub: 'across active stages',                                  href: '/deals' },
@@ -176,7 +178,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Middle row: Deal funnel + Open raises */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
 
           {/* Deal funnel */}
           <div style={{ padding: '18px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px' }}>
@@ -252,7 +254,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Recent Activity + Open Next Steps */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
 
           {/* Recent activity feed */}
           <div style={{ padding: '18px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px' }}>
