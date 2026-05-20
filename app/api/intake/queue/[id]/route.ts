@@ -58,6 +58,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       reviewed_at: new Date().toISOString(),
     }).eq('id', params.id)
 
+    // Link any orphaned email-intake notes that were logged before the deal existed
+    if (deal?.id && ext.company_name) {
+      await supabase.from('notes')
+        .update({ deal_id: deal.id })
+        .eq('source', 'email')
+        .is('deal_id', null)
+        .ilike('summary', `%${ext.company_name}%`)
+    }
+
     return NextResponse.json({ success: true, deal_id: deal?.id })
   }
 
