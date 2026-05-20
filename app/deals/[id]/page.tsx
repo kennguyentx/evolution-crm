@@ -90,6 +90,11 @@ export default function DealDetailPage() {
   const [contactResults, setContactResults] = useState<any[]>([])
   const [showContactSearch, setShowContactSearch] = useState(false)
   const [pendingContactRole, setPendingContactRole] = useState('Contact')
+
+  // Create new contact from search
+  const [showCreateContact, setShowCreateContact] = useState(false)
+  const [createContactPrefill, setCreateContactPrefill] = useState<{ first_name?: string; last_name?: string }>({})
+  const [createContactLinkAs, setCreateContactLinkAs] = useState<'source' | string>('source') // 'source' or a role string
   const searchRef = useRef<HTMLDivElement>(null)
 
   // Capital form
@@ -266,6 +271,27 @@ export default function DealDetailPage() {
   const updateField = async (field: string, value: any) => {
     await supabase.from('deals').update({ [field]: value }).eq('id', dealId)
     setDeal(prev => prev ? { ...prev, [field]: value } : null)
+  }
+
+  // Parse "First Last" search string into prefill object
+  const searchToPrefill = (search: string) => {
+    const parts = search.trim().split(/\s+/)
+    if (parts.length >= 2) return { first_name: parts[0], last_name: parts.slice(1).join(' ') }
+    return { first_name: parts[0] || '', last_name: '' }
+  }
+
+  // Called when NewContactModal creates a new contact — auto-link it to this deal
+  const handleNewContactCreated = async (newContact?: any) => {
+    setShowCreateContact(false)
+    setContactSearch('')
+    setContactResults([])
+    setShowContactSearch(false)
+    if (!newContact?.id) return
+    if (createContactLinkAs === 'source') {
+      await linkSourceContact(newContact)
+    } else {
+      await linkContact(newContact, createContactLinkAs)
+    }
   }
 
   const linkSourceContact = async (contact: any) => {
@@ -770,8 +796,22 @@ export default function DealDetailPage() {
                         </div>
                       )}
                       {contactSearch.length > 1 && contactResults.length === 0 && (
-                        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '2px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '7px', zIndex: 50, padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>
-                          No contacts found for "{contactSearch}"
+                        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '2px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '7px', zIndex: 50, boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }}>
+                          <div style={{ padding: '9px 12px', fontSize: '12px', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-subtle)' }}>
+                            No contacts found for "{contactSearch}"
+                          </div>
+                          <button
+                            style={{ display: 'flex', alignItems: 'center', gap: '7px', width: '100%', padding: '9px 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: '12px', color: 'var(--accent)', fontWeight: 500 }}
+                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                            onClick={() => {
+                              setCreateContactPrefill(searchToPrefill(contactSearch))
+                              setCreateContactLinkAs('source')
+                              setShowCreateContact(true)
+                            }}
+                          >
+                            <Plus size={13} /> Create "{contactSearch}" as new contact
+                          </button>
                         </div>
                       )}
                     </div>
@@ -1070,8 +1110,22 @@ export default function DealDetailPage() {
                         </div>
                       )}
                       {contactSearch.length > 1 && contactResults.length === 0 && (
-                        <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '2px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '7px', zIndex: 50, padding: '10px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>
-                          No contacts found for "{contactSearch}"
+                        <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '2px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '7px', zIndex: 50, boxShadow: '0 4px 16px rgba(0,0,0,0.1)', minWidth: '280px' }}>
+                          <div style={{ padding: '9px 12px', fontSize: '12px', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-subtle)' }}>
+                            No contacts found for "{contactSearch}"
+                          </div>
+                          <button
+                            style={{ display: 'flex', alignItems: 'center', gap: '7px', width: '100%', padding: '9px 12px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: '12px', color: 'var(--accent)', fontWeight: 500 }}
+                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                            onClick={() => {
+                              setCreateContactPrefill(searchToPrefill(contactSearch))
+                              setCreateContactLinkAs(pendingContactRole)
+                              setShowCreateContact(true)
+                            }}
+                          >
+                            <Plus size={13} /> Create "{contactSearch}" as new contact
+                          </button>
                         </div>
                       )}
                     </div>
@@ -1601,6 +1655,15 @@ export default function DealDetailPage() {
           contact={editingContact}
           onClose={() => setEditingContact(null)}
           onCreated={() => { setEditingContact(null); fetchAll() }}
+        />
+      )}
+
+      {/* Create new contact from search — auto-links after save */}
+      {showCreateContact && (
+        <NewContactModal
+          prefill={createContactPrefill}
+          onClose={() => { setShowCreateContact(false); setContactSearch(''); setContactResults([]) }}
+          onCreated={handleNewContactCreated}
         />
       )}
 

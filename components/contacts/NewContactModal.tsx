@@ -6,8 +6,9 @@ import Link from 'next/link'
 
 interface ContactModalProps {
   onClose: () => void
-  onCreated: () => void
+  onCreated: (created?: any) => void  // passes newly created contact when in create mode
   contact?: any // if provided, we're editing
+  prefill?: { first_name?: string; last_name?: string; firm?: string } // pre-fill from search
 }
 
 function formatPhone(value: string): string {
@@ -17,7 +18,7 @@ function formatPhone(value: string): string {
   return `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`
 }
 
-export default function NewContactModal({ onClose, onCreated, contact }: ContactModalProps) {
+export default function NewContactModal({ onClose, onCreated, contact, prefill }: ContactModalProps) {
   const supabase = createClient()
   const isEdit = !!contact
   const [saving, setSaving] = useState(false)
@@ -25,12 +26,12 @@ export default function NewContactModal({ onClose, onCreated, contact }: Contact
   const [dealLinks, setDealLinks] = useState<any[]>([])
   const [contactNotes, setContactNotes] = useState<any[]>([])
   const [form, setForm] = useState({
-    first_name: contact?.first_name || '',
-    last_name:  contact?.last_name  || '',
+    first_name: contact?.first_name || prefill?.first_name || '',
+    last_name:  contact?.last_name  || prefill?.last_name  || '',
     email:      contact?.email      || '',
     phone:      contact?.phone      || '',
     title:      contact?.title      || '',
-    firm:       contact?.firm       || '',
+    firm:       contact?.firm       || prefill?.firm       || '',
     contact_type: contact?.contact_type || 'banker',
     sub_type:   contact?.sub_type   || '',
     notes:      contact?.notes      || '',
@@ -89,18 +90,19 @@ export default function NewContactModal({ onClose, onCreated, contact }: Contact
 
     if (isEdit) {
       await supabase.from('contacts').update(payload).eq('id', contact.id)
+      setSaving(false)
+      onCreated()
     } else {
-      await supabase.from('contacts').insert(payload)
+      const { data: newContact } = await supabase.from('contacts').insert(payload).select().single()
       // Sync to Constant Contact (best-effort, non-blocking)
       fetch('/api/constant-contact/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       }).catch(() => {})
+      setSaving(false)
+      onCreated(newContact ?? undefined)
     }
-
-    setSaving(false)
-    onCreated()
   }
 
   return (
