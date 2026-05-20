@@ -487,9 +487,20 @@ async function handleEmailIntake(req, res) {
             : primary.extracted.company_name)
         : null
 
+      // Validate the stored dropbox_path has a real multi-segment path.
+      // A bare path like "/Scotty's Construction" (only one segment) means it
+      // was set incorrectly and will upload to the Dropbox root — fall back to
+      // the correctly constructed path instead.
+      const storedFolder = toFolder(existingDeal?.dropbox_path)
+      const storedFolderValid = storedFolder && storedFolder.replace(/^\//, '').includes('/')
+
       const targetFolder = existingDeal
-        ? (toFolder(existingDeal.dropbox_path) ?? (companyForPath ? expectedDropboxFolder(companyForPath, effectiveStage) : null))
+        ? (storedFolderValid ? storedFolder : (companyForPath ? expectedDropboxFolder(companyForPath, effectiveStage) : null))
         : (companyForPath ? expectedDropboxFolder(companyForPath, effectiveStage) : null)
+
+      if (existingDeal && !storedFolderValid && storedFolder) {
+        console.warn(`[email-intake] Stored dropbox_path "${existingDeal.dropbox_path}" looks invalid — falling back to expected path "${targetFolder}"`)
+      }
 
       let dealFolderPath = targetFolder
 
