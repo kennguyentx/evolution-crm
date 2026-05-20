@@ -96,37 +96,62 @@ export default function InvestorsPage() {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: isMobile ? '14px 16px' : '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)', display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <h1 style={{ fontSize: '20px', fontWeight: 700 }}>Investors</h1>
-        <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={() => setShowForm(!showForm)}>
-          <Plus size={14} /> Add Investor
-        </button>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '28px' }}>
-          {totalDeployed > 0 && (
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total Deployed</div>
-              <div style={{ fontSize: '16px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>{formatCurrency(totalDeployed)}</div>
+      <div style={{ padding: isMobile ? '12px 16px' : '20px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <h1 style={{ fontSize: isMobile ? '17px' : '20px', fontWeight: 700 }}>Investors</h1>
+          <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={() => setShowForm(!showForm)}>
+            <Plus size={14} /> Add Investor
+          </button>
+          {!isMobile && (
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '28px' }}>
+              {totalDeployed > 0 && (
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total Deployed</div>
+                  <div style={{ fontSize: '16px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>{formatCurrency(totalDeployed)}</div>
+                </div>
+              )}
+              {totalCommitted > 0 && (
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Committed Pipeline</div>
+                  <div style={{ fontSize: '16px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{formatCurrency(totalCommitted)}</div>
+                </div>
+              )}
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Investors</div>
+                <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>{investors.length}</div>
+              </div>
             </div>
           )}
-          {totalCommitted > 0 && (
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Committed Pipeline</div>
-              <div style={{ fontSize: '16px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{formatCurrency(totalCommitted)}</div>
+          {isMobile && (
+            <div style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--text-muted)' }}>
+              {investors.length} investors
             </div>
           )}
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Investors</div>
-            <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>{investors.length}</div>
-          </div>
         </div>
+        {isMobile && (totalDeployed > 0 || totalCommitted > 0) && (
+          <div style={{ display: 'flex', gap: '16px', marginTop: '10px' }}>
+            {totalDeployed > 0 && (
+              <div>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Deployed</div>
+                <div style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--accent)' }}>{formatCurrency(totalDeployed)}</div>
+              </div>
+            )}
+            {totalCommitted > 0 && (
+              <div>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Committed</div>
+                <div style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{formatCurrency(totalCommitted)}</div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Add investor form */}
       {showForm && (
-        <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border)', background: 'var(--surface-2)', flexShrink: 0 }}>
+        <div style={{ padding: isMobile ? '16px' : '20px 28px', borderBottom: '1px solid var(--border)', background: 'var(--surface-2)', flexShrink: 0 }}>
           <div style={{ maxWidth: '700px' }}>
             <div className="label" style={{ marginBottom: '14px' }}>New Investor</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '10px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '10px', marginBottom: '10px' }}>
               <div><label className="label">First Name *</label><input className="input" value={form.first_name} onChange={e => setForm(p => ({ ...p, first_name: e.target.value }))} /></div>
               <div><label className="label">Last Name *</label><input className="input" value={form.last_name} onChange={e => setForm(p => ({ ...p, last_name: e.target.value }))} /></div>
               <div><label className="label">Firm</label><input className="input" placeholder="Family office, fund..." value={form.firm} onChange={e => setForm(p => ({ ...p, firm: e.target.value }))} /></div>
@@ -137,7 +162,7 @@ export default function InvestorsPage() {
               </div>
               <div><label className="label">Email</label><input className="input" type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></div>
               <div><label className="label">Phone</label><input className="input" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></div>
-              <div style={{ gridColumn: 'span 2' }}><label className="label">Notes</label><input className="input" placeholder="Background, relationship..." value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} /></div>
+              <div style={{ gridColumn: isMobile ? 'span 2' : 'span 2' }}><label className="label">Notes</label><input className="input" placeholder="Background, relationship..." value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} /></div>
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button className="btn btn-ghost" onClick={() => setShowForm(false)}>Cancel</button>
@@ -149,8 +174,8 @@ export default function InvestorsPage() {
         </div>
       )}
 
-      <div style={{ padding: '10px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
-        <div style={{ position: 'relative', maxWidth: '320px' }}>
+      <div style={{ padding: isMobile ? '10px 16px' : '10px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
+        <div style={{ position: 'relative', maxWidth: isMobile ? '100%' : '320px' }}>
           <Search size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input className="input" placeholder="Search investors..." value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: '30px' }} />
         </div>
@@ -216,21 +241,47 @@ export default function InvestorsPage() {
             ))}
 
             {/* Grand total row */}
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '14px 28px', alignItems: 'center', borderTop: '2px solid var(--border)', background: 'var(--surface-2)', position: 'sticky', bottom: 0 }}>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Total ({filtered.length} investors)
+            {isMobile ? (
+              <div style={{ padding: '12px 16px', borderTop: '2px solid var(--border)', background: 'var(--surface-2)', position: 'sticky', bottom: 0 }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>
+                  Total — {filtered.length} investors
+                </div>
+                <div style={{ display: 'flex', gap: '20px' }}>
+                  {filtered.reduce((s, i) => s + i.totalInvested, 0) > 0 && (
+                    <div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Deployed</div>
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: 'var(--accent)' }}>
+                        {formatCurrency(filtered.reduce((s, i) => s + i.totalInvested, 0))}
+                      </div>
+                    </div>
+                  )}
+                  {filtered.reduce((s, i) => s + i.totalCommitted, 0) > 0 && (
+                    <div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Committed</div>
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {formatCurrency(filtered.reduce((s, i) => s + i.totalCommitted, 0))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: 'var(--accent)' }}>
-                {formatCurrency(filtered.reduce((s, i) => s + i.totalInvested, 0))}
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', padding: '14px 28px', alignItems: 'center', borderTop: '2px solid var(--border)', background: 'var(--surface-2)', position: 'sticky', bottom: 0 }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Total ({filtered.length} investors)
+                </div>
+                <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: 'var(--accent)' }}>
+                  {formatCurrency(filtered.reduce((s, i) => s + i.totalInvested, 0))}
+                </div>
+                <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {formatCurrency(filtered.reduce((s, i) => s + i.totalCommitted, 0))}
+                </div>
+                <div style={{ textAlign: 'right', fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {filtered.reduce((s, i) => s + i.dealCount, 0)}
+                </div>
+                <div></div>
               </div>
-              <div style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                {formatCurrency(filtered.reduce((s, i) => s + i.totalCommitted, 0))}
-              </div>
-              <div style={{ textAlign: 'right', fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                {filtered.reduce((s, i) => s + i.dealCount, 0)}
-              </div>
-              <div></div>
-            </div>
+            )}
           </>
         )}
       </div>
