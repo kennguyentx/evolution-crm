@@ -55,6 +55,17 @@ export default function DealDetailPage() {
   const [newsNotes, setNewsNotes] = useState<string | null>(null)
   const [loadingNews, setLoadingNews] = useState(false)
   const [newsError, setNewsError] = useState<string | null>(null)
+
+  // Share CIM modal
+  const [showCimModal, setShowCimModal] = useState(false)
+  const [cimSummary, setCimSummary] = useState('')
+  const [generatingCim, setGeneratingCim] = useState(false)
+  const [cimGenError, setCimGenError] = useState<string | null>(null)
+  const [cimRecipients, setCimRecipients] = useState(process.env.NEXT_PUBLIC_TEAM_EMAIL || '')
+  const [sendingCim, setSendingCim] = useState(false)
+  const [cimSendSuccess, setCimSendSuccess] = useState<{ cim_attached: boolean } | null>(null)
+  const [cimSendError, setCimSendError] = useState<string | null>(null)
+
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'overview'|'diligence'|'contacts'|'capital'|'activity'|'documents'|'nda'>('overview')
   const [editingStage, setEditingStage] = useState(false)
@@ -369,6 +380,72 @@ export default function DealDetailPage() {
       setNewsError(e.message)
     }
     setLoadingNews(false)
+  }
+
+  // ── Share CIM ─────────────────────────────────────────────────────────────
+  const generateCimSummary = async () => {
+    if (!deal) return
+    setGeneratingCim(true)
+    setCimGenError(null)
+    setCimSummary('')
+    setCimSendSuccess(null)
+    try {
+      const res = await fetch('/api/deals/share-cim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'preview',
+          company_name: deal.company_name,
+          sector: deal.sector,
+          geography: deal.geography,
+          revenue: deal.revenue,
+          ebitda: deal.ebitda,
+          description: deal.description,
+          cim_summary: deal.cim_summary,
+          financial_summary: (deal as any).financial_summary,
+          key_risks: (deal as any).key_risks,
+          growth_opportunities: (deal as any).growth_opportunities,
+          management_team: (deal as any).management_team,
+          banker_firm: (deal as any).banker_firm,
+          deal_type: deal.deal_type,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to generate summary')
+      setCimSummary(data.summary || '')
+    } catch (e: any) {
+      setCimGenError(e.message)
+    }
+    setGeneratingCim(false)
+  }
+
+  const sendCimEmail = async () => {
+    if (!deal || !cimSummary) return
+    setSendingCim(true)
+    setCimSendError(null)
+    setCimSendSuccess(null)
+    try {
+      const recipients = cimRecipients.split(/[\s,;]+/).map((r: string) => r.trim()).filter(Boolean)
+      if (!recipients.length) throw new Error('Enter at least one recipient email')
+      const res = await fetch('/api/deals/share-cim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'send',
+          summary: cimSummary,
+          recipients,
+          company_name: deal.company_name,
+          sector: deal.sector,
+          dropbox_folder: deal.dropbox_path || null,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to send email')
+      setCimSendSuccess({ cim_attached: data.cim_attached })
+    } catch (e: any) {
+      setCimSendError(e.message)
+    }
+    setSendingCim(false)
   }
 
   // Simple toggle: Pending ↔ Complete
@@ -725,8 +802,25 @@ export default function DealDetailPage() {
             </div>
           </div>{/* end 2-col grid */}
 
+            {/* SHARE CIM */}
+            <div className="card" style={{ padding: '20px', marginTop: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div className="label">Share with Team</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Email a concise deal summary to the team{deal.cim_parsed ? ' with CIM attached' : ''}</div>
+                </div>
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize: '12px' }}
+                  onClick={() => { setShowCimModal(true); if (!cimSummary) generateCimSummary() }}
+                >
+                  ✉ Share CIM
+                </button>
+              </div>
+            </div>
+
             {/* NEWS & RESEARCH */}
-            <div className="card" style={{ padding: '20px' }}>
+            <div className="card" style={{ padding: '20px', marginTop: '20px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                 <div>
                   <div className="label">News & Market Intelligence</div>
@@ -793,7 +887,7 @@ export default function DealDetailPage() {
             </div>
 
             {/* COMPS */}
-            <div className="card" style={{ padding: '20px' }}>
+            <div className="card" style={{ padding: '20px', marginTop: '28px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                 <div className="label">M&A Transaction Comps</div>
                 <button
@@ -1395,6 +1489,97 @@ export default function DealDetailPage() {
 
 
       </div>{/* closes TAB CONTENT div */}
+
+      {/* Share CIM Modal */}
+      {showCimModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+          <div className="card" style={{ padding: '28px', maxWidth: '560px', width: '94%', maxHeight: '90vh', overflowY: 'auto' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '20px' }}>
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>Share CIM — {deal.company_name}</h3>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', marginBottom: 0 }}>
+                  {deal.cim_parsed ? 'CIM will be attached to the email.' : 'No CIM on file — summary only.'}
+                </p>
+              </div>
+              <button onClick={() => { setShowCimModal(false); setCimSendSuccess(null); setCimSendError(null) }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px', marginLeft: '16px' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Recipients */}
+            <div style={{ marginBottom: '16px' }}>
+              <div className="label" style={{ marginBottom: '6px' }}>Recipients</div>
+              <input
+                className="input"
+                style={{ width: '100%', fontSize: '13px' }}
+                placeholder="team@firm.com, partner@firm.com"
+                value={cimRecipients}
+                onChange={e => setCimRecipients(e.target.value)}
+              />
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>Separate multiple addresses with commas</div>
+            </div>
+
+            {/* Summary */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <div className="label">Email Body</div>
+                <button className="btn btn-ghost" style={{ fontSize: '11px', padding: '3px 10px' }}
+                  onClick={generateCimSummary} disabled={generatingCim}>
+                  {generatingCim ? '⏳ Generating…' : cimSummary ? '↺ Regenerate' : '⚡ Generate'}
+                </button>
+              </div>
+              {generatingCim && (
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '12px', background: 'var(--surface-2)', borderRadius: '6px' }}>
+                  Generating summary…
+                </div>
+              )}
+              {cimGenError && (
+                <div style={{ fontSize: '12px', color: 'var(--red)', marginBottom: '8px' }}>{cimGenError}</div>
+              )}
+              {!generatingCim && (
+                <textarea
+                  className="input"
+                  rows={10}
+                  style={{ width: '100%', fontSize: '12px', lineHeight: 1.7, fontFamily: 'var(--font-mono)', resize: 'vertical' }}
+                  placeholder="Summary will appear here — click Generate or edit directly."
+                  value={cimSummary}
+                  onChange={e => setCimSummary(e.target.value)}
+                />
+              )}
+            </div>
+
+            {/* Success / Error */}
+            {cimSendSuccess && (
+              <div style={{ padding: '10px 14px', background: 'rgba(16,185,129,0.1)', borderRadius: '7px', border: '1px solid rgba(16,185,129,0.3)', marginBottom: '14px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#10b981' }}>✓ Email sent successfully</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  {cimSendSuccess.cim_attached ? 'CIM PDF was attached.' : 'No CIM PDF found in Dropbox — sent without attachment.'}
+                </div>
+              </div>
+            )}
+            {cimSendError && (
+              <div style={{ fontSize: '12px', color: 'var(--red)', marginBottom: '12px' }}>{cimSendError}</div>
+            )}
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost" onClick={() => { setShowCimModal(false); setCimSendSuccess(null); setCimSendError(null) }}>
+                {cimSendSuccess ? 'Close' : 'Cancel'}
+              </button>
+              <button
+                className="btn btn-primary"
+                style={{ opacity: (!cimSummary || sendingCim || generatingCim) ? 0.6 : 1 }}
+                disabled={!cimSummary || sendingCim || generatingCim}
+                onClick={sendCimEmail}
+              >
+                {sendingCim ? 'Sending…' : '✉ Send Email'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete confirmation */}
       {showDeleteConfirm && (
