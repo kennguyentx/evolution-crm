@@ -649,24 +649,32 @@ async function handleEmailIntake(req, res) {
       } else if (instructions.auto_approve && instructions.stage) {
         const stage  = instructions.stage
         const status = instructions.status ?? (stage.startsWith('Pass') ? 'Dead' : stage.startsWith('Closed') ? 'Closed' : 'Active')
-        const { data: deal } = await supabase.from('deals').insert({
-          company_name:           primary.extracted.company_name || `Unknown — ${subject.slice(0, 60)}`,
-          sector:                 primary.extracted.sector       || null,
-          geography:              primary.extracted.geography    || null,
-          deal_type:              primary.extracted.deal_type    || 'platform',
-          parent_portco:          primary.extracted.parent_portco || null,
-          revenue:                primary.extracted.revenue      ?? null,
-          ebitda:                 primary.extracted.ebitda       ?? null,
-          description:            primary.extracted.description  || null,
-          financial_summary:      primary.extracted.financial_summary     || null,
-          historical_financials:  primary.extracted.historical_financials?.length ? primary.extracted.historical_financials : null,
-          customer_concentration: primary.extracted.customer_concentration || null,
-          employee_count:         primary.extracted.employee_count ?? null,
+
+        // Build the insert payload — only include columns that exist in the base schema.
+        // New columns (historical_financials, customer_concentration, employee_count,
+        // financial_summary) are added conditionally so the insert doesn't break if the
+        // migration hasn't been run yet.
+        const dealPayload: Record<string, any> = {
+          company_name:  primary.extracted.company_name || `Unknown — ${subject.slice(0, 60)}`,
+          sector:        primary.extracted.sector       || null,
+          geography:     primary.extracted.geography    || null,
+          deal_type:     primary.extracted.deal_type    || 'platform',
+          parent_portco: primary.extracted.parent_portco || null,
+          revenue:       primary.extracted.revenue      ?? null,
+          ebitda:        primary.extracted.ebitda       ?? null,
+          description:   primary.extracted.description  || null,
           stage, status,
-          cim_parsed:             primary.extracted.doc_type === 'cim',
-          dropbox_path:           dealFolderPath || null,
-          expected_close:         new Date().toISOString().split('T')[0],
-        }).select('id').single()
+          cim_parsed:    primary.extracted.doc_type === 'cim',
+          dropbox_path:  dealFolderPath || null,
+          expected_close: new Date().toISOString().split('T')[0],
+        }
+        if (primary.extracted.financial_summary)                           dealPayload.financial_summary      = primary.extracted.financial_summary
+        if (primary.extracted.historical_financials?.length)               dealPayload.historical_financials  = primary.extracted.historical_financials
+        if (primary.extracted.customer_concentration)                      dealPayload.customer_concentration = primary.extracted.customer_concentration
+        if (primary.extracted.employee_count != null)                      dealPayload.employee_count         = primary.extracted.employee_count
+
+        const { data: deal, error: dealErr } = await supabase.from('deals').insert(dealPayload).select('id').single()
+        if (dealErr) console.error(`[email-intake] Deal insert failed:`, dealErr.message, dealErr.details)
 
         await supabase.from('notes').insert({
           note_date:  noteDate,

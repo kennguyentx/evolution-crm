@@ -151,14 +151,23 @@ export default function NotesPage() {
 
   const detectMentions = useCallback(async (text: string) => {
     if (!text.trim()) { setDetectedContacts([]); setDetectedDeals([]); setUnknownNames([]); return }
-    const lower = text.toLowerCase()
+
+    // Strip email header lines (From/To/Cc/Subject/Date/Files) before scanning —
+    // subject lines like "FW: Acquisition Opportunity — Media Relations..." produce
+    // false contact matches like "Media Relations" or "Growth Files"
+    const scanText = text
+      .split('\n')
+      .filter(l => !/^(from|to|cc|subject|date|files|forwarded via email|sent):/i.test(l.trim()))
+      .join('\n')
+
+    const lower = scanText.toLowerCase()
 
     // Extract capitalized "FirstName LastName" pairs — more reliable than word-by-word
     const nameRx = /\b([A-Z][a-z]{1,20})\s+([A-Z][a-z]{1,20})\b/g
     const candidates: { first: string; last: string; key: string }[] = []
     const seenKeys = new Set<string>()
     let m: RegExpExecArray | null
-    while ((m = nameRx.exec(text)) !== null) {
+    while ((m = nameRx.exec(scanText)) !== null) {
       const key = `${m[1]} ${m[2]}`
       if (!NAME_BLOCKLIST.has(key) && !seenKeys.has(key)) {
         candidates.push({ first: m[1], last: m[2], key })
@@ -214,13 +223,19 @@ export default function NotesPage() {
 
   const detectEditMentions = useCallback(async (text: string) => {
     if (!text.trim()) { setEditDetectedContacts([]); setEditDetectedDeals([]); setEditUnknownNames([]); return }
-    const lower = text.toLowerCase()
+
+    const scanText = text
+      .split('\n')
+      .filter(l => !/^(from|to|cc|subject|date|files|forwarded via email|sent):/i.test(l.trim()))
+      .join('\n')
+
+    const lower = scanText.toLowerCase()
 
     const nameRx = /\b([A-Z][a-z]{1,20})\s+([A-Z][a-z]{1,20})\b/g
     const candidates: { first: string; last: string; key: string }[] = []
     const seenKeys = new Set<string>()
     let m: RegExpExecArray | null
-    while ((m = nameRx.exec(text)) !== null) {
+    while ((m = nameRx.exec(scanText)) !== null) {
       const key = `${m[1]} ${m[2]}`
       if (!NAME_BLOCKLIST.has(key) && !seenKeys.has(key)) {
         candidates.push({ first: m[1], last: m[2], key })
