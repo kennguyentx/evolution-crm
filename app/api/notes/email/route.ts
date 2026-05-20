@@ -371,6 +371,25 @@ export async function POST(req: NextRequest) {
       const instructions = await parseForwardingNote(text, { from, fromName, cc: ccFull })
       console.log(`[email-intake] instructions:`, JSON.stringify(instructions))
 
+      // ── Portco fallback: if add-on but parent_portco wasn't extracted by LLM,
+      // scan known portfolio company names against the full email text.
+      // This catches cases where Claude Haiku misclassifies the portco as deal_name.
+      if ((instructions.deal_type === 'add-on' || instructions.parent_portco) && !instructions.parent_portco) {
+        try {
+          const { data: portcos } = await supabase.from('portfolio_companies').select('name').eq('status', 'Active')
+          if (portcos?.length) {
+            const haystack = (subject + ' ' + text).toLowerCase()
+            const match = portcos.find((p: any) => haystack.includes(p.name.toLowerCase()))
+            if (match) {
+              instructions.parent_portco = match.name
+              console.log(`[email-intake] Inferred parent_portco="${match.name}" from email text (portco fallback)`)
+            }
+          }
+        } catch (e: any) {
+          console.warn(`[email-intake] Portco fallback failed:`, e?.message)
+        }
+      }
+
       // ── Step 1: Separate NDAs (skip Claude, just upload) from deal docs ─────
       // Detecting NDAs by filename avoids wasting Claude Opus time on them.
       const isNdaFile = (name: string) => /nda|non.?disclosure/i.test(name)
