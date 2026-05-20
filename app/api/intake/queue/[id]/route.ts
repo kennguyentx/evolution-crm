@@ -41,19 +41,23 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     // Create deal
     const { data: deal, error: dealErr } = await supabase.from('deals').insert({
-      company_name:   ext.company_name || 'Unknown Company',
-      sector:         ext.sector       || null,
-      geography:      ext.geography    || null,
-      deal_type:      edited?.deal_type || ext.deal_type || 'platform',
-      parent_portco:  edited?.parent_portco || null,
-      revenue:        ext.revenue      ?? null,
-      ebitda:         ext.ebitda       ?? null,
-      description:    ext.description  || null,
-      stage:          'Teaser',
-      status:         'Active',
-      cim_parsed:     item.doc_type === 'cim',
-      dropbox_path:   item.dropbox_path || null,
-      expected_close: new Date().toISOString().split('T')[0],
+      company_name:           ext.company_name || 'Unknown Company',
+      sector:                 ext.sector       || null,
+      geography:              ext.geography    || null,
+      deal_type:              edited?.deal_type || ext.deal_type || 'platform',
+      parent_portco:          edited?.parent_portco || null,
+      revenue:                ext.revenue      ?? null,
+      ebitda:                 ext.ebitda       ?? null,
+      description:            ext.description  || null,
+      financial_summary:      ext.financial_summary     || null,
+      historical_financials:  ext.historical_financials?.length ? ext.historical_financials : null,
+      customer_concentration: ext.customer_concentration || null,
+      employee_count:         ext.employee_count         ?? null,
+      stage:                  'Teaser',
+      status:                 'Active',
+      cim_parsed:             item.doc_type === 'cim',
+      dropbox_path:           item.dropbox_path || null,
+      expected_close:         new Date().toISOString().split('T')[0],
     }).select().single()
 
     if (dealErr) {

@@ -29,6 +29,7 @@ async function generatePreview(body: any) {
   const {
     company_name, sector, geography, revenue, ebitda,
     description, cim_summary, financial_summary,
+    historical_financials, customer_concentration, employee_count,
     key_risks, growth_opportunities, management_team,
     banker_name, banker_firm, deal_type, asking_price, asking_multiple,
   } = body
@@ -39,6 +40,18 @@ async function generatePreview(body: any) {
   const askingStr   = asking_price  ? `$${(asking_price  / 1e6).toFixed(1)}M` : null
   const multipleStr = asking_multiple ? `${asking_multiple.toFixed(1)}x EBITDA` : null
 
+  // Format historical financials as a readable table for the prompt
+  const histTable = (historical_financials as any[] | null | undefined)?.length
+    ? (historical_financials as any[]).map((h: any) => {
+        const rev  = h.revenue ? `$${(h.revenue / 1e6).toFixed(1)}M rev` : 'N/A rev'
+        const ebit = h.ebitda  ? `$${(h.ebitda  / 1e6).toFixed(1)}M EBITDA` : 'N/A EBITDA'
+        const mgn  = h.ebitda_margin != null
+          ? `${(h.ebitda_margin * 100).toFixed(1)}% margin`
+          : (h.revenue && h.ebitda ? `${((h.ebitda / h.revenue) * 100).toFixed(1)}% margin` : '')
+        return `  ${h.year}: ${rev} / ${ebit}${mgn ? ` / ${mgn}` : ''}`
+      }).join('\n')
+    : null
+
   const resp = await anthropic.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 1200,
@@ -46,19 +59,23 @@ async function generatePreview(body: any) {
       role: 'user',
       content: `You are a private equity analyst at Evolution Strategy, a lower middle market PE firm focused on infrastructure services. Produce a structured internal deal overview to share with the investment team.
 
-SOURCE DATA — extract all relevant facts from these fields:
+SOURCE DATA — use exactly what is provided; do not invent anything:
 Company: ${company_name || 'Unknown'}
 Type: ${deal_type || 'platform'}
 Sector: ${sector || 'infrastructure services'}
 Geography: ${geography || 'Not specified'}
-Revenue (LTM/most recent): ${revenueStr || 'Not disclosed'}
-EBITDA (LTM/most recent): ${ebitdaStr || 'Not disclosed'}
-EBITDA Margin: ${marginStr || 'Not disclosed'}
+LTM Revenue: ${revenueStr || 'Not disclosed'}
+LTM EBITDA: ${ebitdaStr || 'Not disclosed'}
+LTM Margin: ${marginStr || 'Not disclosed'}
 Asking Price: ${askingStr || 'Not disclosed'}
 Asking Multiple: ${multipleStr || 'Not disclosed'}
+Historical Financials (structured):
+${histTable || '  Not available — use Financial Summary text if helpful'}
+Financial Summary (narrative): ${financial_summary || 'N/A'}
+Customer Concentration: ${customer_concentration || 'Not specified — check CIM Summary'}
+Employee Count: ${employee_count ?? 'Not specified — check CIM Summary'}
+CIM Summary (full text — mine this for any data not in fields above): ${cim_summary || 'N/A'}
 Description: ${description || 'N/A'}
-Financial Summary (may contain multi-year data): ${financial_summary || 'N/A'}
-Full CIM Summary (may contain customer concentration, geography, headcount, services): ${cim_summary || 'N/A'}
 Key Risks: ${key_risks?.join(' | ') || 'N/A'}
 Growth Opportunities: ${growth_opportunities?.join(' | ') || 'N/A'}
 Management Team: ${management_team?.map((m: any) => `${m.name}, ${m.title}`).join(' | ') || 'N/A'}

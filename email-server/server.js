@@ -140,10 +140,20 @@ const DOC_SYSTEM_PROMPT = `You extract deal data from teasers and CIMs forwarded
   "sector": "string — closest match from: Underground Utilities | Electrical Contracting | Civil / Public Works | Commercial Landscaping | Fiber Optics | HVAC | Plumbing | Industrial Services | Environmental Services | Construction & Engineering. If none fit, short descriptive name.",
   "geography": "string or null — primary state(s) or region",
   "deal_type": "platform | add-on | recap | growth",
-  "revenue": "number in raw dollars or null",
-  "ebitda": "number in raw dollars or null",
+  "revenue": "number in raw dollars or null — use the most recent / LTM figure",
+  "ebitda": "number in raw dollars or null — use the most recent / LTM figure",
   "description": "string — 2-4 factual sentences about the business. No opinions or qualitative assessments.",
-  "financial_summary": "string or null — paragraph on financials, margins, growth (CIM only)",
+  "financial_summary": "string or null — 2-3 sentence narrative on margins, growth trend, and any notable items (CIM only)",
+  "historical_financials": [
+    {
+      "year": "string — e.g. '2022', '2023', 'LTM', 'TTM', 'Budget 2025'",
+      "revenue": "number in raw dollars or null",
+      "ebitda": "number in raw dollars or null",
+      "ebitda_margin": "number as decimal (0.22 for 22%) or null"
+    }
+  ],
+  "customer_concentration": "string or null — describe top customer %, customer count, or 'no single customer >X%' (CIM only)",
+  "employee_count": "integer or null — total headcount if stated",
   "key_risks": ["string array — 3-5 risks (CIM only, else [])"],
   "growth_opportunities": ["string array — 3-5 opportunities (CIM only, else [])"],
   "management_team": [{"name": "string", "title": "string"}],
@@ -165,9 +175,11 @@ const DOC_SYSTEM_PROMPT = `You extract deal data from teasers and CIMs forwarded
 
 Rules:
 - doc_type: "teaser" = short marketing summary, "cim" = detailed confidential memo, "nda" = non-disclosure agreement, "other" = anything else
-- Dollar values as raw numbers (4200000 for $4.2M). If a range is given (e.g. "$4–6M revenue"), use the midpoint (5000000). If described as "approximately $5M" use 5000000. If only TTM or LTM is stated, use that figure.
-- Null ONLY if no numeric hint is given anywhere in the document — do not leave null if you can infer from context
-- description: purely factual, no adjectives expressing quality`
+- Dollar values as raw numbers (4200000 for $4.2M). If a range is given (e.g. "$4–6M revenue"), use the midpoint (5000000). If described as "approximately $5M" use 5000000.
+- historical_financials: extract EVERY year shown in a financial table or summary — typically 2-3 historical years plus LTM/TTM. Order oldest to newest. Use [] if only one year is available or this is a teaser.
+- revenue/ebitda at the top level: always the most recent / LTM figure from historical_financials.
+- Null ONLY if no numeric hint is given anywhere in the document — do not leave null if you can infer from context.
+- description: purely factual, no adjectives expressing quality.`
 
 // ── Email body prompt ────────────────────────────────────────────────────────
 const EMAIL_SYSTEM_PROMPT = `You extract structured information from forwarded emails for a CRM. Return ONLY valid JSON.
@@ -530,6 +542,10 @@ async function handleEmailIntake(req, res) {
         if (primary.extracted.doc_type === 'cim') updates.cim_parsed = true
         if (primary.extracted.revenue != null) updates.revenue = primary.extracted.revenue
         if (primary.extracted.ebitda  != null) updates.ebitda  = primary.extracted.ebitda
+        if (primary.extracted.historical_financials?.length) updates.historical_financials = primary.extracted.historical_financials
+        if (primary.extracted.customer_concentration) updates.customer_concentration = primary.extracted.customer_concentration
+        if (primary.extracted.employee_count != null) updates.employee_count = primary.extracted.employee_count
+        if (primary.extracted.financial_summary) updates.financial_summary = primary.extracted.financial_summary
         if (dealFolderPath)  updates.dropbox_path = dealFolderPath
         if (renamedCompany)  updates.company_name = renamedCompany
         if (Object.keys(updates).length > 0) {
@@ -562,18 +578,22 @@ async function handleEmailIntake(req, res) {
         const stage  = instructions.stage
         const status = instructions.status ?? (stage.startsWith('Pass') ? 'Dead' : stage.startsWith('Closed') ? 'Closed' : 'Active')
         const { data: deal } = await supabase.from('deals').insert({
-          company_name:  primary.extracted.company_name || `Unknown — ${subject.slice(0, 60)}`,
-          sector:        primary.extracted.sector       || null,
-          geography:     primary.extracted.geography    || null,
-          deal_type:     primary.extracted.deal_type    || 'platform',
-          parent_portco: primary.extracted.parent_portco || null,
-          revenue:       primary.extracted.revenue      ?? null,
-          ebitda:        primary.extracted.ebitda       ?? null,
-          description:   primary.extracted.description  || null,
+          company_name:           primary.extracted.company_name || `Unknown — ${subject.slice(0, 60)}`,
+          sector:                 primary.extracted.sector       || null,
+          geography:              primary.extracted.geography    || null,
+          deal_type:              primary.extracted.deal_type    || 'platform',
+          parent_portco:          primary.extracted.parent_portco || null,
+          revenue:                primary.extracted.revenue      ?? null,
+          ebitda:                 primary.extracted.ebitda       ?? null,
+          description:            primary.extracted.description  || null,
+          financial_summary:      primary.extracted.financial_summary     || null,
+          historical_financials:  primary.extracted.historical_financials?.length ? primary.extracted.historical_financials : null,
+          customer_concentration: primary.extracted.customer_concentration || null,
+          employee_count:         primary.extracted.employee_count ?? null,
           stage, status,
-          cim_parsed:    primary.extracted.doc_type === 'cim',
-          dropbox_path:  dealFolderPath || null,
-          expected_close: new Date().toISOString().split('T')[0],
+          cim_parsed:             primary.extracted.doc_type === 'cim',
+          dropbox_path:           dealFolderPath || null,
+          expected_close:         new Date().toISOString().split('T')[0],
         }).select('id').single()
 
         await supabase.from('notes').insert({
