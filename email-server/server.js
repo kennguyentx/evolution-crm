@@ -750,7 +750,7 @@ async function handleEmailIntake(req, res) {
 
         const bankerContact = allContacts.find(c => c.role === 'Source / Banker')
         const bankerStr = bankerContact ? `${bankerContact.name}${bankerContact.firm ? ` · ${bankerContact.firm}` : ''}` : null
-        sendDealNotification({
+        if (status !== 'Pass') sendDealNotification({
           companyName:    primary.extracted.company_name || `Unknown — ${subject.slice(0, 40)}`,
           stage, status,
           sector:         primary.extracted.sector       || null,
