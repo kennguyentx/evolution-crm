@@ -666,7 +666,7 @@ async function handleEmailIntake(req, res) {
         // New columns (historical_financials, customer_concentration, employee_count,
         // financial_summary) are added conditionally so the insert doesn't break if the
         // migration hasn't been run yet.
-        const dealPayload: Record<string, any> = {
+        const dealPayload = {
           company_name:  primary.extracted.company_name || `Unknown — ${subject.slice(0, 60)}`,
           sector:        primary.extracted.sector       || null,
           geography:     primary.extracted.geography    || null,
