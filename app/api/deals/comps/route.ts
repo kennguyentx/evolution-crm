@@ -98,9 +98,10 @@ Use null for any field not found. Only include comps where you found at least th
 
     const raw = (textBlocks[textBlocks.length - 1] as any).text.trim()
 
-    // Parse JSON — strip any markdown fences
-    const clean = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-    const parsed = JSON.parse(clean)
+    // Extract outermost { ... } block — Claude sometimes adds prose around the JSON
+    const jsonMatch = raw.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) throw new Error('No JSON object found in AI response')
+    const parsed = JSON.parse(jsonMatch[0])
 
     return NextResponse.json(parsed)
   } catch (err: any) {

@@ -79,7 +79,11 @@ Only include articles where you found an actual URL.`,
   const textBlocks = resp.content.filter((b: any) => b.type === 'text')
   if (!textBlocks.length) throw new Error('No response from AI')
 
-  const raw   = (textBlocks[textBlocks.length - 1] as any).text.trim()
-  const clean = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-  return JSON.parse(clean)
+  const raw = (textBlocks[textBlocks.length - 1] as any).text.trim()
+
+  // Claude sometimes wraps in markdown or adds prose before/after the JSON.
+  // Extract the outermost { ... } block to be safe.
+  const jsonMatch = raw.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) throw new Error('No JSON object found in AI response')
+  return JSON.parse(jsonMatch[0])
 }
