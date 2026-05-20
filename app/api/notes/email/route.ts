@@ -260,14 +260,18 @@ async function upsertContacts(supabase: any, contacts: any[], dealId: string) {
     const firstName = parts[0]
     const lastName  = parts.slice(1).join(' ') || ''
 
-    // Check if contact exists
-    const { data: existing } = await supabase
-      .from('contacts')
-      .select('id')
-      .ilike('first_name', firstName)
-      .ilike('last_name', lastName)
-      .limit(1)
-      .maybeSingle()
+    // Priority 1: match by email (most reliable — avoids merging same-name people)
+    let existing: any = null
+    if (c.email) {
+      const { data } = await supabase.from('contacts').select('id').ilike('email', c.email).limit(1).maybeSingle()
+      existing = data
+    }
+    // Priority 2: match by first + last name
+    if (!existing) {
+      const { data } = await supabase.from('contacts').select('id')
+        .ilike('first_name', firstName).ilike('last_name', lastName).limit(1).maybeSingle()
+      existing = data
+    }
 
     let contactId = existing?.id
 
@@ -608,7 +612,7 @@ export async function POST(req: NextRequest) {
         const stage  = instructions.stage
         const status = instructions.status ?? (stage.startsWith('Pass') ? 'Dead' : stage.startsWith('Closed') ? 'Closed' : 'Active')
         const { data: deal } = await supabase.from('deals').insert({
-          company_name:  primary.extracted.company_name || 'Unknown (email intake)',
+          company_name:  primary.extracted.company_name || `Unknown — ${subject.slice(0, 60)}`,
           sector:        primary.extracted.sector       || null,
           geography:     primary.extracted.geography    || null,
           deal_type:     primary.extracted.deal_type    || 'platform',

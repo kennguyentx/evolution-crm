@@ -101,11 +101,20 @@ export default function DealDetailPage() {
       supabase.from('diligence_items').select('*').eq('deal_id', dealId).order('category'),
       supabase.from('deal_capital_assignments').select('*, contact:contacts(first_name, last_name, firm)').eq('deal_id', dealId),
     ])
-    if (dealRes.data) setDeal(dealRes.data)
+    if (dealRes.error || !dealRes.data) {
+      console.error('[deal page] Failed to load deal:', dealRes.error?.message)
+      setLoading(false)
+      return
+    }
+    setDeal(dealRes.data)
     if (linksRes.data) setLinkedContacts(linksRes.data)
+    else if (linksRes.error) console.warn('[deal page] contacts query failed:', linksRes.error.message)
     if (interactionsRes.data) setInteractions(interactionsRes.data)
+    else if (interactionsRes.error) console.warn('[deal page] interactions query failed:', interactionsRes.error.message)
     if (diligenceRes.data) setDiligence(diligenceRes.data)
+    else if (diligenceRes.error) console.warn('[deal page] diligence query failed:', diligenceRes.error.message)
     if (capitalRes.data) setCapital(capitalRes.data)
+    else if (capitalRes.error) console.warn('[deal page] capital query failed:', capitalRes.error.message)
     // Fetch linked notes
     const { data: notesData } = await supabase.from('notes').select('*').eq('deal_id', dealId).order('note_date', { ascending: false })
     if (notesData) setDealNotes(notesData)
@@ -218,18 +227,21 @@ export default function DealDetailPage() {
         .ilike('name', currentDeal.company_name)
         .maybeSingle()
       if (!existing) {
-        await supabase.from('portfolio_companies').insert({
+        const { error: portcoErr } = await supabase.from('portfolio_companies').insert({
           name: currentDeal.company_name,
           sector: currentDeal.sector ?? null,
           geography: currentDeal.geography ?? null,
           deal_type: stage === 'Closed (Platform)' ? 'Platform' : 'Add-On',
           status: 'Active',
-          acquisition_date: currentDeal.expected_close ?? new Date().toISOString().split('T')[0],
+          acquisition_date: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date()),
           acquisition_revenue: currentDeal.revenue ?? null,
           acquisition_ebitda: currentDeal.ebitda ?? null,
           acquisition_ev: currentDeal.asking_price ?? null,
           dropbox_path: resolvedDropboxPath,
         })
+        if (portcoErr) {
+          alert(`Deal marked as closed, but portfolio company could not be created:\n${portcoErr.message}\n\nPlease add it manually in the Portfolio tab.`)
+        }
       }
     }
   }

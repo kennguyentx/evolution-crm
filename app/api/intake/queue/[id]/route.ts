@@ -16,9 +16,26 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   if (action === 'approve') {
-    // Get queue item
-    const { data: item } = await supabase.from('intake_queue').select('*').eq('id', params.id).single()
-    if (!item) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    // Get queue item — atomically claim it by moving to 'processing' first.
+    // If two users hit approve simultaneously, only one will see status='pending'.
+    const { data: claimed, error: claimErr } = await supabase
+      .from('intake_queue')
+      .update({ status: 'processing', reviewed_at: new Date().toISOString() })
+      .eq('id', params.id)
+      .eq('status', 'pending')  // only update if still pending — atomic guard
+      .select('*')
+      .single()
+
+    if (claimErr || !claimed) {
+      // Either not found or already being processed by someone else
+      const { data: existing } = await supabase.from('intake_queue').select('status, deal_id').eq('id', params.id).single()
+      if (existing?.status === 'approved' && existing?.deal_id) {
+        return NextResponse.json({ success: true, deal_id: existing.deal_id, skipped: 'already approved' })
+      }
+      return NextResponse.json({ error: 'Item not found or already being processed' }, { status: 409 })
+    }
+
+    const item = claimed
 
     const ext = { ...item.extracted, ...edited }
 
@@ -39,7 +56,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       expected_close: new Date().toISOString().split('T')[0],
     }).select().single()
 
-    if (dealErr) return NextResponse.json({ error: dealErr.message }, { status: 500 })
+    if (dealErr) {
+      // Revert status so it can be retried
+      await supabase.from('intake_queue').update({ status: 'pending', reviewed_at: null }).eq('id', params.id)
+      return NextResponse.json({ error: dealErr.message }, { status: 500 })
+    }
 
     // If CIM, save to deal_cims
     if (item.doc_type === 'cim' && deal) {
