@@ -29,43 +29,70 @@ async function generatePreview(body: any) {
   const {
     company_name, sector, geography, revenue, ebitda,
     description, cim_summary, financial_summary,
-    key_risks, growth_opportunities, management_team, banker_firm, deal_type,
+    key_risks, growth_opportunities, management_team,
+    banker_name, banker_firm, deal_type, asking_price, asking_multiple,
   } = body
 
-  const revenueStr = revenue ? `$${(revenue / 1e6).toFixed(1)}M` : null
-  const ebitdaStr  = ebitda  ? `$${(ebitda  / 1e6).toFixed(1)}M` : null
-  const marginStr  = revenue && ebitda ? `${((ebitda / revenue) * 100).toFixed(1)}%` : null
+  const revenueStr  = revenue       ? `$${(revenue       / 1e6).toFixed(1)}M` : null
+  const ebitdaStr   = ebitda        ? `$${(ebitda        / 1e6).toFixed(1)}M` : null
+  const marginStr   = revenue && ebitda ? `${((ebitda / revenue) * 100).toFixed(1)}%` : null
+  const askingStr   = asking_price  ? `$${(asking_price  / 1e6).toFixed(1)}M` : null
+  const multipleStr = asking_multiple ? `${asking_multiple.toFixed(1)}x EBITDA` : null
 
   const resp = await anthropic.messages.create({
     model: 'claude-haiku-4-5',
-    max_tokens: 800,
+    max_tokens: 1200,
     messages: [{
       role: 'user',
-      content: `You are a private equity analyst at Evolution Strategy, a lower middle market PE firm focused on infrastructure services. Write a concise deal summary email to share internally with the investment team.
+      content: `You are a private equity analyst at Evolution Strategy, a lower middle market PE firm focused on infrastructure services. Produce a structured internal deal overview to share with the investment team.
 
-Deal info:
-- Company: ${company_name || 'Unknown'}
-- Type: ${deal_type || 'platform'}
-- Sector: ${sector || 'infrastructure services'}
-- Geography: ${geography || 'United States'}
-- Revenue: ${revenueStr || 'Not disclosed'}
-- EBITDA: ${ebitdaStr || 'Not disclosed'}
-- EBITDA Margin: ${marginStr || 'Not disclosed'}
-- Description: ${description || 'Not available'}
-- CIM Summary: ${cim_summary || 'Not available'}
-- Financial Summary: ${financial_summary || 'Not available'}
-- Key Risks: ${key_risks?.join('; ') || 'Not extracted'}
-- Growth Opportunities: ${growth_opportunities?.join('; ') || 'Not extracted'}
-- Management Team: ${management_team?.map((m: any) => `${m.name} (${m.title})`).join(', ') || 'Not extracted'}
-- Banker/Source: ${banker_firm || 'Not specified'}
+SOURCE DATA — extract all relevant facts from these fields:
+Company: ${company_name || 'Unknown'}
+Type: ${deal_type || 'platform'}
+Sector: ${sector || 'infrastructure services'}
+Geography: ${geography || 'Not specified'}
+Revenue (LTM/most recent): ${revenueStr || 'Not disclosed'}
+EBITDA (LTM/most recent): ${ebitdaStr || 'Not disclosed'}
+EBITDA Margin: ${marginStr || 'Not disclosed'}
+Asking Price: ${askingStr || 'Not disclosed'}
+Asking Multiple: ${multipleStr || 'Not disclosed'}
+Description: ${description || 'N/A'}
+Financial Summary (may contain multi-year data): ${financial_summary || 'N/A'}
+Full CIM Summary (may contain customer concentration, geography, headcount, services): ${cim_summary || 'N/A'}
+Key Risks: ${key_risks?.join(' | ') || 'N/A'}
+Growth Opportunities: ${growth_opportunities?.join(' | ') || 'N/A'}
+Management Team: ${management_team?.map((m: any) => `${m.name}, ${m.title}`).join(' | ') || 'N/A'}
+Banker: ${[banker_name, banker_firm].filter(Boolean).join(', ') || 'Not specified'}
 
-Write a short, professional email body — no subject line, no greeting, no sign-off. Structure:
-1. One paragraph: what the business does, sector, geography
-2. Financial snapshot: Revenue, EBITDA, margin (numbers only, concise)
-3. 2–3 short bullets on key highlights or risks worth noting
-4. One line on banker / process / source
+OUTPUT FORMAT — plain text, exactly this structure, no markdown, no asterisks, no extra commentary:
 
-Keep it under 200 words. Factual and direct. No fluff or adjectives. Plain text only — no markdown, no asterisks, no headers.`,
+BUSINESS
+[2–3 sentences: what the company does, specific services or end markets, operating states/regions, years in business or founding if mentioned]
+
+FINANCIALS
+[Present as a labeled table using tabs/spacing, e.g.:
+  Revenue:  $Xm (20XX) / $Xm (20XX) / $Xm (LTM)
+  EBITDA:   $Xm / $Xm / $Xm
+  Margin:   X% / X% / X%
+  Asking:   $Xm at X.Xx EBITDA
+Extract 2–3 years of data from financial_summary or cim_summary if available. If only one year is available, show it. Use "N/A" for fields with no data.]
+
+OPERATIONS
+[Labeled lines only — omit any line where data is not available:
+  Geography:    [specific states or metros, not just "United States"]
+  Customers:    [concentration data, e.g. "Top customer ~15% of revenue; no single customer >20%"]
+  Employees:    [headcount or "N/A"]
+  Fleet/Assets: [if mentioned]
+  Services:     [key service lines, one line]
+  End Markets:  [who they serve — municipal, commercial, industrial, etc.]]
+
+CONSIDERATIONS
+[3–5 short lines, each starting with + for a positive or - for a risk. Pull from key_risks, growth_opportunities, and any qualitative notes in cim_summary. Factual only — no adjectives like "strong" or "solid".]
+
+PROCESS
+[One line: banker/source, any process info such as deadline, LOI date, auction vs. proprietary. If unknown, write "Process details not provided."]
+
+Rules: Only include data that appears in the source. Do not invent numbers or facts. If a section has no data, write "N/A" after the header. Keep each section tight.`,
     }],
   })
 

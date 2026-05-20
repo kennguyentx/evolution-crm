@@ -426,12 +426,15 @@ export default function DealDetailPage() {
           geography: deal.geography,
           revenue: deal.revenue,
           ebitda: deal.ebitda,
+          asking_price: deal.asking_price,
+          asking_multiple: deal.ev_ebitda_multiple,
           description: deal.description,
           cim_summary: deal.cim_summary,
           financial_summary: (deal as any).financial_summary,
           key_risks: (deal as any).key_risks,
           growth_opportunities: (deal as any).growth_opportunities,
           management_team: (deal as any).management_team,
+          banker_name: (deal as any).banker_name,
           banker_firm: (deal as any).banker_firm,
           deal_type: deal.deal_type,
         }),
@@ -1595,8 +1598,8 @@ export default function DealDetailPage() {
               {!generatingCim && (
                 <textarea
                   className="input"
-                  rows={10}
-                  style={{ width: '100%', fontSize: '12px', lineHeight: 1.7, fontFamily: 'var(--font-mono)', resize: 'vertical' }}
+                  rows={16}
+                  style={{ width: '100%', fontSize: '11.5px', lineHeight: 1.65, fontFamily: 'var(--font-mono)', resize: 'vertical', whiteSpace: 'pre' }}
                   placeholder="Summary will appear here — click Generate or edit directly."
                   value={cimSummary}
                   onChange={e => setCimSummary(e.target.value)}
