@@ -196,10 +196,12 @@ async function dropboxMove(fromPath, toPath) {
 const PASS_STAGES   = ['Pass (DOA)', 'Pass (Pre-LOI)', 'Pass (Post-LOI)']
 const CLOSED_STAGES = ['Closed (Platform)', 'Closed (Add-On)']
 
-function expectedDropboxFolder(companyName, stage) {
-  const safe = companyName.replace(/[<>:"/\\|?*]/g, '_')
+function expectedDropboxFolder(companyName, stage, parentPortco = null) {
+  const safe       = companyName.replace(/[<>:"/\\|?*]/g, '_')
+  const safeParent = parentPortco?.replace(/[<>:"/\\|?*]/g, '_')
   if (PASS_STAGES.includes(stage))   return `/Evolution Strategy Partners/Deals/!Passed Deals/${safe}`
   if (CLOSED_STAGES.includes(stage)) return `/Evolution Strategy Partners/Portfolio Co's/${safe}`
+  if (safeParent) return `/Evolution Strategy Partners/Deals/${safeParent}/${safe}`
   return `/Evolution Strategy Partners/Deals/${safe}`
 }
 
@@ -613,7 +615,7 @@ async function handleEmailIntake(req, res) {
 
       async function findDealByName(searchName) {
         const { data: exact } = await supabase.from('deals')
-          .select('id, company_name, stage, status, dropbox_path')
+          .select('id, company_name, stage, status, dropbox_path, parent_portco')
           .ilike('company_name', searchName)
           .order('created_at', { ascending: false }).limit(1).maybeSingle()
         if (exact) return exact
@@ -622,7 +624,7 @@ async function handleEmailIntake(req, res) {
         const chunk    = stripped.split(/\s+/).slice(0, 3).join(' ')
         if (chunk.length > 3) {
           const { data: partial } = await supabase.from('deals')
-            .select('id, company_name, stage, status, dropbox_path')
+            .select('id, company_name, stage, status, dropbox_path, parent_portco')
             .ilike('company_name', `%${chunk}%`)
             .order('created_at', { ascending: false }).limit(1).maybeSingle()
           if (partial) return partial
@@ -658,11 +660,8 @@ async function handleEmailIntake(req, res) {
       // Use extracted company name, or fall back to subject line (strip FW:/RE: prefixes)
       const companyNameForPath = primary.extracted.company_name
         || subject.replace(/^(fw|re|fwd)\s*:\s*/i, '').trim().slice(0, 60) || null
-      const companyForPath = companyNameForPath
-        ? (instructions.parent_portco
-            ? `${companyNameForPath} [${instructions.parent_portco}]`
-            : companyNameForPath)
-        : null
+      const companyForPath = companyNameForPath || null
+      const parentPortco   = instructions.parent_portco || existingDeal?.parent_portco || null
 
       // Validate the stored dropbox_path is a real company-level folder.
       // Must have at least 3 path segments, e.g. /Evolution Strategy Partners/Deals/Henke Excavating
@@ -673,8 +672,8 @@ async function handleEmailIntake(req, res) {
       const storedFolderValid = storedFolderSegments.length >= 3
 
       const targetFolder = existingDeal
-        ? (storedFolderValid ? storedFolder : (companyForPath ? expectedDropboxFolder(companyForPath, effectiveStage) : null))
-        : (companyForPath ? expectedDropboxFolder(companyForPath, effectiveStage) : null)
+        ? (storedFolderValid ? storedFolder : (companyForPath ? expectedDropboxFolder(companyForPath, effectiveStage, parentPortco) : null))
+        : (companyForPath ? expectedDropboxFolder(companyForPath, effectiveStage, parentPortco) : null)
 
       if (existingDeal && !storedFolderValid && storedFolder) {
         console.warn(`[email-intake] Stored dropbox_path "${existingDeal.dropbox_path}" looks invalid — falling back to expected path "${targetFolder}"`)
@@ -687,7 +686,7 @@ async function handleEmailIntake(req, res) {
       if (existingDeal && primary.extracted.doc_type === 'cim' && primary.extracted.company_name &&
           primary.extracted.company_name.toLowerCase().trim() !== existingDeal.company_name.toLowerCase().trim()) {
         const newCompanyName = primary.extracted.company_name.trim()
-        const newFolder      = expectedDropboxFolder(newCompanyName, existingDeal.stage)
+        const newFolder      = expectedDropboxFolder(newCompanyName, existingDeal.stage, parentPortco)
         if (dropboxConfigured() && targetFolder) {
           try {
             console.log(`[email-intake] Renaming folder: "${targetFolder}" → "${newFolder}"`)
