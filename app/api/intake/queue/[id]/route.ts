@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { sendDealNotification } from '@/lib/deal-notify'
 
 function serviceClient() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -82,6 +83,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       deal_id: deal?.id,
       reviewed_at: new Date().toISOString(),
     }).eq('id', params.id)
+
+    // Send deal notification email (non-blocking)
+    sendDealNotification({
+      companyName: ext.company_name || 'Unknown Company',
+      stage:       'Teaser',
+      status:      'Active',
+      sector:      ext.sector      || null,
+      geography:   ext.geography   || null,
+      revenue:     ext.revenue     ?? null,
+      ebitda:      ext.ebitda      ?? null,
+      description: ext.description || null,
+      dealId:      deal?.id        || null,
+      isPending:   false,
+    }).catch(e => console.error('[deal-notify] intake approve:', e?.message))
 
     // Link any orphaned email-intake notes that were logged before the deal existed
     if (deal?.id && ext.company_name) {
