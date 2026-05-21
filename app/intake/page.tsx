@@ -809,6 +809,24 @@ function TeaserFlow() {
     }
     setDealId(data.id); setStage('done')
 
+    // Send deal notification email (non-blocking)
+    fetch('/api/deals/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        companyName: edited.company_name || 'Unknown Company',
+        stage:       edited.stage || 'Teaser',
+        status:      'Active',
+        sector:      edited.sector      || null,
+        geography:   edited.geography   || null,
+        revenue:     edited.revenue     ?? null,
+        ebitda:      edited.ebitda      ?? null,
+        description: edited.cim_summary || null,
+        dealId:      data.id,
+        isPending:   false,
+      }),
+    }).catch(() => {})
+
     // Record in intake queue as approved (non-fatal)
     try {
       await supabase.from('intake_queue').insert({
