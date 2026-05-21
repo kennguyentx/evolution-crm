@@ -6,6 +6,175 @@ import type { DealStage } from '@/types'
 import { formatCurrency } from '@/types'
 import { useIsMobile } from '@/hooks/useIsMobile'
 
+// ── Portfolio News types ──────────────────────────────────────────────────────
+
+interface NewsArticle {
+  title: string
+  link: string
+  pubDate: string
+  source: string
+}
+
+interface CompanyNews {
+  name: string
+  articles: NewsArticle[]
+}
+
+// ── Relative date helper ──────────────────────────────────────────────────────
+
+function relativeDate(pubDate: string): string {
+  if (!pubDate) return ''
+  const d = new Date(pubDate)
+  if (isNaN(d.getTime())) return pubDate
+  const diffMs = Date.now() - d.getTime()
+  const diffH  = Math.floor(diffMs / 3_600_000)
+  const diffD  = Math.floor(diffMs / 86_400_000)
+  if (diffH < 1)  return 'just now'
+  if (diffH < 24) return `${diffH}h ago`
+  if (diffD === 1) return 'yesterday'
+  return `${diffD} days ago`
+}
+
+// ── PortfolioNews component ───────────────────────────────────────────────────
+
+function PortfolioNews() {
+  const [companies, setCompanies] = useState<CompanyNews[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [sending, setSending]     = useState(false)
+  const [sent, setSent]           = useState(false)
+
+  useEffect(() => {
+    fetch('/api/portfolio-news')
+      .then(r => r.json())
+      .then(data => {
+        if (data.companies) setCompanies(data.companies)
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function handleSendEmail() {
+    setSending(true)
+    try {
+      await fetch('/api/portfolio-news/daily-email', { method: 'POST' })
+      setSent(true)
+      setTimeout(() => setSent(false), 4000)
+    } catch {}
+    setSending(false)
+  }
+
+  if (loading) {
+    return (
+      <div style={{ padding: '18px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+          <div style={{ fontSize: '13px', fontWeight: 600 }}>Portfolio Industry News</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '2px 8px', background: 'var(--surface-2)', borderRadius: '20px' }}>3-day digest</div>
+        </div>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          {[1, 2, 3].map(i => (
+            <div key={i} style={{ flex: '1 1 0', minWidth: 0 }}>
+              <div style={{ height: '12px', background: 'var(--border)', borderRadius: '4px', marginBottom: '8px', width: '60%' }} />
+              <div style={{ height: '10px', background: 'var(--border)', borderRadius: '4px', marginBottom: '6px', opacity: 0.6 }} />
+              <div style={{ height: '10px', background: 'var(--border)', borderRadius: '4px', width: '80%', opacity: 0.4 }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  const withArticles = companies.filter(c => c.articles.length > 0)
+  if (withArticles.length === 0) return null
+
+  return (
+    <div style={{ padding: '18px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px' }}>
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+        <div style={{ fontSize: '13px', fontWeight: 600 }}>Portfolio Industry News</div>
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '2px 8px', background: 'var(--surface-2)', borderRadius: '20px', border: '1px solid var(--border)' }}>
+          3-day digest
+        </span>
+        <div style={{ marginLeft: 'auto' }}>
+          <button
+            onClick={handleSendEmail}
+            disabled={sending}
+            style={{
+              fontSize: '11px',
+              padding: '4px 12px',
+              borderRadius: '6px',
+              border: '1px solid var(--border)',
+              background: sent ? 'var(--green, #059669)' : 'var(--surface-2)',
+              color: sent ? '#fff' : 'var(--text-secondary)',
+              cursor: sending ? 'wait' : 'pointer',
+              transition: 'all 0.15s',
+              fontWeight: 500,
+            }}
+          >
+            {sent ? 'Sent!' : sending ? 'Sending…' : 'Send email'}
+          </button>
+        </div>
+      </div>
+
+      {/* Multi-column grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(withArticles.length, 4)}, 1fr)`, gap: '16px', alignItems: 'start' }}>
+        {withArticles.map(company => (
+          <div key={company.name} style={{ minWidth: 0 }}>
+            {/* Company header */}
+            <div style={{
+              fontSize: '11px',
+              fontWeight: 700,
+              color: 'var(--accent)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              paddingBottom: '6px',
+              borderBottom: '1px solid var(--border)',
+              marginBottom: '8px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {company.name}
+            </div>
+
+            {/* Articles */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {company.articles.slice(0, 5).map((article, idx) => (
+                <div key={idx}>
+                  <a
+                    href={article.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      fontSize: '12px',
+                      fontWeight: 500,
+                      color: 'var(--text-primary)',
+                      textDecoration: 'none',
+                      lineHeight: 1.4,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 3,
+                      WebkitBoxOrient: 'vertical' as any,
+                      overflow: 'hidden',
+                    }}
+                    onMouseEnter={e => ((e.target as HTMLElement).style.color = 'var(--accent)')}
+                    onMouseLeave={e => ((e.target as HTMLElement).style.color = 'var(--text-primary)')}
+                  >
+                    {article.title}
+                  </a>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    {article.source && <span>{article.source}</span>}
+                    {article.source && article.pubDate && <span>·</span>}
+                    {article.pubDate && <span>{relativeDate(article.pubDate)}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 const ACTIVE_STAGES: DealStage[] = ['Teaser', 'Reviewing', 'Pre-LOI', 'LOI Submitted', 'Exclusivity']
 const FUNNEL_STAGES = ['Teaser', 'Reviewing', 'Pre-LOI', 'LOI Submitted', 'Exclusivity'] as DealStage[]
 const STALE_DAYS = 30
@@ -252,6 +421,9 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
+
+        {/* Portfolio Industry News */}
+        <PortfolioNews />
 
         {/* Recent Activity + Open Next Steps */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
