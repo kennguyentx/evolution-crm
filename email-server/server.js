@@ -24,7 +24,7 @@ const DEAL_NOTIFY_RECIPIENTS = ['ken@evolutionstrategy.com', 'sean@evolutionstra
 
 async function sendDealNotification({ companyName, stage, status, sector, geography, revenue, ebitda, askingPrice, askingMultiple, description, banker, dealId, isPending }) {
   const serverToken = process.env.POSTMARK_SERVER_TOKEN
-  const fromEmail   = process.env.FROM_EMAIL || 'deals@evolutionstrategy.com'
+  const fromEmail   = process.env.FROM_EMAIL || 'ken@evolutionstrategy.com'
   console.log(`[deal-notify] Called for "${companyName}" — token=${serverToken ? 'set' : 'MISSING'}`)
   if (!serverToken) return
 
