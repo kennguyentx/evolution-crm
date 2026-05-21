@@ -198,7 +198,7 @@ const CLOSED_STAGES = ['Closed (Platform)', 'Closed (Add-On)']
 
 function expectedDropboxFolder(companyName, stage, parentPortco = null) {
   const safe       = companyName.replace(/[<>:"/\\|?*]/g, '_')
-  const safeParent = parentPortco?.replace(/[<>:"/\\|?*]/g, '_')
+  const safeParent = parentPortco ? `!!${parentPortco.replace(/[<>:"/\\|?*]/g, '_')}` : null
   if (PASS_STAGES.includes(stage))   return `/Evolution Strategy Partners/Deals/!Passed Deals/${safeParent ? safeParent + '/' : ''}${safe}`
   if (CLOSED_STAGES.includes(stage)) return `/Evolution Strategy Partners/Portfolio Co's/${safe}`
   if (safeParent) return `/Evolution Strategy Partners/Deals/${safeParent}/${safe}`
