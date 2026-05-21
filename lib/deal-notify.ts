@@ -2,6 +2,8 @@
 // Shared deal notification email — called from both the intake approve route
 // and the weekly pipeline email API.
 
+import { generateLoiIcs, icsAttachment } from './ics'
+
 const DEAL_NOTIFY_RECIPIENTS = ['ken@evolutionstrategy.com', 'sean@evolutionstrategy.com']
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrategy.com'
 
@@ -19,6 +21,7 @@ export interface DealNotifyPayload {
   banker?: string | null
   dealId?: string | null
   isPending?: boolean
+  loiDate?: string | null   // YYYY-MM-DD — attaches .ics if provided
 }
 
 export async function sendDealNotification(payload: DealNotifyPayload): Promise<void> {
@@ -28,7 +31,7 @@ export async function sendDealNotification(payload: DealNotifyPayload): Promise<
   const {
     companyName, stage, status, sector, geography,
     revenue, ebitda, askingPrice, askingMultiple,
-    description, banker, dealId, isPending = false,
+    description, banker, dealId, isPending = false, loiDate,
   } = payload
 
   const fmt = (n: number) =>
@@ -83,6 +86,8 @@ export async function sendDealNotification(payload: DealNotifyPayload): Promise<
 
             ${isPending ? `<p style="margin:0 0 20px;font-size:13px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:10px 14px;">Review and approve this deal in Document Intake before it appears in the pipeline.</p>` : ''}
 
+            ${loiDate ? `<p style="margin:0 0 20px;font-size:13px;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:10px 14px;">📅 LOI Deadline: <strong>${new Date(loiDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</strong> — calendar invite attached</p>` : ''}
+
             <a href="${dealUrl}" style="display:inline-block;background:#0f172a;color:#ffffff;font-size:13px;font-weight:600;padding:10px 20px;border-radius:7px;text-decoration:none;margin-bottom:28px;">
               ${isPending ? 'Review in Intake →' : 'View Deal →'}
             </a>
@@ -114,6 +119,12 @@ export async function sendDealNotification(payload: DealNotifyPayload): Promise<
       Subject: subject,
       HtmlBody: html,
       MessageStream: 'outbound',
+      ...(loiDate && dealId ? {
+        Attachments: [icsAttachment(
+          generateLoiIcs({ dealId, companyName, loiDate, dealUrl }),
+          `LOI-${companyName.replace(/[^a-zA-Z0-9]/g, '-')}.ics`
+        )]
+      } : {}),
     }),
   })
 

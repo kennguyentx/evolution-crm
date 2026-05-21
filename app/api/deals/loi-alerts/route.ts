@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { generateLoiIcs, icsAttachment } from '@/lib/ics'
 
 const NOTIFY = ['ken@evolutionstrategy.com', 'sean@evolutionstrategy.com']
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrategy.com'
@@ -143,6 +144,15 @@ async function sendAlerts() {
       Subject: subject,
       HtmlBody: html,
       MessageStream: 'outbound',
+      Attachments: deals.map(d => icsAttachment(
+        generateLoiIcs({
+          dealId: d.id,
+          companyName: d.company_name,
+          loiDate: d.loi_date!,
+          dealUrl: `${APP_URL}/deals/${d.id}`,
+        }),
+        `LOI-${d.company_name.replace(/[^a-zA-Z0-9]/g, '-')}.ics`
+      )),
     }),
   })
 
