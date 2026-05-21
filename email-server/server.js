@@ -664,12 +664,13 @@ async function handleEmailIntake(req, res) {
             : companyNameForPath)
         : null
 
-      // Validate the stored dropbox_path has a real multi-segment path.
-      // A bare path like "/Scotty's Construction" (only one segment) means it
-      // was set incorrectly and will upload to the Dropbox root — fall back to
-      // the correctly constructed path instead.
+      // Validate the stored dropbox_path is a real company-level folder.
+      // Must have at least 3 path segments, e.g. /Evolution Strategy Partners/Deals/Henke Excavating
+      // Paths with only 2 segments (e.g. /Evolution Strategy Partners/Deals) are the root Deals
+      // folder and are invalid — fall back to the correctly constructed expected path instead.
       const storedFolder = toFolder(existingDeal?.dropbox_path)
-      const storedFolderValid = storedFolder && storedFolder.replace(/^\//, '').includes('/')
+      const storedFolderSegments = storedFolder ? storedFolder.replace(/^\//, '').split('/').filter(Boolean) : []
+      const storedFolderValid = storedFolderSegments.length >= 3
 
       const targetFolder = existingDeal
         ? (storedFolderValid ? storedFolder : (companyForPath ? expectedDropboxFolder(companyForPath, effectiveStage) : null))
