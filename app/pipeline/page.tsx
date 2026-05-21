@@ -78,6 +78,18 @@ export default function PipelinePage() {
       })
   }, [])
 
+  // Close email panel on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowEmailPanel(false)
+        setShowNewDeal(false)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
   const saveRecipients = async (list: string[]) => {
     setSavingRecipients(true)
     await fetch('/api/pipeline/weekly-email', {

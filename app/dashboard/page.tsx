@@ -42,11 +42,11 @@ function relativeDate(pubDate: string): string {
 // ── LOI Deadlines component ───────────────────────────────────────────────────
 
 function LoiDeadlines({ deals }: { deals: any[] }) {
-  const upcoming = deals.filter(d => d.loi_date).sort((a, b) => a.loi_date.localeCompare(b.loi_date))
-  if (!upcoming.length) return null
-
   const today = new Date(); today.setHours(0, 0, 0, 0)
   const daysUntil = (d: string) => Math.round((new Date(d + 'T12:00:00').getTime() - today.getTime()) / 86400000)
+  const upcoming = deals.filter(d => d.loi_date && daysUntil(d.loi_date) >= 0).sort((a, b) => a.loi_date.localeCompare(b.loi_date))
+  if (!upcoming.length) return null
+
   const fmtDate = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
   return (
@@ -440,16 +440,23 @@ export default function DashboardPage() {
                         {ebitda > 0 && <span style={{ marginLeft: '6px' }}>{formatCurrency(ebitda)}</span>}
                       </span>
                     </div>
-                    <div style={{ height: '20px', background: 'var(--border)', borderRadius: '4px', overflow: 'hidden', position: 'relative' }}>
+                    <div style={{ height: '20px', background: 'var(--border)', borderRadius: '4px', overflow: 'visible', position: 'relative' }}>
                       <div style={{
-                        position: 'absolute', left: `${marginPct}%`, width: `${widthPct}%`, height: '100%',
+                        position: 'absolute', left: `${marginPct}%`, width: `${widthPct || 0}%`, height: '100%',
                         background: `hsl(${280 - idx * 30}, 60%, ${count > 0 ? 45 : 70}%)`,
                         borderRadius: '3px', transition: 'width 0.3s, left 0.3s',
-                        minWidth: count > 0 ? '4px' : '0',
+                        minWidth: count > 0 ? '6px' : '0',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        overflow: 'visible',
                       }}>
-                        {count > 0 && widthPct > 15 && (
-                          <span style={{ fontSize: '10px', color: 'white', fontWeight: 600 }}>{count}</span>
+                        {count > 0 && (
+                          <span style={{
+                            fontSize: '10px', color: widthPct > 20 ? 'white' : `hsl(${280 - idx * 30}, 60%, 35%)`,
+                            fontWeight: 700,
+                            position: widthPct <= 20 ? 'absolute' : 'static',
+                            left: widthPct <= 20 ? 'calc(100% + 4px)' : undefined,
+                            whiteSpace: 'nowrap',
+                          }}>{count}</span>
                         )}
                       </div>
                     </div>

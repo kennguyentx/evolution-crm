@@ -1244,6 +1244,15 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
       .then(({ data }) => setPortcos(data || []))
   }, [])
 
+  // Close review panel on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setReviewing(null)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
   async function load() {
     setLoading(true)
     const res = await fetch('/api/intake/queue?status=pending')
