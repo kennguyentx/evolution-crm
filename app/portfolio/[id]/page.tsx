@@ -189,6 +189,7 @@ export default function PortfolioCompanyPage() {
       acquisition_revenue:  company.acquisition_revenue  != null ? (company.acquisition_revenue  / 1e6).toFixed(2) : '',
       acquisition_ebitda:   company.acquisition_ebitda   != null ? (company.acquisition_ebitda   / 1e6).toFixed(2) : '',
       acquisition_ev:       company.acquisition_ev       != null ? (company.acquisition_ev       / 1e6).toFixed(2) : '',
+      news_search_name:     company.news_search_name || '',
     })
     setEditingDetails(true)
   }
@@ -204,6 +205,7 @@ export default function PortfolioCompanyPage() {
       acquisition_revenue: detailEdits.acquisition_revenue !== '' ? parseFloat(detailEdits.acquisition_revenue) * 1e6 : null,
       acquisition_ebitda:  detailEdits.acquisition_ebitda  !== '' ? parseFloat(detailEdits.acquisition_ebitda)  * 1e6 : null,
       acquisition_ev:      detailEdits.acquisition_ev       !== '' ? parseFloat(detailEdits.acquisition_ev)       * 1e6 : null,
+      news_search_name:    detailEdits.news_search_name?.trim() || null,
     }
     await supabase.from('portfolio_companies').update(payload).eq('id', companyId)
     setCompany((prev: any) => prev ? { ...prev, ...payload } : prev)
@@ -357,6 +359,11 @@ export default function PortfolioCompanyPage() {
                         <label className="label">Geography</label>
                         <input className="input" value={detailEdits.geography || ''} onChange={e => setDetailEdits((p: any) => ({ ...p, geography: e.target.value }))} placeholder="e.g. Texas" />
                       </div>
+                    </div>
+                    <div>
+                      <label className="label">News Search Name</label>
+                      <input className="input" value={detailEdits.news_search_name || ''} onChange={e => setDetailEdits((p: any) => ({ ...p, news_search_name: e.target.value }))} placeholder={`Full legal name for news search, e.g. "${company.name} LLC"`} />
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>Used to search for company-specific news. Leave blank to use the company name above.</div>
                     </div>
                     <div>
                       <label className="label">Acquisition Date</label>

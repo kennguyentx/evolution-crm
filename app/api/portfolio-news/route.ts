@@ -83,7 +83,7 @@ export async function GET() {
   // 1. Fetch active portfolio companies with sector + geography
   const { data: companies, error } = await supabase
     .from('portfolio_companies')
-    .select('id, name, sector, geography')
+    .select('id, name, sector, geography, news_search_name')
     .eq('status', 'Active')
     .order('name')
 
@@ -94,7 +94,7 @@ export async function GET() {
   // 2. For each company, run 3 RSS searches in parallel
   const rawByCompany = await Promise.all(
     companies.map(async (c) => {
-      const name = c.name
+      const name = c.news_search_name?.trim() || c.name  // use custom search name if set
       const sector = c.sector || ''
       const geo = c.geography || ''
 
