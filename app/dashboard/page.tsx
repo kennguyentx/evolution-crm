@@ -88,7 +88,6 @@ function PortfolioNews() {
   }
 
   const withArticles = companies.filter(c => c.articles.length > 0)
-  if (withArticles.length === 0) return null
 
   return (
     <div style={{ padding: '18px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px' }}>
@@ -120,6 +119,9 @@ function PortfolioNews() {
       </div>
 
       {/* Multi-column grid */}
+      {withArticles.length === 0 ? (
+        <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>No news found in the last 3 days. Set a "News Search Name" on each portfolio company page for better results.</div>
+      ) : (
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(withArticles.length, 4)}, 1fr)`, gap: '16px', alignItems: 'start' }}>
         {withArticles.map(company => (
           <div key={company.name} style={{ minWidth: 0 }}>
@@ -191,6 +193,7 @@ function PortfolioNews() {
           </div>
         ))}
       </div>
+      )}
     </div>
   )
 }
