@@ -868,6 +868,19 @@ export default function RaisesPage() {
   const [showNewRaise, setShowNewRaise] = useState(false)
   const [showEditRaise, setShowEditRaise] = useState(false)
 
+  // Close modals on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowNewRaise(false)
+        setShowEditRaise(false)
+        setShowAddParticipant(false)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
   // Load raises + deals
   useEffect(() => {
     const load = async () => {

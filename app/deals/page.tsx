@@ -71,6 +71,15 @@ export default function DealsPage() {
 
   useEffect(() => { fetchCounts() }, [fetchCounts])
 
+  // Close modals on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowNewDeal(false)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
   const buildQuery = useCallback((field = sortField, dir = sortDir, from = 0) => {
     const dbCol: Record<string, string> = {
       company_name: 'company_name', sector: 'sector', geography: 'geography',

@@ -31,6 +31,18 @@ export default function ContactsPage() {
   const router = useRouter()
   const isMobile = useIsMobile()
 
+  // Close modals on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowNew(false)
+        setEditingContact(null)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
   useEffect(() => {
     const fetchCounts = async () => {
       const { count: totalCount } = await supabase

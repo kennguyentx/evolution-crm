@@ -98,6 +98,19 @@ export default function NotesPage() {
   const editDetectTimer = useRef<any>(null)
   const searchTimer = useRef<any>(null)
 
+  // Close panels on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowAddForm(false)
+        setEditingNoteId(null)
+        setExpandedId(null)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
   // Fetch deals for filter dropdown
   useEffect(() => {
     supabase.from('deals').select('id, company_name').eq('status', 'Active').order('company_name')

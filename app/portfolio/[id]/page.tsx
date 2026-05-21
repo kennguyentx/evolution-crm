@@ -68,6 +68,18 @@ export default function PortfolioCompanyPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  // Close panels on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowAddPeriod(false)
+        setEditingDetails(false)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
   // File upload handler
   const onDrop = useCallback(async (files: File[]) => {
     const file = files[0]

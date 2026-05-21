@@ -48,6 +48,15 @@ export default function PortfolioPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  // Close add modal on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowAdd(false)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
   const addCompany = async () => {
     if (!newCo.name.trim()) return
     setAdding(true)

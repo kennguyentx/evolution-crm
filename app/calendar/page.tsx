@@ -70,6 +70,18 @@ export default function CalendarPage() {
       .then(({ data }) => setPortfolioCompanies(data ?? []))
   }, [])
 
+  // Close event form on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowForm(false)
+        setEditingEvent(null)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
   const loadEvents = async (y = year, m = month) => {
     setLoading(true)
     const pad = (n: number) => String(n).padStart(2, '0')

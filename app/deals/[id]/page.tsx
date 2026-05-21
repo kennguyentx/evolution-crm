@@ -157,6 +157,26 @@ export default function DealDetailPage() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
+  // Close panels/modals on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowCimModal(false)
+        setEditingStage(false)
+        setShowDeleteConfirm(false)
+        setEditingContact(null)
+        setShowContactSearch(false)
+        setShowCreateContact(false)
+        setShowCapitalForm(false)
+        setShowActivityForm(false)
+        setEditingInteractionId(null)
+        setEditingInteraction(null)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
   // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {

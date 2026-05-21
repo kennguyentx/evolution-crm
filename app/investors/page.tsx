@@ -56,6 +56,15 @@ export default function InvestorsPage() {
 
   useEffect(() => { fetchInvestors() }, [])
 
+  // Close form panel on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowForm(false)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
   const createInvestor = async () => {
     if (!form.first_name || !form.last_name) return
     setSaving(true)
