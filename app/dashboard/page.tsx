@@ -13,10 +13,14 @@ interface NewsArticle {
   link: string
   pubDate: string
   source: string
+  category: 'company' | 'industry' | 'transaction'
+  multiple?: string | null
 }
 
 interface CompanyNews {
   name: string
+  sector: string | null
+  geography: string | null
   articles: NewsArticle[]
 }
 
@@ -138,35 +142,51 @@ function PortfolioNews() {
 
             {/* Articles */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {company.articles.slice(0, 5).map((article, idx) => (
-                <div key={idx}>
-                  <a
-                    href={article.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      fontSize: '12px',
-                      fontWeight: 500,
-                      color: 'var(--text-primary)',
-                      textDecoration: 'none',
-                      lineHeight: 1.4,
-                      display: '-webkit-box',
-                      WebkitLineClamp: 3,
-                      WebkitBoxOrient: 'vertical' as any,
-                      overflow: 'hidden',
-                    }}
-                    onMouseEnter={e => ((e.target as HTMLElement).style.color = 'var(--accent)')}
-                    onMouseLeave={e => ((e.target as HTMLElement).style.color = 'var(--text-primary)')}
-                  >
-                    {article.title}
-                  </a>
-                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                    {article.source && <span>{article.source}</span>}
-                    {article.source && article.pubDate && <span>·</span>}
-                    {article.pubDate && <span>{relativeDate(article.pubDate)}</span>}
+              {company.articles.slice(0, 6).map((article, idx) => {
+                const catColor = article.category === 'transaction' ? '#d97706'
+                  : article.category === 'industry' ? '#059669' : '#6366f1'
+                const catLabel = article.category === 'transaction' ? 'M&A'
+                  : article.category === 'industry' ? 'Industry' : 'Company'
+                return (
+                  <div key={idx}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '3px' }}>
+                      <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 5px', borderRadius: '3px', background: `${catColor}18`, color: catColor, letterSpacing: '0.04em', flexShrink: 0 }}>
+                        {catLabel}
+                      </span>
+                      {article.multiple && (
+                        <span style={{ fontSize: '9px', fontWeight: 700, padding: '1px 5px', borderRadius: '3px', background: '#0f172a12', color: '#0f172a', letterSpacing: '0.04em' }}>
+                          {article.multiple}
+                        </span>
+                      )}
+                    </div>
+                    <a
+                      href={article.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: 500,
+                        color: 'var(--text-primary)',
+                        textDecoration: 'none',
+                        lineHeight: 1.4,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 3,
+                        WebkitBoxOrient: 'vertical' as any,
+                        overflow: 'hidden',
+                      }}
+                      onMouseEnter={e => ((e.target as HTMLElement).style.color = 'var(--accent)')}
+                      onMouseLeave={e => ((e.target as HTMLElement).style.color = 'var(--text-primary)')}
+                    >
+                      {article.title}
+                    </a>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                      {article.source && <span>{article.source}</span>}
+                      {article.source && article.pubDate && <span>·</span>}
+                      {article.pubDate && <span>{relativeDate(article.pubDate)}</span>}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         ))}
