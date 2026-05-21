@@ -11,6 +11,10 @@
     {
       "path": "/api/portfolio-news/daily-email",
       "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/deals/loi-alerts",
+      "schedule": "0 14 * * *"
     }
   ]
 }

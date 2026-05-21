@@ -39,6 +39,55 @@ function relativeDate(pubDate: string): string {
   return `${diffD} days ago`
 }
 
+// ── LOI Deadlines component ───────────────────────────────────────────────────
+
+function LoiDeadlines({ deals }: { deals: any[] }) {
+  const upcoming = deals.filter(d => d.loi_date).sort((a, b) => a.loi_date.localeCompare(b.loi_date))
+  if (!upcoming.length) return null
+
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const daysUntil = (d: string) => Math.round((new Date(d + 'T12:00:00').getTime() - today.getTime()) / 86400000)
+  const fmtDate = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+
+  return (
+    <div style={{ padding: '18px', background: 'var(--surface)', border: '1px solid #dc262620', borderRadius: '10px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ fontSize: '13px', fontWeight: 600 }}>LOI Deadlines</div>
+          <span style={{ fontSize: '11px', color: '#dc2626', background: '#dc262610', padding: '2px 8px', borderRadius: '20px' }}>
+            {upcoming.length} upcoming
+          </span>
+        </div>
+        <Link href="/pipeline" style={{ fontSize: '11px', color: 'var(--accent)', textDecoration: 'none' }}>View pipeline →</Link>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {upcoming.map((d: any) => {
+          const days = daysUntil(d.loi_date)
+          const color = days <= 2 ? '#dc2626' : days <= 7 ? '#d97706' : 'var(--text-muted)'
+          const label = days === 0 ? 'TODAY' : days === 1 ? 'Tomorrow' : `${days}d`
+          return (
+            <Link key={d.id} href={`/deals/${d.id}`} style={{ textDecoration: 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 10px', borderRadius: '7px', transition: 'background 0.1s' }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+              >
+                <div style={{ minWidth: '52px', textAlign: 'right' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color }}>{label}</div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{fmtDate(d.loi_date)}</div>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.company_name}</div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{d.stage}{d.sector ? ` · ${d.sector}` : ''}</div>
+                </div>
+              </div>
+            </Link>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ── PortfolioNews component ───────────────────────────────────────────────────
 
 function PortfolioNews() {
@@ -254,7 +303,7 @@ export default function DashboardPage() {
         { data: nextStepsData },
         { data: activityData },
       ] = await Promise.all([
-        supabase.from('deals').select('id, company_name, stage, ebitda, revenue, sector').in('stage', ACTIVE_STAGES),
+        supabase.from('deals').select('id, company_name, stage, ebitda, revenue, sector, loi_date').in('stage', ACTIVE_STAGES),
         supabase.from('capital_raises').select('id, name, target_equity, target_debt, deal:deals(company_name)').eq('status', 'Open'),
         supabase.from('raise_participants').select('raise_id, committed_amount, debt_amount, status').in('status', ['invested', 'confirmed']),
         supabase.from('calendar_events')
@@ -444,6 +493,9 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
+
+        {/* LOI Deadlines */}
+        <LoiDeadlines deals={deals} />
 
         {/* Portfolio Industry News */}
         <PortfolioNews />

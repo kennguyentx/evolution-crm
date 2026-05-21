@@ -271,6 +271,7 @@ const DOC_SYSTEM_PROMPT = `You extract deal data from teasers and CIMs forwarded
   "banker_firm": "string or null",
   "asking_price": "number or null",
   "asking_multiple": "number or null",
+  "loi_deadline": "string or null — LOI due date / bid date / indication deadline in YYYY-MM-DD format. Look for phrases like 'LOI deadline', 'bid date', 'indication due', 'first round bids due', 'submit by'. Only set if an explicit calendar date is given.",
   "contacts": [
     {
       "name": "string",
@@ -737,6 +738,7 @@ async function handleEmailIntake(req, res) {
         if (primary.extracted.customer_concentration) updates.customer_concentration = primary.extracted.customer_concentration
         if (primary.extracted.employee_count != null) updates.employee_count = primary.extracted.employee_count
         if (primary.extracted.financial_summary) updates.financial_summary = primary.extracted.financial_summary
+        if (primary.extracted.loi_deadline) updates.loi_date = primary.extracted.loi_deadline
         if (dealFolderPath)  updates.dropbox_path = dealFolderPath
         if (renamedCompany)  updates.company_name = renamedCompany
         if (Object.keys(updates).length > 0) {
@@ -791,6 +793,7 @@ async function handleEmailIntake(req, res) {
         if (primary.extracted.historical_financials?.length)               dealPayload.historical_financials  = primary.extracted.historical_financials
         if (primary.extracted.customer_concentration)                      dealPayload.customer_concentration = primary.extracted.customer_concentration
         if (primary.extracted.employee_count != null)                      dealPayload.employee_count         = primary.extracted.employee_count
+        if (primary.extracted.loi_deadline)                                dealPayload.loi_date               = primary.extracted.loi_deadline
 
         const { data: deal, error: dealErr } = await supabase.from('deals').insert(dealPayload).select('id').single()
         if (dealErr) console.error(`[email-intake] Deal insert failed:`, dealErr.message, dealErr.details)
