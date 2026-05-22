@@ -42,7 +42,7 @@ export default function NewContactModal({ onClose, onCreated, contact, prefill }
     if (!contact?.id) return
     supabase
       .from('contact_deal_links')
-      .select('role, deal:deals(id, company_name, stage)')
+      .select('role, deal:deals(id, company_name, stage, status, sector, revenue, ebitda, asking_price)')
       .eq('contact_id', contact.id)
       .then(({ data }) => { if (data) setDealLinks(data) })
     supabase
@@ -191,44 +191,60 @@ export default function NewContactModal({ onClose, onCreated, contact, prefill }
           </div>
 
           {/* Linked deals — only shown when editing */}
-          {isEdit && dealLinks.length > 0 && (
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
-              <label className="label" style={{ marginBottom: '10px' }}>Linked Deals</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {dealLinks.map((link: any, i: number) => (
-                  <Link
-                    key={i}
-                    href={`/deals/${link.deal?.id}`}
-                    onClick={onClose}
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '8px 12px',
-                      background: 'var(--surface-2)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '6px',
-                      textDecoration: 'none',
-                      color: 'var(--text-primary)',
-                      fontSize: '13px',
-                    }}
-                  >
-                    <div>
-                      <span style={{ fontWeight: 500 }}>{link.deal?.company_name}</span>
-                      {link.role && <span style={{ color: 'var(--text-muted)', fontSize: '11px', marginLeft: '8px' }}>{link.role}</span>}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{
-                        fontSize: '11px', padding: '2px 8px', borderRadius: '999px',
-                        background: 'var(--accent-muted)', color: 'var(--accent)',
-                      }}>
-                        {link.deal?.stage}
-                      </span>
-                      <ExternalLink size={12} style={{ color: 'var(--text-muted)' }} />
-                    </div>
-                  </Link>
-                ))}
+          {isEdit && dealLinks.length > 0 && (() => {
+            const fmt = (n: number) => n >= 1e6 ? `$${(n/1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n/1e3).toFixed(0)}K` : `$${n}`
+            const isPassed = (d: any) => d?.status === 'Pass' || d?.stage === 'Pass'
+            const active = dealLinks.filter(l => !isPassed(l.deal))
+            const passed = dealLinks.filter(l => isPassed(l.deal))
+            const renderLink = (link: any, i: number) => {
+              const d = link.deal
+              const fins = [d?.revenue && `Rev: ${fmt(d.revenue)}`, d?.ebitda && `EBITDA: ${fmt(d.ebitda)}`].filter(Boolean).join(' · ')
+              const isPass = isPassed(d)
+              return (
+                <Link key={i} href={`/deals/${d?.id}`} onClick={onClose} style={{
+                  display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px',
+                  padding: '9px 12px',
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '6px',
+                  textDecoration: 'none',
+                  color: 'var(--text-primary)',
+                  fontSize: '13px',
+                  opacity: isPass ? 0.65 : 1,
+                }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d?.company_name}</div>
+                    {d?.sector && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{d.sector}</div>}
+                    {fins && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>{fins}</div>}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
+                    <span style={{
+                      fontSize: '10px', padding: '2px 7px', borderRadius: '999px', whiteSpace: 'nowrap',
+                      background: isPass ? '#fef2f2' : 'var(--accent-muted)',
+                      color: isPass ? '#dc2626' : 'var(--accent)',
+                    }}>
+                      {isPass ? 'Passed' : d?.stage}
+                    </span>
+                    <ExternalLink size={11} style={{ color: 'var(--text-muted)' }} />
+                  </div>
+                </Link>
+              )
+            }
+            return (
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+                <label className="label" style={{ marginBottom: '10px' }}>
+                  Deal History ({dealLinks.length} deal{dealLinks.length !== 1 ? 's' : ''})
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {active.map(renderLink)}
+                  {passed.length > 0 && active.length > 0 && (
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '6px', marginBottom: '2px' }}>Passed</div>
+                  )}
+                  {passed.map((l, i) => renderLink(l, active.length + i))}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
           {/* Linked notes — only shown when editing and notes exist */}
           {isEdit && contactNotes.length > 0 && (
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>

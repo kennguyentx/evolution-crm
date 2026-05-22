@@ -2,9 +2,9 @@
 import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { Search, X, FileText, Users, Building2 } from 'lucide-react'
+import { Search, X, FileText, Users, Building2, StickyNote, Briefcase } from 'lucide-react'
 
-type ResultType = 'deal' | 'contact' | 'capital_contact'
+type ResultType = 'deal' | 'contact' | 'capital_contact' | 'portfolio' | 'note'
 interface Result {
   id: string
   label: string
@@ -41,15 +41,19 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
     setLoading(true)
     timer.current = setTimeout(async () => {
       const q = query.trim()
-      const [{ data: deals }, { data: contacts }, { data: caps }] = await Promise.all([
+      const [{ data: deals }, { data: contacts }, { data: caps }, { data: portcos }, { data: notes }] = await Promise.all([
         supabase.from('deals').select('id, company_name, sector, stage').ilike('company_name', `%${q}%`).limit(5),
         supabase.from('contacts').select('id, first_name, last_name, firm').or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,firm.ilike.%${q}%`).limit(5),
         supabase.from('capital_contacts').select('id, firm, contact_name').or(`firm.ilike.%${q}%,contact_name.ilike.%${q}%`).limit(3),
+        supabase.from('portfolio_companies').select('id, name, sector').ilike('name', `%${q}%`).limit(3),
+        supabase.from('notes').select('id, summary, note_date').ilike('summary', `%${q}%`).not('summary', 'is', null).order('note_date', { ascending: false }).limit(3),
       ])
       const r: Result[] = [
         ...(deals ?? []).map((d: any) => ({ id: d.id, label: d.company_name, sublabel: [d.sector, d.stage].filter(Boolean).join(' · ') || undefined, type: 'deal' as const, href: `/deals/${d.id}` })),
         ...(contacts ?? []).map((c: any) => ({ id: c.id, label: `${c.first_name} ${c.last_name}`, sublabel: c.firm ?? undefined, type: 'contact' as const, href: `/contacts?open=${c.id}` })),
         ...(caps ?? []).map((c: any) => ({ id: c.id, label: c.firm, sublabel: c.contact_name ?? undefined, type: 'capital_contact' as const, href: `/raises/contacts?firm=${encodeURIComponent(c.firm)}` })),
+        ...(portcos ?? []).map((p: any) => ({ id: p.id, label: p.name, sublabel: p.sector ?? undefined, type: 'portfolio' as const, href: `/portfolio/${p.id}` })),
+        ...(notes ?? []).map((n: any) => ({ id: n.id, label: n.summary?.slice(0, 60) + (n.summary?.length > 60 ? '…' : ''), sublabel: n.note_date ? new Date(n.note_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : undefined, type: 'note' as const, href: `/notes` })),
       ]
       setResults(r)
       setSelected(0)
@@ -73,6 +77,8 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
   const typeIcon = (type: ResultType) => {
     if (type === 'deal') return <FileText size={12} />
     if (type === 'contact') return <Users size={12} />
+    if (type === 'portfolio') return <Briefcase size={12} />
+    if (type === 'note') return <StickyNote size={12} />
     return <Building2 size={12} />
   }
 
