@@ -97,7 +97,7 @@ async function runSend() {
   const staleThreshold = new Date(today); staleThreshold.setDate(today.getDate() - STALE_DAYS)
 
   const daysUntilLoi = (d: string) =>
-    Math.round((new Date(d + 'T12:00:00').getTime() - today.getTime()) / 86400000)
+    Math.floor((new Date(d + 'T12:00:00').getTime() - today.getTime()) / 86400000)
 
   const loiDeals = deals
     .filter(d => d.loi_date && daysUntilLoi(d.loi_date) >= 0 && new Date(d.loi_date + 'T12:00:00') <= in14)
@@ -187,7 +187,7 @@ function buildHtml({ deals, contactsByDeal, loiDeals, staleDeals, weekOf }: {
   }
 
   const loiRow = (d: any) => {
-    const days = Math.round((new Date(d.loi_date + 'T12:00:00').getTime() - Date.now()) / 86400000)
+    const days = Math.floor((new Date(d.loi_date + 'T12:00:00').getTime() - Date.now()) / 86400000)
     const color = days <= 2 ? '#dc2626' : '#d97706'
     return `
       <tr>

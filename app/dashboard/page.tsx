@@ -43,7 +43,7 @@ function relativeDate(pubDate: string): string {
 
 function LoiDeadlines({ deals }: { deals: any[] }) {
   const today = new Date(); today.setHours(0, 0, 0, 0)
-  const daysUntil = (d: string) => Math.round((new Date(d + 'T12:00:00').getTime() - today.getTime()) / 86400000)
+  const daysUntil = (d: string) => Math.floor((new Date(d + 'T12:00:00').getTime() - today.getTime()) / 86400000)
   const upcoming = deals.filter(d => d.loi_date && daysUntil(d.loi_date) >= 0).sort((a, b) => a.loi_date.localeCompare(b.loi_date))
   if (!upcoming.length) return null
 

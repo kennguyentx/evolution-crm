@@ -55,7 +55,7 @@ async function sendAlerts() {
 
   const daysUntil = (d: string) => {
     const diff = new Date(d + 'T12:00:00').getTime() - today.getTime()
-    return Math.round(diff / 86400000)
+    return Math.floor(diff / 86400000)
   }
 
   const urgent  = deals.filter(d => daysUntil(d.loi_date!) <= 2)
