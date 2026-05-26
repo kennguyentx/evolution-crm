@@ -60,18 +60,30 @@ export default function CCSyncPanel({ onClose }: Props) {
     setCcCheckStatus('checking')
     try {
       const res = await fetch('/api/constant-contact/compare')
-      if (!res.ok) { setCcCheckStatus('done'); return }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        console.error('[CC check] compare failed:', res.status, body)
+        setCcCheckStatus('done')
+        return
+      }
       const data = await res.json()
       if (data.not_connected) { setCcCheckStatus('done'); return }
+
+      console.log('[CC check] cc_total:', data.cc_total, 'matched:', data.matched?.length)
 
       // matched = nexus contacts already in CC (matched by email)
       const matchedIds = new Set<string>((data.matched || []).map((c: any) => c.id))
       if (matchedIds.size > 0) {
-        setCcAlreadyInCount(matchedIds.size)
-        setContacts(prev => prev.filter(c => !matchedIds.has(c.id)))
+        // Count only contacts actually removed from the panel (banker/lender/lp)
+        setContacts(prev => {
+          const next = prev.filter(c => !matchedIds.has(c.id))
+          const removed = prev.length - next.length
+          if (removed > 0) setCcAlreadyInCount(removed)
+          return next
+        })
       }
-    } catch {
-      // silent — CC check is best-effort, don't block the UI
+    } catch (err) {
+      console.error('[CC check] error:', err)
     } finally {
       setCcCheckStatus('done')
     }
