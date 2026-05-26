@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err.message }, { status: 503 })
   }
 
-  const { first_name, last_name, email, phone, firm, title } = await req.json()
+  const { id, first_name, last_name, email, phone, firm, title } = await req.json()
 
   if (!email && !first_name) {
     return NextResponse.json({ error: 'email or first_name required' }, { status: 400 })
@@ -67,5 +67,18 @@ export async function POST(req: NextRequest) {
   }
 
   const data = await res.json()
+
+  // Stamp cc_synced_at so this contact is excluded from future sync panel loads
+  if (id) {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+    await supabase
+      .from('contacts')
+      .update({ cc_synced_at: new Date().toISOString() })
+      .eq('id', id)
+  }
+
   return NextResponse.json({ synced: true, contact_id: data.contact_id, action: data.action })
 }

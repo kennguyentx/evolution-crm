@@ -124,12 +124,14 @@ export default function CCSyncPanel({ onClose }: Props) {
           const res = await fetch('/api/constant-contact/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(c),
+            body: JSON.stringify({ id: c.id, first_name: c.first_name, last_name: c.last_name, email: c.email, phone: c.phone, firm: c.firm, title: c.title }),
           })
           const json = await res.json().catch(() => ({}))
           if (res.ok) {
             synced++
             setSyncedIds(prev => new Set([...prev, c.id]))
+            // Remove from list immediately — cc_synced_at is now set in DB
+            setContacts(prev => prev.filter(x => x.id !== c.id))
           } else {
             failed++
             setContactErrors(prev => ({ ...prev, [c.id]: json.error || `HTTP ${res.status}` }))
