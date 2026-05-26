@@ -205,6 +205,33 @@ function expectedDropboxFolder(companyName, stage, parentPortco = null) {
   return `/Evolution Strategy Partners/Deals/${safe}`
 }
 
+// ── Email address helpers ────────────────────────────────────────────────────
+// Parse "Display Name <email@domain.com>" or plain "email@domain.com"
+function parseEmailAddress(str) {
+  if (!str) return { name: '', email: '' }
+  const match = str.match(/^(.+?)\s*<([^>]+)>$/)
+  if (match) return { name: match[1].trim().replace(/^["']|["']$/g, ''), email: match[2].trim() }
+  return { name: '', email: str.trim() }
+}
+
+// Find the original sender from a forwarded email body (Outlook / Gmail / Apple Mail formats)
+function extractOriginalSender(text) {
+  if (!text) return null
+  // Look for a "From:" line that appears after a forwarded-message divider
+  const fwdBlock = text.match(/(?:[-_]{3,}|Forwarded message|Original Message)[\s\S]{0,120}?\nFrom:\s*(.+)/i)
+  if (fwdBlock) {
+    const { name, email } = parseEmailAddress(fwdBlock[1].trim())
+    if (email && email.includes('@')) return { name, email }
+  }
+  // Fallback: first standalone "From: name <email>" line in the body
+  const anyFrom = text.match(/\nFrom:\s*(.+<[^>]+@[^>]+>)/i)
+  if (anyFrom) {
+    const { name, email } = parseEmailAddress(anyFrom[1].trim())
+    if (email && email.includes('@')) return { name, email }
+  }
+  return null
+}
+
 // ── Utilities ────────────────────────────────────────────────────────────────
 function toFolder(p) {
   if (!p) return null
@@ -246,7 +273,7 @@ const DOC_SYSTEM_PROMPT = `You extract deal data from teasers and CIMs forwarded
 {
   "doc_type": "teaser | cim | nda | other",
   "company_name": "string or null",
-  "sector": "string — closest match from: Underground Utilities | Electrical Contracting | Civil / Public Works | Commercial Landscaping | Fiber Optics | HVAC | Plumbing | Industrial Services | Environmental Services | Construction & Engineering. If none fit, short descriptive name.",
+  "sector": "string — the most accurate industry label for this business. Prefer terms from this list when they genuinely fit: Underground Utilities | Electrical Contracting | Civil / Public Works | Commercial Landscaping | Fiber Optics | HVAC | Plumbing | Industrial Services | Environmental Services | Construction & Engineering. If the business is in a different industry (e.g. healthcare, manufacturing, food service, technology, logistics, professional services), use a clear 2-4 word description of that actual industry. Do NOT force-fit a business into a category above if it does not belong there.",
   "geography": "string or null — primary state(s) or region",
   "deal_type": "platform | add-on | recap | growth",
   "revenue": "number in raw dollars or null — use the most recent / LTM figure",
@@ -722,6 +749,31 @@ async function handleEmailIntake(req, res) {
         ...extracted_docs.flatMap(d => d.extracted.contacts ?? []),
         ...(instructions.contacts ?? []),
       ])
+
+      // ── Capture sender as contact ─────────────────────────────────────────
+      // If the email came directly from an external sender, add them.
+      // If it was forwarded by an internal user (Ken/Sean), find the original
+      // sender buried in the forwarded body.
+      const senderEmail = body.FromFull?.Email ?? parseEmailAddress(from).email
+      const senderName  = body.FromFull?.Name  ?? parseEmailAddress(from).name
+      const alreadyHave = email => allContacts.some(c => c.email?.toLowerCase() === email.toLowerCase())
+
+      if (senderEmail && !isInternal(senderEmail) && !alreadyHave(senderEmail)) {
+        allContacts.push({
+          name:  senderName || senderEmail.split('@')[0],
+          email: senderEmail,
+          firm: null, title: null, phone: null,
+          role: 'Source / Banker',
+        })
+        console.log(`[email-intake] Sender captured: ${senderName} <${senderEmail}>`)
+      } else if (isInternal(senderEmail)) {
+        // Internal forwarder — extract the original sender from the quoted body
+        const orig = extractOriginalSender(text)
+        if (orig && !isInternal(orig.email) && !alreadyHave(orig.email)) {
+          allContacts.push({ ...orig, firm: null, title: null, phone: null, role: 'Source / Banker' })
+          console.log(`[email-intake] Original sender captured from forwarded body: ${orig.name} <${orig.email}>`)
+        }
+      }
 
       const docLabel       = primary.extracted.doc_type === 'cim' ? 'CIM' : 'Teaser'
       const supportingLabel = supporting.length > 0 ? ` Also received: ${supporting.map(d => d.fileName).join(', ')}.` : ''
