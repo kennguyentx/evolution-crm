@@ -52,6 +52,7 @@ export default function CCSyncPanel({ onClose }: Props) {
   const [syncedIds, setSyncedIds] = useState<Set<string>>(new Set())
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [contactErrors, setContactErrors] = useState<Record<string, string>>({})
+  const [typeFilter, setTypeFilter] = useState<string>('all')
   const [lists, setLists] = useState<{ id: string; name: string; count: number | null }[]>([])
   const [selectedListId, setSelectedListId] = useState<string | null>(null)
   const [savingList, setSavingList] = useState(false)
@@ -354,33 +355,59 @@ export default function CCSyncPanel({ onClose }: Props) {
                     </div>
                   ) : (
                     <>
-                      {/* Toolbar */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                        <input type="checkbox"
-                          checked={selectedIds.size > 0 && selectedIds.size === data.nexus_only.filter(c => !syncedIds.has(c.id)).length}
-                          onChange={toggleSelectAll}
-                          style={{ cursor: 'pointer' }}
-                        />
-                        <span style={{ fontSize: '12px', color: 'var(--text-muted)', flex: 1 }}>
-                          {selectedIds.size > 0 ? `${selectedIds.size} selected` : `${data.nexus_only_count} not in CC`}
-                        </span>
-                        {selectedIds.size > 0 ? (
-                          <button className="btn btn-primary" onClick={pushSelected} disabled={pushing}
-                            style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 5 }}>
-                            {pushing ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpRight size={12} />}
-                            {pushing && syncProgress ? `${syncProgress.done} / ${syncProgress.total}` : `Sync ${selectedIds.size}`}
-                          </button>
-                        ) : (
-                          <button className="btn btn-ghost" onClick={pushAll} disabled={pushing}
-                            style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 5 }}>
-                            {pushing ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpRight size={12} />}
-                            {pushing && syncProgress ? `${syncProgress.done} / ${syncProgress.total}` : 'Sync All'}
-                          </button>
-                        )}
-                      </div>
+                      {/* Category filter pills */}
+                      {(() => {
+                        const counts: Record<string, number> = {}
+                        data.nexus_only.forEach(c => { counts[c.contact_type] = (counts[c.contact_type] || 0) + 1 })
+                        const types = Object.keys(counts).sort()
+                        return types.length > 1 ? (
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                            <button onClick={() => { setTypeFilter('all'); setSelectedIds(new Set()) }}
+                              style={{ padding: '3px 10px', borderRadius: 999, border: `1px solid ${typeFilter === 'all' ? 'var(--accent)' : 'var(--border)'}`, background: typeFilter === 'all' ? 'var(--accent-muted)' : 'transparent', color: typeFilter === 'all' ? 'var(--accent)' : 'var(--text-secondary)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                              All <span style={{ fontFamily: 'var(--font-mono)' }}>{data.nexus_only.length}</span>
+                            </button>
+                            {types.map(t => (
+                              <button key={t} onClick={() => { setTypeFilter(t); setSelectedIds(new Set()) }}
+                                style={{ padding: '3px 10px', borderRadius: 999, border: `1px solid ${typeFilter === t ? (typeColor[t] || 'var(--accent)') : 'var(--border)'}`, background: typeFilter === t ? (typeColor[t] || 'var(--accent)') + '20' : 'transparent', color: typeFilter === t ? (typeColor[t] || 'var(--accent)') : 'var(--text-secondary)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                {t} <span style={{ fontFamily: 'var(--font-mono)' }}>{counts[t]}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : null
+                      })()}
 
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        {data.nexus_only.map(c => {
+                      {/* Toolbar */}
+                      {(() => {
+                        const filtered = data.nexus_only.filter(c => typeFilter === 'all' || c.contact_type === typeFilter)
+                        const unsynced = filtered.filter(c => !syncedIds.has(c.id))
+                        return (
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                              <input type="checkbox"
+                                checked={selectedIds.size > 0 && selectedIds.size === unsynced.length}
+                                onChange={() => setSelectedIds(prev => prev.size === unsynced.length ? new Set() : new Set(unsynced.map(c => c.id)))}
+                                style={{ cursor: 'pointer' }}
+                              />
+                              <span style={{ fontSize: '12px', color: 'var(--text-muted)', flex: 1 }}>
+                                {selectedIds.size > 0 ? `${selectedIds.size} selected` : `${filtered.length} not in CC`}
+                              </span>
+                              {selectedIds.size > 0 ? (
+                                <button className="btn btn-primary" onClick={pushSelected} disabled={pushing}
+                                  style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                  {pushing ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpRight size={12} />}
+                                  {pushing && syncProgress ? `${syncProgress.done} / ${syncProgress.total}` : `Sync ${selectedIds.size}`}
+                                </button>
+                              ) : (
+                                <button className="btn btn-ghost" onClick={() => syncContacts(unsynced)} disabled={pushing}
+                                  style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                  {pushing ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpRight size={12} />}
+                                  {pushing && syncProgress ? `${syncProgress.done} / ${syncProgress.total}` : `Sync All ${filtered.length}`}
+                                </button>
+                              )}
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              {filtered.map(c => {
                           const isSynced = syncedIds.has(c.id)
                           const isSelected = selectedIds.has(c.id)
                           const ccError = contactErrors[c.id]
@@ -427,6 +454,9 @@ export default function CCSyncPanel({ onClose }: Props) {
                           )
                         })}
                       </div>
+                          </>
+                        )
+                      })()}
                     </>
                   )}
                 </>
