@@ -28,12 +28,13 @@ const TOOLS: any[] = [
         status:      { type: 'string', description: 'Active | Dead | Closed | Passed — omit for all' },
         year:        { type: 'number', description: 'Calendar year to filter by created_at' },
         sourced_year:{ type: 'number', description: 'Calendar year to filter by sourced_date' },
+        banker_firm: { type: 'string', description: 'Filter to deals sourced from contacts at this firm (e.g. "Generational Equity", "Harris Williams"). Joins through contact_deal_links.' },
       },
     },
   },
   {
     name: 'search_deals',
-    description: 'Search and retrieve deal records by company name, sector, geography, stage, status, or year. Use this to find deals by name or get a list of deals. For counting questions use count_deals instead.',
+    description: 'Search and retrieve deal records by company name, sector, geography, stage, status, year, or banker firm. Use this to find deals by name or get a list of deals. For counting questions use count_deals instead.',
     input_schema: {
       type: 'object',
       properties: {
@@ -44,6 +45,7 @@ const TOOLS: any[] = [
         status: { type: 'string', description: 'Active | Dead | Closed — omit for all statuses' },
         year: { type: 'number', description: 'Calendar year to filter by created_at (e.g. 2025)' },
         sourced_year: { type: 'number', description: 'Calendar year to filter by sourced_date (Salesforce close date, more accurate than created_at)' },
+        banker_firm: { type: 'string', description: 'Filter to deals sourced from contacts at this firm (e.g. "Generational Equity", "Harris Williams"). Joins through contact_deal_links. Use this for "deals from X" or "deals sourced by X" questions.' },
       },
     },
   },
@@ -398,10 +400,40 @@ async function dbxDownload(path: string): Promise<{ base64: string; name: string
 
 
 
+// Resolve deal IDs that are linked to contacts at a given firm (via contact_deal_links)
+async function dealIdsByBankerFirm(firm: string): Promise<string[] | null> {
+  const { data: contacts } = await supabase
+    .from('contacts')
+    .select('id')
+    .ilike('firm', `%${firm}%`)
+  if (!contacts?.length) return []   // firm not found — return empty (not null)
+  const contactIds = contacts.map((c: any) => c.id)
+  const { data: links } = await supabase
+    .from('contact_deal_links')
+    .select('deal_id')
+    .in('contact_id', contactIds)
+  if (!links?.length) return []
+  return [...new Set(links.map((l: any) => l.deal_id))]
+}
+
 async function executeTool(name: string, input: any): Promise<any> {
   switch (name) {
 
     case 'count_deals': {
+      // If filtering by banker firm, resolve deal IDs first then count
+      if (input.banker_firm) {
+        const dealIds = await dealIdsByBankerFirm(input.banker_firm)
+        if (!dealIds || dealIds.length === 0) {
+          return { total_count: 0, note: `No contacts found at "${input.banker_firm}" or no deals linked to them.` }
+        }
+        let q = supabase.from('deals').select('*', { count: 'exact', head: true }).in('id', dealIds)
+        if (input.stage)  q = (q as any).eq('stage', input.stage)
+        if (input.status) q = (q as any).eq('status', input.status)
+        if (input.year)   q = (q as any).gte('created_at', `${input.year}-01-01`).lte('created_at', `${input.year}-12-31`)
+        const { count, error } = await q
+        if (error) return { error: error.message }
+        return { total_count: count ?? 0, banker_firm: input.banker_firm, deal_ids_found: dealIds.length }
+      }
       // Pure count query — head:true means no rows returned, just the count header
       let q = supabase
         .from('deals')
@@ -418,16 +450,26 @@ async function executeTool(name: string, input: any): Promise<any> {
     }
 
     case 'search_deals': {
+      // Resolve banker_firm to deal IDs before querying
+      let bankerDealIds: string[] | null = null
+      if (input.banker_firm) {
+        bankerDealIds = await dealIdsByBankerFirm(input.banker_firm)
+        if (!bankerDealIds || bankerDealIds.length === 0) {
+          return { total_count: 0, returned: 0, deals: [], note: `No contacts found at "${input.banker_firm}" or no deals linked to them.` }
+        }
+      }
+
       let q = supabase
         .from('deals')
         .select('id, company_name, sector, geography, stage, status, ebitda, revenue, description, notes, sourced_date, created_at', { count: 'exact' })
         .limit(200)
+      if (bankerDealIds)      q = q.in('id', bankerDealIds)
       if (input.company_name) q = q.ilike('company_name', `%${input.company_name}%`)
-      if (input.sector) q = q.ilike('sector', `%${input.sector}%`)
-      if (input.geography) q = q.ilike('geography', `%${input.geography}%`)
-      if (input.stage) q = q.eq('stage', input.stage)
-      if (input.status) q = q.eq('status', input.status)
-      if (input.year) q = q.gte('created_at', `${input.year}-01-01`).lte('created_at', `${input.year}-12-31`)
+      if (input.sector)       q = q.ilike('sector', `%${input.sector}%`)
+      if (input.geography)    q = q.ilike('geography', `%${input.geography}%`)
+      if (input.stage)        q = q.eq('stage', input.stage)
+      if (input.status)       q = q.eq('status', input.status)
+      if (input.year)         q = q.gte('created_at', `${input.year}-01-01`).lte('created_at', `${input.year}-12-31`)
       if (input.sourced_year) q = q.gte('sourced_date', `${input.sourced_year}-01-01`).lte('sourced_date', `${input.sourced_year}-12-31`)
       const { data, error, count } = await q.order('created_at', { ascending: false })
       if (error) return { error: error.message }
@@ -821,6 +863,7 @@ RULES:
 1. For ANY counting question ("how many deals", "how many in 2025", etc.) use count_deals — it returns the true total with no row cap
 2. When counting deals by year, pass BOTH year and sourced_year and sum the union — sourced_date is more accurate but may be null for some deals; created_at captures everything
 3. When listing or searching deals, search ALL statuses — never default to Active only
+4. For "deals from [banker/firm]" or "how many deals from [firm]" questions — use the banker_firm parameter on search_deals or count_deals. This joins through contact_deal_links automatically. Do NOT try to manually join contacts to deals yourself.
 4. For ambiguous company names, search first and confirm the match before updating
 5. Always fetch the deal/contact ID via a read tool before calling any write tool
 6. Write tools always go to confirmation — never execute them directly
