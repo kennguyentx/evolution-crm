@@ -135,6 +135,7 @@ export default function CCSyncPanel({ onClose }: Props) {
   }
 
   useEffect(() => { load() }, [])
+  useEffect(() => { console.log('[contacts state changed]:', contacts.length) }, [contacts])
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', h)
