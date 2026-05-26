@@ -1,0 +1,106 @@
+// GET /api/constant-contact/compare
+// Compares all Nexus contacts vs all Constant Contact contacts (by email).
+// Returns: matched, nexus_only (not in CC), cc_only (not in Nexus)
+
+import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const CC_API = 'https://api.cc.email/v3'
+
+function serviceClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
+
+async function fetchAllCCContacts(token: string): Promise<any[]> {
+  const all: any[] = []
+  let url = `${CC_API}/contacts?include=email_addresses&status=all&limit=500`
+
+  while (url) {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`CC API ${res.status}: ${text}`)
+    }
+    const data = await res.json()
+    all.push(...(data.contacts || []))
+
+    // CC returns relative paths like /v3/contacts?cursor=xxx
+    const nextHref = data._links?.next?.href
+    url = nextHref ? `https://api.cc.email${nextHref}` : ''
+  }
+
+  return all
+}
+
+export async function GET() {
+  const token = process.env.CONSTANT_CONTACT_ACCESS_TOKEN
+  if (!token) {
+    return NextResponse.json({ error: 'CONSTANT_CONTACT_ACCESS_TOKEN not configured' }, { status: 503 })
+  }
+
+  // Fetch CC contacts
+  let ccContacts: any[]
+  try {
+    ccContacts = await fetchAllCCContacts(token)
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+
+  // Fetch Nexus contacts
+  const supabase = serviceClient()
+  const { data: nexusContacts, error: dbErr } = await supabase
+    .from('contacts')
+    .select('id, first_name, last_name, email, firm, title, contact_type, phone')
+    .order('last_name', { ascending: true, nullsFirst: false })
+
+  if (dbErr) return NextResponse.json({ error: dbErr.message }, { status: 500 })
+
+  // Build email → CC contact map
+  const ccByEmail = new Map<string, any>()
+  for (const c of ccContacts) {
+    const addr = (c.email_addresses?.[0]?.address || '').toLowerCase()
+    if (addr) ccByEmail.set(addr, c)
+  }
+
+  // Build email → Nexus contact map
+  const nexusByEmail = new Map<string, any>()
+  for (const c of nexusContacts || []) {
+    if (c.email) nexusByEmail.set(c.email.toLowerCase(), c)
+  }
+
+  const nexusOnly = (nexusContacts || []).filter(
+    c => !c.email || !ccByEmail.has(c.email.toLowerCase())
+  )
+  const matched = (nexusContacts || []).filter(
+    c => c.email && ccByEmail.has(c.email.toLowerCase())
+  )
+  const ccOnly = ccContacts
+    .filter(c => {
+      const addr = (c.email_addresses?.[0]?.address || '').toLowerCase()
+      return !addr || !nexusByEmail.has(addr)
+    })
+    .map(c => ({
+      cc_id: c.contact_id,
+      first_name: c.first_name || '',
+      last_name: c.last_name || '',
+      email: c.email_addresses?.[0]?.address || '',
+      firm: c.company_name || '',
+      title: c.job_title || '',
+    }))
+
+  return NextResponse.json({
+    nexus_total: nexusContacts?.length ?? 0,
+    cc_total: ccContacts.length,
+    matched_count: matched.length,
+    nexus_only_count: nexusOnly.length,
+    cc_only_count: ccOnly.length,
+    nexus_only: nexusOnly,
+    cc_only: ccOnly,
+    matched: matched,
+  })
+}

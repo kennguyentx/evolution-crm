@@ -90,6 +90,12 @@ export default function NewContactModal({ onClose, onCreated, contact, prefill }
 
     if (isEdit) {
       await supabase.from('contacts').update(payload).eq('id', contact.id)
+      // Sync edits to Constant Contact too (create_or_update matches by email)
+      fetch('/api/constant-contact/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => {})
       setSaving(false)
       onCreated()
     } else {
