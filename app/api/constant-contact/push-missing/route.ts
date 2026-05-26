@@ -1,7 +1,7 @@
 // POST /api/constant-contact/push-missing
-// Uses CC's bulk activity API (POST /v3/activities/contacts) which is fully async —
-// we submit all missing contacts in one request and CC processes them in the background.
-// This avoids Vercel timeouts regardless of how many contacts need syncing.
+// Submits all Nexus contacts (with email) to CC's bulk activity API in one shot.
+// CC deduplicates by email — existing contacts are updated, new ones are created.
+// No pre-fetching of CC contacts needed, so this completes in seconds.
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -16,26 +16,6 @@ function serviceClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
-}
-
-async function fetchAllCCEmails(token: string): Promise<Set<string>> {
-  const emails = new Set<string>()
-  let url = `${CC_API}/contacts?status=all&limit=500`
-
-  while (url) {
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-    })
-    if (!res.ok) throw new Error(`CC API ${res.status}: ${await res.text()}`)
-    const data = await res.json()
-    for (const c of data.contacts || []) {
-      const addr = (c.email_address?.address || '').toLowerCase()
-      if (addr) emails.add(addr)
-    }
-    const nextHref = data._links?.next?.href
-    url = nextHref ? `https://api.cc.email${nextHref}` : ''
-  }
-  return emails
 }
 
 async function getSyncListId(): Promise<string | null> {
@@ -56,7 +36,7 @@ export async function POST() {
     return NextResponse.json({ error: err.message }, { status: 503 })
   }
 
-  // Require a list to be selected — bulk API needs at least one list_id
+  // Bulk API requires a list
   const listId = await getSyncListId()
   if (!listId) {
     return NextResponse.json({
@@ -64,15 +44,7 @@ export async function POST() {
     }, { status: 400 })
   }
 
-  // 1. Get emails already in CC
-  let ccEmails: Set<string>
-  try {
-    ccEmails = await fetchAllCCEmails(token)
-  } catch (err: any) {
-    return NextResponse.json({ error: `Failed to fetch CC contacts: ${err.message}` }, { status: 500 })
-  }
-
-  // 2. Fetch ALL Nexus contacts (paginate past Supabase's 1000-row limit)
+  // Fetch ALL Nexus contacts with email (paginate past Supabase's 1000-row limit)
   const supabase = serviceClient()
   const nexusContacts: any[] = []
   const PAGE = 1000
@@ -81,6 +53,7 @@ export async function POST() {
     const { data } = await supabase
       .from('contacts')
       .select('id, first_name, last_name, email, firm, title, phone')
+      .not('email', 'is', null)
       .range(from, from + PAGE - 1)
     if (!data?.length) break
     nexusContacts.push(...data)
@@ -88,28 +61,24 @@ export async function POST() {
     from += PAGE
   }
 
-  // Only sync contacts with an email address (CC requires email for deduplication)
-  const missing = nexusContacts.filter(
-    c => c.email && !ccEmails.has(c.email.toLowerCase())
-  )
-
-  if (!missing.length) {
-    return NextResponse.json({ synced: 0, message: 'All contacts (with email) are already in CC' })
+  if (!nexusContacts.length) {
+    return NextResponse.json({ submitted: 0, message: 'No contacts with email addresses found' })
   }
 
-  // 3. Submit to CC bulk activity API — async, CC processes in background
-  const importData = missing.map(c => {
+  // Build import payload — CC deduplicates by email automatically
+  const importData = nexusContacts.map(c => {
     const row: Record<string, string> = {
       email_address: c.email,
       first_name: c.first_name || '',
       last_name: c.last_name || '',
     }
-    if (c.firm) row.company_name = c.firm
+    if (c.firm)  row.company_name = c.firm
     if (c.title) row.job_title = c.title
     if (c.phone) row.phone = c.phone
     return row
   })
 
+  // Submit to CC bulk activity API — one request, CC processes async in background
   const res = await fetch(`${CC_API}/activities/contacts`, {
     method: 'POST',
     headers: {
@@ -131,8 +100,8 @@ export async function POST() {
 
   const result = await res.json()
   return NextResponse.json({
-    submitted: missing.length,
+    submitted: nexusContacts.length,
     activity_id: result.activity_id,
-    message: `${missing.length} contacts submitted to CC — processing in background`,
+    message: `${nexusContacts.length} contacts submitted — CC is processing in the background`,
   })
 }
