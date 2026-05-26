@@ -491,10 +491,9 @@ async function upsertContacts(supabase, contacts, dealId) {
 // ── Main email intake handler ─────────────────────────────────────────────────
 async function handleEmailIntake(req, res) {
   const webhookToken = process.env.POSTMARK_WEBHOOK_TOKEN
-  if (webhookToken) {
-    const provided = req.query.token ?? req.headers['x-webhook-token']
-    if (provided !== webhookToken) return res.status(403).json({ error: 'Forbidden' })
-  }
+  if (!webhookToken) return res.status(500).json({ error: 'Server misconfigured: POSTMARK_WEBHOOK_TOKEN not set' })
+  const provided = req.query.token ?? req.headers['x-webhook-token']
+  if (provided !== webhookToken) return res.status(403).json({ error: 'Forbidden' })
 
   try {
     const body        = req.body
@@ -996,4 +995,10 @@ app.post('/api/notes/email', handleEmailIntake)
 app.get('/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }))
 
 const PORT = process.env.PORT || 3001
-app.listen(PORT, () => console.log(`Email intake server running on port ${PORT}`))
+app.listen(PORT, () => {
+  console.log(`Email intake server running on port ${PORT}`)
+  if (!process.env.POSTMARK_WEBHOOK_TOKEN) {
+    console.error('FATAL: POSTMARK_WEBHOOK_TOKEN is not set — webhook endpoint is unprotected. Set this env var in Render.')
+    process.exit(1)
+  }
+})

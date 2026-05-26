@@ -317,11 +317,13 @@ async function upsertContacts(supabase: any, contacts: any[], dealId: string) {
 export async function POST(req: NextRequest) {
   // ── Webhook token verification ─────────────────────────────────────────────
   const webhookToken = process.env.POSTMARK_WEBHOOK_TOKEN
-  if (webhookToken) {
-    const provided = req.nextUrl.searchParams.get('token') ?? req.headers.get('x-webhook-token')
-    if (provided !== webhookToken) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+  if (!webhookToken) {
+    console.error('[email-intake] POSTMARK_WEBHOOK_TOKEN is not set — rejecting request')
+    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
+  }
+  const provided = req.nextUrl.searchParams.get('token') ?? req.headers.get('x-webhook-token')
+  if (provided !== webhookToken) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   try {
