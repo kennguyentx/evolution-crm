@@ -66,15 +66,41 @@ async function runSend() {
   }
 
   // 2. Fetch active pipeline deals
-  const { data: deals, error: dealsErr } = await supabaseAdmin
+  // Try with loi_date first; fall back without it if the column doesn't exist yet
+  let deals: any[] | null = null
+  let dealsErr: any = null
+
+  const baseSelect = 'id, company_name, stage, sector, geography, revenue, ebitda, asking_price, asking_multiple, deal_type, description, updated_at'
+
+  const res1 = await supabaseAdmin
     .from('deals')
-    .select('id, company_name, stage, sector, geography, revenue, ebitda, asking_price, asking_multiple, deal_type, description, updated_at, loi_date')
+    .select(`${baseSelect}, loi_date`)
     .in('stage', STAGES)
     .order('stage')
     .order('updated_at', { ascending: false })
 
+  if (res1.error) {
+    // If it's a missing-column error, retry without loi_date
+    if (res1.error.code === '42703' || res1.error.message?.includes('loi_date')) {
+      console.warn('[pipeline-email] loi_date column missing — retrying without it')
+      const res2 = await supabaseAdmin
+        .from('deals')
+        .select(baseSelect)
+        .in('stage', STAGES)
+        .order('stage')
+        .order('updated_at', { ascending: false })
+      deals = res2.data
+      dealsErr = res2.error
+    } else {
+      dealsErr = res1.error
+    }
+  } else {
+    deals = res1.data
+  }
+
   if (dealsErr || !deals) {
-    return NextResponse.json({ error: 'Failed to fetch deals' }, { status: 500 })
+    console.error('[pipeline-email] deals fetch error:', dealsErr?.message)
+    return NextResponse.json({ error: `Failed to fetch deals: ${dealsErr?.message || 'unknown'}` }, { status: 500 })
   }
 
   // 3. Source contacts per deal
