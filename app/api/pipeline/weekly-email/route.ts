@@ -12,7 +12,7 @@ const supabaseAdmin = createClient(
 
 export const maxDuration = 30
 
-const STAGES = ['Teaser', 'Reviewing', 'Pre-LOI', 'LOI Submitted', 'Exclusivity']
+const STAGES = ['Exclusivity', 'LOI Submitted', 'Pre-LOI', 'Reviewing', 'Teaser']
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrategy.com'
 const STALE_DAYS = 14
 
@@ -136,9 +136,10 @@ async function runSend() {
 
   const staleDeals = deals.filter(d => new Date(d.updated_at) < staleThreshold)
 
-  // 5. Build HTML
+  // 5. Build HTML + plain text
   const weekOf = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' })
   const html = buildHtml({ deals, contactsByDeal, loiDeals, staleDeals, weekOf })
+  const text = buildText({ deals, contactsByDeal, loiDeals, staleDeals, weekOf })
 
   // 6. Send via Postmark
   const res = await fetch('https://api.postmarkapp.com/email', {
@@ -150,9 +151,11 @@ async function runSend() {
     },
     body: JSON.stringify({
       From: 'intake@evolutionstrategy.com',
+      ReplyTo: 'ken@evolutionstrategy.com',
       To: recipients.join(', '),
       Subject: `Deal Pipeline — Week of ${weekOf}`,
       HtmlBody: html,
+      TextBody: text,
       MessageStream: 'outbound',
     }),
   })
@@ -182,6 +185,71 @@ function daysSince(iso: string): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
 }
 
+// ── Plain text builder (for deliverability) ───────────────────────────────────
+function buildText({ deals, contactsByDeal, loiDeals, staleDeals, weekOf }: {
+  deals: any[]
+  contactsByDeal: Record<string, any[]>
+  loiDeals: any[]
+  staleDeals: any[]
+  weekOf: string
+}): string {
+  const STAGES = ['Exclusivity', 'LOI Submitted', 'Pre-LOI', 'Reviewing', 'Teaser']
+  const div = '─'.repeat(48)
+  const totalEbitda = deals.reduce((s, d) => s + (d.ebitda || 0), 0)
+  const totalAsking = deals.reduce((s, d) => s + (d.asking_price || 0), 0)
+
+  let out = `EVOLUTION STRATEGY PARTNERS — DEAL PIPELINE\n`
+  out    += `Week of ${weekOf}\n\n`
+  out    += `${div}\n`
+  out    += `${deals.length} active deal${deals.length !== 1 ? 's' : ''}`
+  if (totalEbitda > 0) out += `   Total EBITDA: ${fmt(totalEbitda)}`
+  if (totalAsking > 0) out += `   Total Asking: ${fmt(totalAsking)}`
+  out    += '\n'
+
+  if (loiDeals.length) {
+    out += `\n${div}\nLOI DEADLINES — NEXT 14 DAYS\n${div}\n`
+    for (const d of loiDeals) {
+      const days = Math.floor((new Date(d.loi_date + 'T12:00:00').getTime() - Date.now()) / 86400000)
+      const label = days === 0 ? 'TODAY' : days === 1 ? 'Tomorrow' : `${days} days`
+      out += `  • ${d.company_name} — ${label} (${fmtDate(d.loi_date)})\n`
+    }
+  }
+
+  if (staleDeals.length) {
+    out += `\n${div}\nNO ACTIVITY IN ${STALE_DAYS}+ DAYS\n${div}\n`
+    for (const d of staleDeals) {
+      out += `  • ${d.company_name} (${d.stage}) — ${daysSince(d.updated_at)}d quiet\n`
+    }
+  }
+
+  for (const stage of STAGES) {
+    const stageDeals = deals.filter(d => d.stage === stage)
+    if (!stageDeals.length) continue
+    out += `\n${div}\n${stage.toUpperCase()} — ${stageDeals.length} deal${stageDeals.length !== 1 ? 's' : ''}\n${div}\n`
+    for (const deal of stageDeals) {
+      out += `\n• ${deal.company_name}${deal.deal_type ? ` [${deal.deal_type}]` : ''}\n`
+      const meta = [deal.sector, deal.geography].filter(Boolean).join(' · ')
+      if (meta) out += `  ${meta}\n`
+      const fins: string[] = []
+      if (deal.revenue)        fins.push(`Rev: ${fmt(deal.revenue)}`)
+      if (deal.ebitda)         fins.push(`EBITDA: ${fmt(deal.ebitda)}`)
+      if (deal.asking_price)   fins.push(`Asking: ${fmt(deal.asking_price)}`)
+      if (deal.asking_multiple) fins.push(`${deal.asking_multiple.toFixed(1)}x`)
+      if (fins.length) out += `  ${fins.join('   ')}\n`
+      for (const c of (contactsByDeal[deal.id] || [])) {
+        out += `  Banker: ${c.first_name} ${c.last_name}${c.firm ? ` · ${c.firm}` : ''}\n`
+      }
+      if (deal.description) {
+        const desc = deal.description.length > 160 ? deal.description.slice(0, 160) + '...' : deal.description
+        out += `  ${desc}\n`
+      }
+    }
+  }
+
+  out += `\n${div}\nView pipeline: ${process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrategy.com'}/pipeline\n`
+  return out
+}
+
 // ── HTML builder ──────────────────────────────────────────────────────────────
 function buildHtml({ deals, contactsByDeal, loiDeals, staleDeals, weekOf }: {
   deals: any[]
@@ -190,7 +258,7 @@ function buildHtml({ deals, contactsByDeal, loiDeals, staleDeals, weekOf }: {
   staleDeals: any[]
   weekOf: string
 }): string {
-  const STAGES = ['Teaser', 'Reviewing', 'Pre-LOI', 'LOI Submitted', 'Exclusivity']
+  const STAGES = ['Exclusivity', 'LOI Submitted', 'Pre-LOI', 'Reviewing', 'Teaser']
   const totalEbitda = deals.reduce((s, d) => s + (d.ebitda || 0), 0)
   const totalAsking = deals.reduce((s, d) => s + (d.asking_price || 0), 0)
 
