@@ -49,8 +49,9 @@ export default function CCSyncPanel({ onClose }: Props) {
   const [pushing, setPushing] = useState(false)
   const [syncProgress, setSyncProgress] = useState<{ done: number; total: number } | null>(null)
   const [syncDone, setSyncDone] = useState<{ synced: number; failed: number } | null>(null)
-  const [pushingSingle, setPushingSingle] = useState<string | null>(null)
   const [syncedIds, setSyncedIds] = useState<Set<string>>(new Set())
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [contactErrors, setContactErrors] = useState<Record<string, string>>({})
   const [lists, setLists] = useState<{ id: string; name: string; count: number | null }[]>([])
   const [selectedListId, setSelectedListId] = useState<string | null>(null)
   const [savingList, setSavingList] = useState(false)
@@ -107,13 +108,13 @@ export default function CCSyncPanel({ onClose }: Props) {
     return () => document.removeEventListener('keydown', handler)
   }, [onClose])
 
-  const pushAll = async () => {
-    if (!data?.nexus_only?.length) return
+  const syncContacts = async (contacts: NexusContact[]) => {
+    if (!contacts.length) return
     setPushing(true)
     setSyncDone(null)
-    setSyncProgress({ done: 0, total: data.nexus_only.length })
+    setContactErrors({})
+    setSyncProgress({ done: 0, total: contacts.length })
 
-    const contacts = data.nexus_only
     let synced = 0
     let failed = 0
     const BATCH = 3
@@ -127,14 +128,18 @@ export default function CCSyncPanel({ onClose }: Props) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(c),
           })
+          const json = await res.json().catch(() => ({}))
           if (res.ok) {
             synced++
             setSyncedIds(prev => new Set([...prev, c.id]))
           } else {
             failed++
+            const msg = json.error || `HTTP ${res.status}`
+            setContactErrors(prev => ({ ...prev, [c.id]: msg }))
           }
-        } catch {
+        } catch (err: any) {
           failed++
+          setContactErrors(prev => ({ ...prev, [c.id]: err.message || 'Network error' }))
         }
         setSyncProgress(prev => prev ? { ...prev, done: prev.done + 1 } : null)
       }))
@@ -143,22 +148,33 @@ export default function CCSyncPanel({ onClose }: Props) {
     setSyncProgress(null)
     setSyncDone({ synced, failed })
     setPushing(false)
+    setSelectedIds(new Set())
   }
 
-  const pushOne = async (contact: NexusContact) => {
-    setPushingSingle(contact.id)
-    try {
-      const res = await fetch('/api/constant-contact/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(contact),
-      })
-      if (res.ok) {
-        setSyncedIds(prev => new Set([...prev, contact.id]))
-      }
-    } finally {
-      setPushingSingle(null)
-    }
+  const pushSelected = () => {
+    if (!data?.nexus_only) return
+    const toSync = data.nexus_only.filter(c => selectedIds.has(c.id))
+    syncContacts(toSync)
+  }
+
+  const pushAll = () => {
+    if (!data?.nexus_only) return
+    syncContacts(data.nexus_only)
+  }
+
+  const pushOne = (contact: NexusContact) => syncContacts([contact])
+
+  const toggleSelect = (id: string) =>
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+
+  const toggleSelectAll = () => {
+    if (!data?.nexus_only) return
+    const unsynced = data.nexus_only.filter(c => !syncedIds.has(c.id)).map(c => c.id)
+    setSelectedIds(prev => prev.size === unsynced.length ? new Set() : new Set(unsynced))
   }
 
   const typeColor: Record<string, string> = {
@@ -332,63 +348,80 @@ export default function CCSyncPanel({ onClose }: Props) {
               {tab === 'nexus_only' && (
                 <>
                   {data.nexus_only_count === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '32px 0', color: 'var(--text-muted)' }}>
                       <CheckCircle2 size={24} color="#10b981" style={{ marginBottom: 8 }} />
                       <div style={{ fontSize: '14px', fontWeight: 600, color: '#16a34a' }}>All Nexus contacts are in CC!</div>
                     </div>
                   ) : (
                     <>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                        <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
-                          {data.nexus_only_count} contact{data.nexus_only_count !== 1 ? 's' : ''} in Nexus that are not in Constant Contact
-                        </p>
-                        <button
-                          className="btn btn-primary"
-                          onClick={pushAll}
-                          disabled={pushing}
-                          style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 6 }}
-                        >
-                          {pushing ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpRight size={12} />}
-                          {pushing && syncProgress ? `${syncProgress.done} / ${syncProgress.total}` : pushing ? 'Starting…' : `Sync All ${data.nexus_only_count}`}
-                        </button>
+                      {/* Toolbar */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                        <input type="checkbox"
+                          checked={selectedIds.size > 0 && selectedIds.size === data.nexus_only.filter(c => !syncedIds.has(c.id)).length}
+                          onChange={toggleSelectAll}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)', flex: 1 }}>
+                          {selectedIds.size > 0 ? `${selectedIds.size} selected` : `${data.nexus_only_count} not in CC`}
+                        </span>
+                        {selectedIds.size > 0 ? (
+                          <button className="btn btn-primary" onClick={pushSelected} disabled={pushing}
+                            style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 5 }}>
+                            {pushing ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpRight size={12} />}
+                            {pushing && syncProgress ? `${syncProgress.done} / ${syncProgress.total}` : `Sync ${selectedIds.size}`}
+                          </button>
+                        ) : (
+                          <button className="btn btn-ghost" onClick={pushAll} disabled={pushing}
+                            style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 5 }}>
+                            {pushing ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpRight size={12} />}
+                            {pushing && syncProgress ? `${syncProgress.done} / ${syncProgress.total}` : 'Sync All'}
+                          </button>
+                        )}
                       </div>
+
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                         {data.nexus_only.map(c => {
                           const isSynced = syncedIds.has(c.id)
+                          const isSelected = selectedIds.has(c.id)
+                          const ccError = contactErrors[c.id]
                           return (
                             <div key={c.id} style={{
-                              display: 'flex', alignItems: 'center', gap: 10,
-                              padding: '8px 10px', borderRadius: 6,
-                              background: isSynced ? '#f0fdf4' : 'var(--surface-raised)',
-                              opacity: isSynced ? 0.7 : 1,
+                              borderRadius: 6, overflow: 'hidden',
+                              border: `1px solid ${ccError ? '#fecaca' : isSelected ? 'var(--accent)' : 'transparent'}`,
+                              background: isSynced ? '#f0fdf4' : isSelected ? 'var(--accent-muted)' : 'var(--surface-raised)',
                             }}>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: '13px', fontWeight: 600 }}>
-                                  {c.first_name} {c.last_name}
-                                  {isSynced && <CheckCircle2 size={12} color="#16a34a" style={{ marginLeft: 6, display: 'inline' }} />}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px' }}>
+                                {!isSynced && (
+                                  <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(c.id)}
+                                    disabled={pushing} style={{ cursor: 'pointer', flexShrink: 0 }} />
+                                )}
+                                {isSynced && <CheckCircle2 size={14} color="#16a34a" style={{ flexShrink: 0 }} />}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: '13px', fontWeight: 600 }}>
+                                    {c.first_name} {c.last_name}
+                                  </div>
+                                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                    {[c.firm, c.email].filter(Boolean).join(' · ')}
+                                    {c.created_at && <span style={{ marginLeft: 6, opacity: 0.7 }}>· {new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
+                                  </div>
                                 </div>
-                                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                  {[c.firm, c.email].filter(Boolean).join(' · ')}
-                                  {c.created_at && <span style={{ marginLeft: 6, color: 'var(--text-muted)', opacity: 0.7 }}>· {new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
-                                </div>
+                                <span style={{
+                                  fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
+                                  padding: '2px 6px', borderRadius: 4, flexShrink: 0,
+                                  background: (typeColor[c.contact_type] || '#94a3b8') + '20',
+                                  color: typeColor[c.contact_type] || '#94a3b8',
+                                }}>{c.contact_type}</span>
+                                {!isSynced && !pushing && (
+                                  <button onClick={() => pushOne(c)}
+                                    style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: '11px', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                                    <ArrowUpRight size={10} /> Sync
+                                  </button>
+                                )}
                               </div>
-                              <span style={{
-                                fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
-                                padding: '2px 6px', borderRadius: 4,
-                                background: typeColor[c.contact_type] + '20',
-                                color: typeColor[c.contact_type] || '#94a3b8',
-                              }}>{c.contact_type}</span>
-                              {!isSynced && (
-                                <button
-                                  onClick={() => pushOne(c)}
-                                  disabled={pushingSingle === c.id}
-                                  style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: '11px', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}
-                                >
-                                  {pushingSingle === c.id
-                                    ? <RefreshCw size={10} style={{ animation: 'spin 1s linear infinite' }} />
-                                    : <ArrowUpRight size={10} />}
-                                  Sync
-                                </button>
+                              {ccError && (
+                                <div style={{ padding: '4px 10px 8px 34px', fontSize: '11px', color: '#dc2626', background: '#fef2f2' }}>
+                                  ⚠ {ccError}
+                                </div>
                               )}
                             </div>
                           )
