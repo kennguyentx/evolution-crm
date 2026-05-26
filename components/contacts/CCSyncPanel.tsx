@@ -176,7 +176,7 @@ export default function CCSyncPanel({ onClose }: Props) {
         {/* Body */}
         <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
           {loading && (
-            <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-muted)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '48px 0', color: 'var(--text-muted)' }}>
               <RefreshCw size={20} style={{ animation: 'spin 1s linear infinite', marginBottom: 12 }} />
               <div style={{ fontSize: '13px' }}>Comparing contacts…</div>
             </div>
