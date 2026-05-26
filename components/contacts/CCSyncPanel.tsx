@@ -18,6 +18,9 @@ interface Props {
   onClose: () => void
 }
 
+// Only these types belong in Constant Contact — management/other are excluded
+const CC_TYPES = ['banker', 'lender', 'lp']
+
 const TYPE_COLORS: Record<string, string> = {
   banker: '#6366f1',
   lp: '#10b981',
@@ -71,7 +74,8 @@ export default function CCSyncPanel({ onClose }: Props) {
       }
 
       const contactsBody = await contactsRes.json()
-      setContacts(contactsBody.contacts || [])
+      // Only show types that belong in CC — exclude management, other, etc.
+      setContacts((contactsBody.contacts || []).filter((c: NexusContact) => CC_TYPES.includes(c.contact_type)))
 
       if (listsRes.ok) {
         const listsBody = await listsRes.json()
@@ -174,7 +178,7 @@ export default function CCSyncPanel({ onClose }: Props) {
           <div>
             <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>Constant Contact Sync</h2>
             <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
-              {loading ? 'Loading…' : `${contacts.length.toLocaleString()} contacts with email`}
+              {loading ? 'Loading…' : `${contacts.length.toLocaleString()} bankers, lenders & LPs with email`}
             </p>
           </div>
           <button onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 4 }}>

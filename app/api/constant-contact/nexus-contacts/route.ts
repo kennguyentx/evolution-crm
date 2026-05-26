@@ -1,5 +1,6 @@
 // GET /api/constant-contact/nexus-contacts
-// Returns all Nexus contacts that have an email address, newest first.
+// Returns Nexus contacts (bankers, lenders, LPs) that have an email address, newest first.
+// Management and Other are excluded — they don't belong in Constant Contact.
 // Fast — only hits Supabase, no CC API call.
 
 import { NextResponse } from 'next/server'
@@ -23,6 +24,7 @@ export async function GET() {
       .from('contacts')
       .select('id, first_name, last_name, email, firm, title, contact_type, phone, created_at')
       .not('email', 'is', null)
+      .in('contact_type', ['banker', 'lender', 'lp'])
       .order('created_at', { ascending: false, nullsFirst: false })
       .range(from, from + PAGE - 1)
 
