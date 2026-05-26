@@ -59,7 +59,7 @@ export default function CCSyncPanel({ onClose }: Props) {
     setLoading(true)
     setError(null)
     setNotConnected(false)
-    setPushResult(null)
+    setSyncDone(null)
     try {
       const [compareRes, listsRes] = await Promise.all([
         fetch('/api/constant-contact/compare'),
