@@ -8,7 +8,7 @@ import { saveCCTokens } from '@/lib/constant-contact'
 const CC_TOKEN_URL = 'https://authz.constantcontact.com/oauth2/default/v1/token'
 
 export async function GET(req: NextRequest) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrategy.com'
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrategy.com').replace(/\/$/, '')
   const { searchParams } = new URL(req.url)
   const code = searchParams.get('code')
   const error = searchParams.get('error')

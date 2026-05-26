@@ -15,7 +15,7 @@ export async function GET() {
     )
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrategy.com'
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrategy.com').replace(/\/$/, '')
   const redirectUri = `${appUrl}/api/constant-contact/oauth/callback`
 
   const params = new URLSearchParams({
