@@ -76,13 +76,23 @@ export async function POST() {
     return NextResponse.json({ error: `Failed to fetch CC contacts: ${err.message}` }, { status: 500 })
   }
 
-  // 2. Fetch Nexus contacts not already in CC
+  // 2. Fetch ALL Nexus contacts (paginate past Supabase's 1000-row limit)
   const supabase = serviceClient()
-  const { data: nexusContacts } = await supabase
-    .from('contacts')
-    .select('id, first_name, last_name, email, firm, title, phone')
+  const nexusContacts: any[] = []
+  const PAGE = 1000
+  let from = 0
+  while (true) {
+    const { data } = await supabase
+      .from('contacts')
+      .select('id, first_name, last_name, email, firm, title, phone')
+      .range(from, from + PAGE - 1)
+    if (!data?.length) break
+    nexusContacts.push(...data)
+    if (data.length < PAGE) break
+    from += PAGE
+  }
 
-  const missing = (nexusContacts || []).filter(
+  const missing = nexusContacts.filter(
     c => !c.email || !ccEmails.has(c.email.toLowerCase())
   )
 
