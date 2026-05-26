@@ -1,15 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { X, RefreshCw, CheckCircle2, AlertCircle, Users, ArrowUpRight, ArrowDownLeft, Zap, Link2 } from 'lucide-react'
-
-interface CCContact {
-  cc_id?: string
-  first_name: string
-  last_name: string
-  email: string
-  firm: string
-  title?: string
-}
+import { X, RefreshCw, CheckCircle2, AlertCircle, ArrowUpRight, Zap, Link2, Filter } from 'lucide-react'
 
 interface NexusContact {
   id: string
@@ -23,61 +14,64 @@ interface NexusContact {
   title?: string
 }
 
-interface CompareResult {
-  nexus_total: number
-  cc_total: number
-  matched_count: number
-  nexus_only_count: number
-  cc_only_count: number
-  nexus_only: NexusContact[]
-  cc_only: CCContact[]
-  matched: NexusContact[]
-}
-
-type Tab = 'overview' | 'nexus_only' | 'cc_only' | 'matched'
-
 interface Props {
   onClose: () => void
 }
 
+const TYPE_COLORS: Record<string, string> = {
+  banker: '#6366f1',
+  lp: '#10b981',
+  lender: '#f59e0b',
+  advisor: '#8b5cf6',
+  management: '#ec4899',
+  other: '#94a3b8',
+}
+
 export default function CCSyncPanel({ onClose }: Props) {
+  // Fast-load state
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notConnected, setNotConnected] = useState(false)
-  const [data, setData] = useState<CompareResult | null>(null)
-  const [tab, setTab] = useState<Tab>('overview')
-  const [pushing, setPushing] = useState(false)
-  const [syncProgress, setSyncProgress] = useState<{ done: number; total: number } | null>(null)
-  const [syncDone, setSyncDone] = useState<{ synced: number; failed: number } | null>(null)
-  const [syncedIds, setSyncedIds] = useState<Set<string>>(new Set())
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [contactErrors, setContactErrors] = useState<Record<string, string>>({})
-  const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [contacts, setContacts] = useState<NexusContact[]>([])
   const [lists, setLists] = useState<{ id: string; name: string; count: number | null }[]>([])
   const [selectedListId, setSelectedListId] = useState<string | null>(null)
   const [savingList, setSavingList] = useState(false)
 
+  // Filter / selection
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // Sync state
+  const [pushing, setPushing] = useState(false)
+  const [syncProgress, setSyncProgress] = useState<{ done: number; total: number } | null>(null)
+  const [syncDone, setSyncDone] = useState<{ synced: number; failed: number } | null>(null)
+  const [syncedIds, setSyncedIds] = useState<Set<string>>(new Set())
+  const [contactErrors, setContactErrors] = useState<Record<string, string>>({})
+
+  // Load: Supabase contacts + CC lists in parallel — no CC contacts fetch
   const load = async () => {
     setLoading(true)
     setError(null)
     setNotConnected(false)
     setSyncDone(null)
     try {
-      const [compareRes, listsRes] = await Promise.all([
-        fetch('/api/constant-contact/compare'),
+      const [contactsRes, listsRes] = await Promise.all([
+        fetch('/api/constant-contact/nexus-contacts'),
         fetch('/api/constant-contact/lists'),
       ])
-      const compareBody = await compareRes.json().catch(() => ({}))
-      if (!compareRes.ok) {
-        if (compareBody.not_connected || compareRes.status === 503) {
-          setNotConnected(true)
-        } else {
-          throw new Error(compareBody.error || `HTTP ${compareRes.status}`)
-        }
-        return
+
+      if (listsRes.status === 503) {
+        const body = await listsRes.json().catch(() => ({}))
+        if (body.not_connected) { setNotConnected(true); return }
       }
-      setData(compareBody)
-      if (compareBody.nexus_only_count > 0) setTab('nexus_only')
+
+      if (!contactsRes.ok) {
+        const body = await contactsRes.json().catch(() => ({}))
+        throw new Error(body.error || `HTTP ${contactsRes.status}`)
+      }
+
+      const contactsBody = await contactsRes.json()
+      setContacts(contactsBody.contacts || [])
 
       if (listsRes.ok) {
         const listsBody = await listsRes.json()
@@ -91,6 +85,13 @@ export default function CCSyncPanel({ onClose }: Props) {
     }
   }
 
+  useEffect(() => { load() }, [])
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', h)
+    return () => document.removeEventListener('keydown', h)
+  }, [onClose])
+
   const saveListChoice = async (listId: string | null) => {
     setSelectedListId(listId)
     setSavingList(true)
@@ -101,27 +102,19 @@ export default function CCSyncPanel({ onClose }: Props) {
     }).finally(() => setSavingList(false))
   }
 
-  useEffect(() => { load() }, [])
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [onClose])
-
-  const syncContacts = async (contacts: NexusContact[]) => {
-    if (!contacts.length) return
+  // Core sync function
+  const syncContacts = async (toSync: NexusContact[]) => {
+    if (!toSync.length) return
     setPushing(true)
     setSyncDone(null)
     setContactErrors({})
-    setSyncProgress({ done: 0, total: contacts.length })
+    setSyncProgress({ done: 0, total: toSync.length })
 
-    let synced = 0
-    let failed = 0
+    let synced = 0, failed = 0
     const BATCH = 3
 
-    for (let i = 0; i < contacts.length; i += BATCH) {
-      const batch = contacts.slice(i, i + BATCH)
+    for (let i = 0; i < toSync.length; i += BATCH) {
+      const batch = toSync.slice(i, i + BATCH)
       await Promise.all(batch.map(async c => {
         try {
           const res = await fetch('/api/constant-contact/sync', {
@@ -135,8 +128,7 @@ export default function CCSyncPanel({ onClose }: Props) {
             setSyncedIds(prev => new Set([...prev, c.id]))
           } else {
             failed++
-            const msg = json.error || `HTTP ${res.status}`
-            setContactErrors(prev => ({ ...prev, [c.id]: msg }))
+            setContactErrors(prev => ({ ...prev, [c.id]: json.error || `HTTP ${res.status}` }))
           }
         } catch (err: any) {
           failed++
@@ -152,40 +144,16 @@ export default function CCSyncPanel({ onClose }: Props) {
     setSelectedIds(new Set())
   }
 
-  const pushSelected = () => {
-    if (!data?.nexus_only) return
-    const toSync = data.nexus_only.filter(c => selectedIds.has(c.id))
-    syncContacts(toSync)
-  }
+  // Derived filtered list
+  const filtered = contacts.filter(c =>
+    typeFilter === 'all' || c.contact_type === typeFilter
+  )
+  const unsynced = filtered.filter(c => !syncedIds.has(c.id))
 
-  const pushAll = () => {
-    if (!data?.nexus_only) return
-    syncContacts(data.nexus_only)
-  }
-
-  const pushOne = (contact: NexusContact) => syncContacts([contact])
-
-  const toggleSelect = (id: string) =>
-    setSelectedIds(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-
-  const toggleSelectAll = () => {
-    if (!data?.nexus_only) return
-    const unsynced = data.nexus_only.filter(c => !syncedIds.has(c.id)).map(c => c.id)
-    setSelectedIds(prev => prev.size === unsynced.length ? new Set() : new Set(unsynced))
-  }
-
-  const typeColor: Record<string, string> = {
-    banker: '#6366f1',
-    lp: '#10b981',
-    lender: '#f59e0b',
-    advisor: '#8b5cf6',
-    management: '#ec4899',
-    other: '#94a3b8',
-  }
+  // Type counts for pills
+  const typeCounts: Record<string, number> = {}
+  contacts.forEach(c => { typeCounts[c.contact_type] = (typeCounts[c.contact_type] || 0) + 1 })
+  const types = Object.keys(typeCounts).sort()
 
   return (
     <div style={{
@@ -195,19 +163,19 @@ export default function CCSyncPanel({ onClose }: Props) {
       paddingTop: '48px', backdropFilter: 'blur(4px)',
     }}>
       <div className="card slide-in" style={{
-        width: '680px',
-        maxHeight: 'calc(100vh - 96px)',
-        display: 'flex', flexDirection: 'column',
-        overflow: 'hidden',
+        width: '680px', maxHeight: 'calc(100vh - 96px)',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
         {/* Header */}
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
           <div style={{ width: 32, height: 32, borderRadius: 8, background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Zap size={15} color="#d97706" />
           </div>
           <div>
             <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>Constant Contact Sync</h2>
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>Compare and sync contacts between Nexus and CC</p>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+              {loading ? 'Loading…' : `${contacts.length.toLocaleString()} contacts with email`}
+            </p>
           </div>
           <button onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 4 }}>
             <X size={18} />
@@ -215,15 +183,16 @@ export default function CCSyncPanel({ onClose }: Props) {
         </div>
 
         {/* Body */}
-        <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '16px 24px' }}>
+
           {loading && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '48px 0', color: 'var(--text-muted)' }}>
               <RefreshCw size={20} style={{ animation: 'spin 1s linear infinite', marginBottom: 12 }} />
-              <div style={{ fontSize: '13px' }}>Comparing contacts…</div>
+              <div style={{ fontSize: '13px' }}>Loading contacts…</div>
             </div>
           )}
 
-          {/* Not connected — prompt OAuth */}
+          {/* Not connected */}
           {notConnected && !loading && (
             <div style={{ textAlign: 'center', padding: '40px 24px' }}>
               <div style={{ width: 56, height: 56, borderRadius: 14, background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
@@ -231,66 +200,33 @@ export default function CCSyncPanel({ onClose }: Props) {
               </div>
               <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 8px' }}>Connect Constant Contact</h3>
               <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 24px', lineHeight: 1.6 }}>
-                Authorize Nexus to sync contacts with your Constant Contact account.<br />
-                You'll be redirected to CC and brought right back.
+                Authorize Nexus to sync contacts with your Constant Contact account.
               </p>
-              <a
-                href="/api/constant-contact/oauth"
-                className="btn btn-primary"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}
-              >
+              <a href="/api/constant-contact/oauth" className="btn btn-primary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
                 <Zap size={14} /> Connect Constant Contact
               </a>
-              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: 16 }}>
-                Requires <code>CONSTANT_CONTACT_CLIENT_ID</code> and <code>CONSTANT_CONTACT_CLIENT_SECRET</code> in Vercel env vars.
-              </p>
             </div>
           )}
 
           {error && (
-            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <AlertCircle size={16} color="#dc2626" style={{ flexShrink: 0, marginTop: 1 }} />
-              <div>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#dc2626', marginBottom: 4 }}>Failed to compare</div>
-                <div style={{ fontSize: '12px', color: '#991b1b' }}>{error}</div>
-              </div>
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '12px 16px', display: 'flex', gap: 10 }}>
+              <AlertCircle size={16} color="#dc2626" style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: '13px', color: '#991b1b' }}>{error}</span>
             </div>
           )}
 
-          {data && !loading && (
+          {!loading && !notConnected && !error && contacts.length > 0 && (
             <>
-              {/* Stats row */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
-                {[
-                  { label: 'In Nexus', value: data.nexus_total, color: '#0f172a', icon: <Users size={14} /> },
-                  { label: 'In CC', value: data.cc_total, color: '#0f172a', icon: <Users size={14} /> },
-                  { label: 'Matched', value: data.matched_count, color: '#10b981', icon: <CheckCircle2 size={14} /> },
-                  { label: 'Need Sync', value: data.nexus_only_count, color: data.nexus_only_count > 0 ? '#d97706' : '#10b981', icon: <ArrowUpRight size={14} /> },
-                ].map(stat => (
-                  <div key={stat.label} style={{ background: 'var(--surface-raised)', borderRadius: 8, padding: '12px 14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: stat.color, marginBottom: 4 }}>
-                      {stat.icon}
-                      <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{stat.label}</span>
-                    </div>
-                    <div style={{ fontSize: '24px', fontWeight: 700, color: stat.color }}>{stat.value.toLocaleString()}</div>
-                  </div>
-                ))}
-              </div>
-
               {/* List picker */}
               {lists.length > 0 && (
-                <div style={{ background: 'var(--surface-raised)', borderRadius: 8, padding: '12px 14px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ background: 'var(--surface-raised)', borderRadius: 8, padding: '10px 14px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Sync to list:</span>
-                  <select
-                    value={selectedListId ?? ''}
-                    onChange={e => saveListChoice(e.target.value || null)}
-                    style={{ flex: 1, fontSize: '12px', padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-primary)', cursor: 'pointer' }}
-                  >
+                  <select value={selectedListId ?? ''} onChange={e => saveListChoice(e.target.value || null)}
+                    style={{ flex: 1, fontSize: '12px', padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-primary)', cursor: 'pointer' }}>
                     <option value="">No list (contacts only)</option>
                     {lists.map(l => (
-                      <option key={l.id} value={l.id}>
-                        {l.name}{l.count !== null ? ` (${l.count.toLocaleString()})` : ''}
-                      </option>
+                      <option key={l.id} value={l.id}>{l.name}{l.count !== null ? ` (${l.count.toLocaleString()})` : ''}</option>
                     ))}
                   </select>
                   {savingList && <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
@@ -299,8 +235,8 @@ export default function CCSyncPanel({ onClose }: Props) {
 
               {/* Progress bar */}
               {syncProgress && (
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-muted)', marginBottom: 6 }}>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-muted)', marginBottom: 5 }}>
                     <span>Syncing to Constant Contact…</span>
                     <span>{syncProgress.done} / {syncProgress.total}</span>
                   </div>
@@ -310,15 +246,15 @@ export default function CCSyncPanel({ onClose }: Props) {
                 </div>
               )}
 
-              {/* Sync result banner */}
+              {/* Sync result */}
               {syncDone && (
                 <div style={{
                   background: syncDone.failed > 0 ? '#fef3c7' : '#f0fdf4',
                   border: `1px solid ${syncDone.failed > 0 ? '#fde68a' : '#bbf7d0'}`,
-                  borderRadius: 8, padding: '12px 16px', marginBottom: 16,
+                  borderRadius: 8, padding: '10px 14px', marginBottom: 14,
                   display: 'flex', alignItems: 'center', gap: 10, fontSize: '13px',
                 }}>
-                  <CheckCircle2 size={16} color={syncDone.failed > 0 ? '#d97706' : '#16a34a'} />
+                  <CheckCircle2 size={15} color={syncDone.failed > 0 ? '#d97706' : '#16a34a'} />
                   <span>
                     <strong>{syncDone.synced}</strong> contact{syncDone.synced !== 1 ? 's' : ''} synced to Constant Contact
                     {syncDone.failed > 0 && <span style={{ color: '#b45309' }}> · {syncDone.failed} failed</span>}
@@ -326,217 +262,104 @@ export default function CCSyncPanel({ onClose }: Props) {
                 </div>
               )}
 
-              {/* Tabs */}
-              <div style={{ display: 'flex', gap: 2, marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
-                {([
-                  { key: 'nexus_only', label: `Not in CC`, count: data.nexus_only_count, accent: '#d97706' },
-                  { key: 'cc_only', label: `CC only`, count: data.cc_only_count, accent: '#6366f1' },
-                  { key: 'matched', label: `Matched`, count: data.matched_count, accent: '#10b981' },
-                ] as { key: Tab; label: string; count: number; accent: string }[]).map(t => (
-                  <button key={t.key} onClick={() => setTab(t.key)} style={{
-                    padding: '8px 14px', fontSize: '12px', fontWeight: 600,
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    borderBottom: `2px solid ${tab === t.key ? t.accent : 'transparent'}`,
-                    color: tab === t.key ? t.accent : 'var(--text-muted)',
-                    marginBottom: '-1px',
-                  }}>
-                    {t.label} <span style={{ fontFamily: 'var(--font-mono)', marginLeft: 4 }}>{t.count.toLocaleString()}</span>
+              {/* Type filter pills */}
+              {types.length > 1 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                  <button onClick={() => { setTypeFilter('all'); setSelectedIds(new Set()) }}
+                    style={{ padding: '3px 10px', borderRadius: 999, border: `1px solid ${typeFilter === 'all' ? 'var(--accent)' : 'var(--border)'}`, background: typeFilter === 'all' ? 'var(--accent-muted)' : 'transparent', color: typeFilter === 'all' ? 'var(--accent)' : 'var(--text-secondary)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    All <span style={{ fontFamily: 'var(--font-mono)' }}>{contacts.length}</span>
                   </button>
-                ))}
+                  {types.map(t => (
+                    <button key={t} onClick={() => { setTypeFilter(t); setSelectedIds(new Set()) }}
+                      style={{ padding: '3px 10px', borderRadius: 999, border: `1px solid ${typeFilter === t ? (TYPE_COLORS[t] || 'var(--accent)') : 'var(--border)'}`, background: typeFilter === t ? (TYPE_COLORS[t] || 'var(--accent)') + '20' : 'transparent', color: typeFilter === t ? (TYPE_COLORS[t] || 'var(--accent)') : 'var(--text-secondary)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      {t} <span style={{ fontFamily: 'var(--font-mono)' }}>{typeCounts[t]}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Toolbar: select all + sync button */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '6px 10px', background: 'var(--surface-raised)', borderRadius: 6 }}>
+                <input type="checkbox"
+                  checked={selectedIds.size > 0 && selectedIds.size === unsynced.length}
+                  onChange={() => setSelectedIds(prev => prev.size === unsynced.length ? new Set() : new Set(unsynced.map(c => c.id)))}
+                  style={{ cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)', flex: 1 }}>
+                  {selectedIds.size > 0 ? `${selectedIds.size} selected` : `${filtered.length} contacts`}
+                  {syncedIds.size > 0 && ` · ${syncedIds.size} synced this session`}
+                </span>
+                {selectedIds.size > 0 ? (
+                  <button className="btn btn-primary" onClick={() => syncContacts(filtered.filter(c => selectedIds.has(c.id)))} disabled={pushing}
+                    style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    {pushing ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpRight size={12} />}
+                    {pushing && syncProgress ? `${syncProgress.done} / ${syncProgress.total}` : `Sync ${selectedIds.size}`}
+                  </button>
+                ) : (
+                  <button className="btn btn-ghost" onClick={() => syncContacts(unsynced)} disabled={pushing}
+                    style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    {pushing ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpRight size={12} />}
+                    {pushing && syncProgress ? `${syncProgress.done} / ${syncProgress.total}` : `Sync All ${unsynced.length}`}
+                  </button>
+                )}
               </div>
 
-              {/* Tab: Not in CC */}
-              {tab === 'nexus_only' && (
-                <>
-                  {data.nexus_only_count === 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '32px 0', color: 'var(--text-muted)' }}>
-                      <CheckCircle2 size={24} color="#10b981" style={{ marginBottom: 8 }} />
-                      <div style={{ fontSize: '14px', fontWeight: 600, color: '#16a34a' }}>All Nexus contacts are in CC!</div>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Category filter pills */}
-                      {(() => {
-                        const counts: Record<string, number> = {}
-                        data.nexus_only.forEach(c => { counts[c.contact_type] = (counts[c.contact_type] || 0) + 1 })
-                        const types = Object.keys(counts).sort()
-                        return types.length > 1 ? (
-                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-                            <button onClick={() => { setTypeFilter('all'); setSelectedIds(new Set()) }}
-                              style={{ padding: '3px 10px', borderRadius: 999, border: `1px solid ${typeFilter === 'all' ? 'var(--accent)' : 'var(--border)'}`, background: typeFilter === 'all' ? 'var(--accent-muted)' : 'transparent', color: typeFilter === 'all' ? 'var(--accent)' : 'var(--text-secondary)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                              All <span style={{ fontFamily: 'var(--font-mono)' }}>{data.nexus_only.length}</span>
-                            </button>
-                            {types.map(t => (
-                              <button key={t} onClick={() => { setTypeFilter(t); setSelectedIds(new Set()) }}
-                                style={{ padding: '3px 10px', borderRadius: 999, border: `1px solid ${typeFilter === t ? (typeColor[t] || 'var(--accent)') : 'var(--border)'}`, background: typeFilter === t ? (typeColor[t] || 'var(--accent)') + '20' : 'transparent', color: typeFilter === t ? (typeColor[t] || 'var(--accent)') : 'var(--text-secondary)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                {t} <span style={{ fontFamily: 'var(--font-mono)' }}>{counts[t]}</span>
-                              </button>
-                            ))}
-                          </div>
-                        ) : null
-                      })()}
-
-                      {/* Toolbar */}
-                      {(() => {
-                        const filtered = data.nexus_only.filter(c => typeFilter === 'all' || c.contact_type === typeFilter)
-                        const unsynced = filtered.filter(c => !syncedIds.has(c.id))
-                        return (
-                          <>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                              <input type="checkbox"
-                                checked={selectedIds.size > 0 && selectedIds.size === unsynced.length}
-                                onChange={() => setSelectedIds(prev => prev.size === unsynced.length ? new Set() : new Set(unsynced.map(c => c.id)))}
-                                style={{ cursor: 'pointer' }}
-                              />
-                              <span style={{ fontSize: '12px', color: 'var(--text-muted)', flex: 1 }}>
-                                {selectedIds.size > 0 ? `${selectedIds.size} selected` : `${filtered.length} not in CC`}
-                              </span>
-                              {selectedIds.size > 0 ? (
-                                <button className="btn btn-primary" onClick={pushSelected} disabled={pushing}
-                                  style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 5 }}>
-                                  {pushing ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpRight size={12} />}
-                                  {pushing && syncProgress ? `${syncProgress.done} / ${syncProgress.total}` : `Sync ${selectedIds.size}`}
-                                </button>
-                              ) : (
-                                <button className="btn btn-ghost" onClick={() => syncContacts(unsynced)} disabled={pushing}
-                                  style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 5 }}>
-                                  {pushing ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpRight size={12} />}
-                                  {pushing && syncProgress ? `${syncProgress.done} / ${syncProgress.total}` : `Sync All ${filtered.length}`}
-                                </button>
-                              )}
-                            </div>
-
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                              {filtered.map(c => {
-                          const isSynced = syncedIds.has(c.id)
-                          const isSelected = selectedIds.has(c.id)
-                          const ccError = contactErrors[c.id]
-                          return (
-                            <div key={c.id} style={{
-                              borderRadius: 6, overflow: 'hidden',
-                              border: `1px solid ${ccError ? '#fecaca' : isSelected ? 'var(--accent)' : 'transparent'}`,
-                              background: isSynced ? '#f0fdf4' : isSelected ? 'var(--accent-muted)' : 'var(--surface-raised)',
-                            }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px' }}>
-                                {!isSynced && (
-                                  <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(c.id)}
-                                    disabled={pushing} style={{ cursor: 'pointer', flexShrink: 0 }} />
-                                )}
-                                {isSynced && <CheckCircle2 size={14} color="#16a34a" style={{ flexShrink: 0 }} />}
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontSize: '13px', fontWeight: 600 }}>
-                                    {c.first_name} {c.last_name}
-                                  </div>
-                                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                    {[c.firm, c.email].filter(Boolean).join(' · ')}
-                                    {c.created_at && <span style={{ marginLeft: 6, opacity: 0.7 }}>· {new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
-                                  </div>
-                                </div>
-                                <span style={{
-                                  fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
-                                  padding: '2px 6px', borderRadius: 4, flexShrink: 0,
-                                  background: (typeColor[c.contact_type] || '#94a3b8') + '20',
-                                  color: typeColor[c.contact_type] || '#94a3b8',
-                                }}>{c.contact_type}</span>
-                                {!isSynced && !pushing && (
-                                  <button onClick={() => pushOne(c)}
-                                    style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: '11px', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                                    <ArrowUpRight size={10} /> Sync
-                                  </button>
-                                )}
-                              </div>
-                              {ccError && (
-                                <div style={{ padding: '4px 10px 8px 34px', fontSize: '11px', color: '#dc2626', background: '#fef2f2' }}>
-                                  ⚠ {ccError}
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                          </>
-                        )
-                      })()}
-                    </>
-                  )}
-                </>
-              )}
-
-              {/* Tab: CC only */}
-              {tab === 'cc_only' && (
-                <>
-                  {data.cc_only_count === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)' }}>
-                      <CheckCircle2 size={24} color="#10b981" style={{ marginBottom: 8 }} />
-                      <div style={{ fontSize: '14px', fontWeight: 600 }}>No CC-only contacts</div>
-                    </div>
-                  ) : (
-                    <>
-                      <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: 12 }}>
-                        {data.cc_only_count} contact{data.cc_only_count !== 1 ? 's' : ''} in Constant Contact that are not in Nexus
-                      </p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        {data.cc_only.map((c, i) => (
-                          <div key={c.cc_id || i} style={{
-                            display: 'flex', alignItems: 'center', gap: 10,
-                            padding: '8px 10px', borderRadius: 6, background: 'var(--surface-raised)',
-                          }}>
-                            <ArrowDownLeft size={14} color="#6366f1" style={{ flexShrink: 0 }} />
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: '13px', fontWeight: 600 }}>
-                                {c.first_name} {c.last_name}
-                              </div>
-                              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                {[c.firm, c.email].filter(Boolean).join(' · ')}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-
-              {/* Tab: Matched */}
-              {tab === 'matched' && (
-                <>
-                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: 12 }}>
-                    {data.matched_count} contact{data.matched_count !== 1 ? 's' : ''} exist in both systems (matched by email)
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    {data.matched.map(c => (
-                      <div key={c.id} style={{
-                        display: 'flex', alignItems: 'center', gap: 10,
-                        padding: '8px 10px', borderRadius: 6, background: 'var(--surface-raised)',
-                      }}>
-                        <CheckCircle2 size={14} color="#10b981" style={{ flexShrink: 0 }} />
+              {/* Contact list */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {filtered.map(c => {
+                  const isSynced = syncedIds.has(c.id)
+                  const isSelected = selectedIds.has(c.id)
+                  const ccError = contactErrors[c.id]
+                  return (
+                    <div key={c.id} style={{
+                      borderRadius: 6, overflow: 'hidden',
+                      border: `1px solid ${ccError ? '#fecaca' : isSelected ? 'var(--accent)' : 'transparent'}`,
+                      background: isSynced ? '#f0fdf4' : isSelected ? 'var(--accent-muted)' : 'var(--surface-raised)',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px' }}>
+                        {isSynced
+                          ? <CheckCircle2 size={14} color="#16a34a" style={{ flexShrink: 0 }} />
+                          : <input type="checkbox" checked={isSelected} onChange={() => setSelectedIds(prev => { const n = new Set(prev); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n })}
+                              disabled={pushing} style={{ cursor: 'pointer', flexShrink: 0 }} />
+                        }
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: '13px', fontWeight: 600 }}>{c.first_name} {c.last_name}</div>
                           <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                             {[c.firm, c.email].filter(Boolean).join(' · ')}
+                            {c.created_at && <span style={{ marginLeft: 6, opacity: 0.6 }}>· {new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
                           </div>
                         </div>
                         <span style={{
                           fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
-                          padding: '2px 6px', borderRadius: 4,
-                          background: (typeColor[c.contact_type] || '#94a3b8') + '20',
-                          color: typeColor[c.contact_type] || '#94a3b8',
+                          padding: '2px 6px', borderRadius: 4, flexShrink: 0,
+                          background: (TYPE_COLORS[c.contact_type] || '#94a3b8') + '20',
+                          color: TYPE_COLORS[c.contact_type] || '#94a3b8',
                         }}>{c.contact_type}</span>
+                        {!isSynced && !pushing && (
+                          <button onClick={() => syncContacts([c])}
+                            style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: '11px', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                            <ArrowUpRight size={10} /> Sync
+                          </button>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                </>
-              )}
+                      {ccError && (
+                        <div style={{ padding: '4px 10px 7px 34px', fontSize: '11px', color: '#dc2626', background: '#fef2f2' }}>
+                          ⚠ {ccError}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
             </>
           )}
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '12px 24px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-          <button onClick={load} disabled={loading} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
-            <RefreshCw size={12} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
-            Refresh
+        <div style={{ padding: '10px 24px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <button onClick={load} disabled={loading}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <RefreshCw size={12} style={loading ? { animation: 'spin 1s linear infinite' } : {}} /> Refresh
           </button>
           <button className="btn btn-ghost" onClick={onClose}>Close</button>
         </div>
