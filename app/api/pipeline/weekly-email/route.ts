@@ -66,36 +66,41 @@ async function runSend() {
   }
 
   // 2. Fetch active pipeline deals
-  // Try with loi_date first; fall back without it if the column doesn't exist yet
+  // Strip unknown columns one at a time until the query succeeds.
+  // This handles schema lag where new columns haven't been migrated yet.
+  const OPTIONAL_COLS = ['loi_date', 'asking_multiple', 'asking_price']
+  const REQUIRED_COLS = 'id, company_name, stage, sector, geography, revenue, ebitda, deal_type, description, updated_at'
+
   let deals: any[] | null = null
   let dealsErr: any = null
+  let activeCols = [...OPTIONAL_COLS]
 
-  const baseSelect = 'id, company_name, stage, sector, geography, revenue, ebitda, asking_price, asking_multiple, deal_type, description, updated_at'
+  for (let attempt = 0; attempt <= OPTIONAL_COLS.length; attempt++) {
+    const select = activeCols.length
+      ? `${REQUIRED_COLS}, ${activeCols.join(', ')}`
+      : REQUIRED_COLS
+    const { data, error } = await supabaseAdmin
+      .from('deals')
+      .select(select)
+      .in('stage', STAGES)
+      .order('stage')
+      .order('updated_at', { ascending: false })
 
-  const res1 = await supabaseAdmin
-    .from('deals')
-    .select(`${baseSelect}, loi_date`)
-    .in('stage', STAGES)
-    .order('stage')
-    .order('updated_at', { ascending: false })
+    if (!error) { deals = data; break }
 
-  if (res1.error) {
-    // If it's a missing-column error, retry without loi_date
-    if (res1.error.code === '42703' || res1.error.message?.includes('loi_date')) {
-      console.warn('[pipeline-email] loi_date column missing — retrying without it')
-      const res2 = await supabaseAdmin
-        .from('deals')
-        .select(baseSelect)
-        .in('stage', STAGES)
-        .order('stage')
-        .order('updated_at', { ascending: false })
-      deals = res2.data
-      dealsErr = res2.error
-    } else {
-      dealsErr = res1.error
+    // If it's a missing-column error, drop the offending column and retry
+    if (error.code === '42703') {
+      const match = error.message?.match(/column deals\.(\w+) does not exist/i)
+        ?? error.message?.match(/column "(\w+)" does not exist/i)
+      const bad = match?.[1]
+      if (bad && activeCols.includes(bad)) {
+        console.warn(`[pipeline-email] Column "${bad}" missing — retrying without it`)
+        activeCols = activeCols.filter(c => c !== bad)
+        continue
+      }
     }
-  } else {
-    deals = res1.data
+    dealsErr = error
+    break
   }
 
   if (dealsErr || !deals) {
