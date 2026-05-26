@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { X, RefreshCw, CheckCircle2, AlertCircle, ArrowUpRight, Zap, Link2, Filter } from 'lucide-react'
+import { X, RefreshCw, CheckCircle2, AlertCircle, ArrowUpRight, Zap, Link2 } from 'lucide-react'
 
 interface NexusContact {
   id: string
@@ -40,6 +40,10 @@ export default function CCSyncPanel({ onClose }: Props) {
   const [selectedListId, setSelectedListId] = useState<string | null>(null)
   const [savingList, setSavingList] = useState(false)
 
+  // Background CC dedup check
+  const [ccCheckStatus, setCcCheckStatus] = useState<'idle' | 'checking' | 'done'>('idle')
+  const [ccAlreadyInCount, setCcAlreadyInCount] = useState(0)
+
   // Filter / selection
   const [typeFilter, setTypeFilter] = useState('all')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -51,12 +55,36 @@ export default function CCSyncPanel({ onClose }: Props) {
   const [syncedIds, setSyncedIds] = useState<Set<string>>(new Set())
   const [contactErrors, setContactErrors] = useState<Record<string, string>>({})
 
-  // Load: Supabase contacts + CC lists in parallel — no CC contacts fetch
+  // Background: fetch CC contacts and remove those already in CC from the list
+  const checkCC = async () => {
+    setCcCheckStatus('checking')
+    try {
+      const res = await fetch('/api/constant-contact/compare')
+      if (!res.ok) { setCcCheckStatus('done'); return }
+      const data = await res.json()
+      if (data.not_connected) { setCcCheckStatus('done'); return }
+
+      // matched = nexus contacts already in CC (matched by email)
+      const matchedIds = new Set<string>((data.matched || []).map((c: any) => c.id))
+      if (matchedIds.size > 0) {
+        setCcAlreadyInCount(matchedIds.size)
+        setContacts(prev => prev.filter(c => !matchedIds.has(c.id)))
+      }
+    } catch {
+      // silent — CC check is best-effort, don't block the UI
+    } finally {
+      setCcCheckStatus('done')
+    }
+  }
+
+  // Phase 1: fast Supabase load. Phase 2: background CC dedup check.
   const load = async () => {
     setLoading(true)
     setError(null)
     setNotConnected(false)
     setSyncDone(null)
+    setCcCheckStatus('idle')
+    setCcAlreadyInCount(0)
     try {
       const [contactsRes, listsRes] = await Promise.all([
         fetch('/api/constant-contact/nexus-contacts'),
@@ -84,9 +112,13 @@ export default function CCSyncPanel({ onClose }: Props) {
       }
     } catch (e: any) {
       setError(e.message)
+      return
     } finally {
       setLoading(false)
     }
+
+    // Phase 2: background CC check — runs after fast load, doesn't block UI
+    checkCC()
   }
 
   useEffect(() => { load() }, [])
@@ -130,7 +162,7 @@ export default function CCSyncPanel({ onClose }: Props) {
           if (res.ok) {
             synced++
             setSyncedIds(prev => new Set([...prev, c.id]))
-            // Remove from list immediately — cc_synced_at is now set in DB
+            // Remove immediately — cc_synced_at stamped in DB
             setContacts(prev => prev.filter(x => x.id !== c.id))
           } else {
             failed++
@@ -179,8 +211,18 @@ export default function CCSyncPanel({ onClose }: Props) {
           </div>
           <div>
             <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>Constant Contact Sync</h2>
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
-              {loading ? 'Loading…' : `${contacts.length.toLocaleString()} bankers, lenders & LPs with email`}
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+              {loading
+                ? 'Loading…'
+                : `${contacts.length.toLocaleString()} not yet in CC`}
+              {ccCheckStatus === 'checking' && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-muted)', fontSize: '11px' }}>
+                  <RefreshCw size={10} style={{ animation: 'spin 1s linear infinite' }} /> verifying with CC…
+                </span>
+              )}
+              {ccCheckStatus === 'done' && ccAlreadyInCount > 0 && (
+                <span style={{ fontSize: '11px', color: '#16a34a' }}>· {ccAlreadyInCount} already in CC hidden</span>
+              )}
             </p>
           </div>
           <button onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 4 }}>
@@ -222,7 +264,7 @@ export default function CCSyncPanel({ onClose }: Props) {
             </div>
           )}
 
-          {!loading && !notConnected && !error && contacts.length > 0 && (
+          {!loading && !notConnected && !error && (
             <>
               {/* List picker */}
               {lists.length > 0 && (
@@ -268,104 +310,119 @@ export default function CCSyncPanel({ onClose }: Props) {
                 </div>
               )}
 
-              {/* Type filter pills */}
-              {types.length > 1 && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-                  <button onClick={() => { setTypeFilter('all'); setSelectedIds(new Set()) }}
-                    style={{ padding: '3px 10px', borderRadius: 999, border: `1px solid ${typeFilter === 'all' ? 'var(--accent)' : 'var(--border)'}`, background: typeFilter === 'all' ? 'var(--accent-muted)' : 'transparent', color: typeFilter === 'all' ? 'var(--accent)' : 'var(--text-secondary)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    All <span style={{ fontFamily: 'var(--font-mono)' }}>{contacts.length}</span>
-                  </button>
-                  {types.map(t => (
-                    <button key={t} onClick={() => { setTypeFilter(t); setSelectedIds(new Set()) }}
-                      style={{ padding: '3px 10px', borderRadius: 999, border: `1px solid ${typeFilter === t ? (TYPE_COLORS[t] || 'var(--accent)') : 'var(--border)'}`, background: typeFilter === t ? (TYPE_COLORS[t] || 'var(--accent)') + '20' : 'transparent', color: typeFilter === t ? (TYPE_COLORS[t] || 'var(--accent)') : 'var(--text-secondary)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      {t} <span style={{ fontFamily: 'var(--font-mono)' }}>{typeCounts[t]}</span>
-                    </button>
-                  ))}
+              {contacts.length === 0 && ccCheckStatus === 'done' ? (
+                <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-muted)' }}>
+                  <CheckCircle2 size={32} color="#16a34a" style={{ marginBottom: 12 }} />
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>All caught up!</div>
+                  <div style={{ fontSize: '13px', marginTop: 4 }}>All bankers, lenders & LPs are already in Constant Contact.</div>
                 </div>
-              )}
-
-              {/* Toolbar: select all + sync button */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '6px 10px', background: 'var(--surface-raised)', borderRadius: 6 }}>
-                <input type="checkbox"
-                  checked={selectedIds.size > 0 && selectedIds.size === unsynced.length}
-                  onChange={() => setSelectedIds(prev => prev.size === unsynced.length ? new Set() : new Set(unsynced.map(c => c.id)))}
-                  style={{ cursor: 'pointer' }}
-                />
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)', flex: 1 }}>
-                  {selectedIds.size > 0 ? `${selectedIds.size} selected` : `${filtered.length} contacts`}
-                  {syncedIds.size > 0 && ` · ${syncedIds.size} synced this session`}
-                </span>
-                {selectedIds.size > 0 ? (
-                  <button className="btn btn-primary" onClick={() => syncContacts(filtered.filter(c => selectedIds.has(c.id)))} disabled={pushing}
-                    style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 5 }}>
-                    {pushing ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpRight size={12} />}
-                    {pushing && syncProgress ? `${syncProgress.done} / ${syncProgress.total}` : `Sync ${selectedIds.size}`}
-                  </button>
-                ) : (
-                  <button className="btn btn-ghost" onClick={() => syncContacts(unsynced)} disabled={pushing}
-                    style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 5 }}>
-                    {pushing ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpRight size={12} />}
-                    {pushing && syncProgress ? `${syncProgress.done} / ${syncProgress.total}` : `Sync All ${unsynced.length}`}
-                  </button>
-                )}
-              </div>
-
-              {/* Contact list */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {filtered.map(c => {
-                  const isSynced = syncedIds.has(c.id)
-                  const isSelected = selectedIds.has(c.id)
-                  const ccError = contactErrors[c.id]
-                  return (
-                    <div key={c.id} style={{
-                      borderRadius: 6, overflow: 'hidden',
-                      border: `1px solid ${ccError ? '#fecaca' : isSelected ? 'var(--accent)' : 'transparent'}`,
-                      background: isSynced ? '#f0fdf4' : isSelected ? 'var(--accent-muted)' : 'var(--surface-raised)',
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px' }}>
-                        {isSynced
-                          ? <CheckCircle2 size={14} color="#16a34a" style={{ flexShrink: 0 }} />
-                          : <input type="checkbox" checked={isSelected} onChange={() => setSelectedIds(prev => { const n = new Set(prev); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n })}
-                              disabled={pushing} style={{ cursor: 'pointer', flexShrink: 0 }} />
-                        }
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: '13px', fontWeight: 600 }}>{c.first_name} {c.last_name}</div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                            {[c.firm, c.email].filter(Boolean).join(' · ')}
-                            {c.created_at && <span style={{ marginLeft: 6, opacity: 0.6 }}>· {new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
-                          </div>
-                        </div>
-                        <span style={{
-                          fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
-                          padding: '2px 6px', borderRadius: 4, flexShrink: 0,
-                          background: (TYPE_COLORS[c.contact_type] || '#94a3b8') + '20',
-                          color: TYPE_COLORS[c.contact_type] || '#94a3b8',
-                        }}>{c.contact_type}</span>
-                        {!isSynced && !pushing && (
-                          <button onClick={() => syncContacts([c])}
-                            style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: '11px', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                            <ArrowUpRight size={10} /> Sync
-                          </button>
-                        )}
-                      </div>
-                      {ccError && (
-                        <div style={{ padding: '4px 10px 7px 34px', fontSize: '11px', color: '#dc2626', background: '#fef2f2' }}>
-                          ⚠ {ccError}
-                        </div>
-                      )}
+              ) : contacts.length === 0 && ccCheckStatus === 'checking' ? (
+                <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--text-muted)', fontSize: '13px' }}>
+                  <RefreshCw size={18} style={{ animation: 'spin 1s linear infinite', marginBottom: 10 }} />
+                  <div>Verifying with Constant Contact…</div>
+                </div>
+              ) : (
+                <>
+                  {/* Type filter pills */}
+                  {types.length > 1 && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                      <button onClick={() => { setTypeFilter('all'); setSelectedIds(new Set()) }}
+                        style={{ padding: '3px 10px', borderRadius: 999, border: `1px solid ${typeFilter === 'all' ? 'var(--accent)' : 'var(--border)'}`, background: typeFilter === 'all' ? 'var(--accent-muted)' : 'transparent', color: typeFilter === 'all' ? 'var(--accent)' : 'var(--text-secondary)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        All <span style={{ fontFamily: 'var(--font-mono)' }}>{contacts.length}</span>
+                      </button>
+                      {types.map(t => (
+                        <button key={t} onClick={() => { setTypeFilter(t); setSelectedIds(new Set()) }}
+                          style={{ padding: '3px 10px', borderRadius: 999, border: `1px solid ${typeFilter === t ? (TYPE_COLORS[t] || 'var(--accent)') : 'var(--border)'}`, background: typeFilter === t ? (TYPE_COLORS[t] || 'var(--accent)') + '20' : 'transparent', color: typeFilter === t ? (TYPE_COLORS[t] || 'var(--accent)') : 'var(--text-secondary)', fontSize: '11px', fontWeight: 600, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          {t} <span style={{ fontFamily: 'var(--font-mono)' }}>{typeCounts[t]}</span>
+                        </button>
+                      ))}
                     </div>
-                  )
-                })}
-              </div>
+                  )}
+
+                  {/* Toolbar: select all + sync button */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '6px 10px', background: 'var(--surface-raised)', borderRadius: 6 }}>
+                    <input type="checkbox"
+                      checked={selectedIds.size > 0 && selectedIds.size === unsynced.length}
+                      onChange={() => setSelectedIds(prev => prev.size === unsynced.length ? new Set() : new Set(unsynced.map(c => c.id)))}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', flex: 1 }}>
+                      {selectedIds.size > 0 ? `${selectedIds.size} selected` : `${filtered.length} contacts`}
+                      {syncedIds.size > 0 && ` · ${syncedIds.size} synced this session`}
+                    </span>
+                    {selectedIds.size > 0 ? (
+                      <button className="btn btn-primary" onClick={() => syncContacts(filtered.filter(c => selectedIds.has(c.id)))} disabled={pushing}
+                        style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 5 }}>
+                        {pushing ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpRight size={12} />}
+                        {pushing && syncProgress ? `${syncProgress.done} / ${syncProgress.total}` : `Sync ${selectedIds.size}`}
+                      </button>
+                    ) : (
+                      <button className="btn btn-ghost" onClick={() => syncContacts(unsynced)} disabled={pushing || ccCheckStatus === 'checking'}
+                        style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 5 }}>
+                        {pushing ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpRight size={12} />}
+                        {pushing && syncProgress ? `${syncProgress.done} / ${syncProgress.total}` : `Sync All ${unsynced.length}`}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Contact list */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {filtered.map(c => {
+                      const isSynced = syncedIds.has(c.id)
+                      const isSelected = selectedIds.has(c.id)
+                      const ccError = contactErrors[c.id]
+                      return (
+                        <div key={c.id} style={{
+                          borderRadius: 6, overflow: 'hidden',
+                          border: `1px solid ${ccError ? '#fecaca' : isSelected ? 'var(--accent)' : 'transparent'}`,
+                          background: isSynced ? '#f0fdf4' : isSelected ? 'var(--accent-muted)' : 'var(--surface-raised)',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px' }}>
+                            {isSynced
+                              ? <CheckCircle2 size={14} color="#16a34a" style={{ flexShrink: 0 }} />
+                              : <input type="checkbox" checked={isSelected} onChange={() => setSelectedIds(prev => { const n = new Set(prev); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n })}
+                                  disabled={pushing} style={{ cursor: 'pointer', flexShrink: 0 }} />
+                            }
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: '13px', fontWeight: 600 }}>{c.first_name} {c.last_name}</div>
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                {[c.firm, c.email].filter(Boolean).join(' · ')}
+                                {c.created_at && <span style={{ marginLeft: 6, opacity: 0.6 }}>· {new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
+                              </div>
+                            </div>
+                            <span style={{
+                              fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em',
+                              padding: '2px 6px', borderRadius: 4, flexShrink: 0,
+                              background: (TYPE_COLORS[c.contact_type] || '#94a3b8') + '20',
+                              color: TYPE_COLORS[c.contact_type] || '#94a3b8',
+                            }}>{c.contact_type}</span>
+                            {!isSynced && !pushing && (
+                              <button onClick={() => syncContacts([c])}
+                                style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: '11px', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                                <ArrowUpRight size={10} /> Sync
+                              </button>
+                            )}
+                          </div>
+                          {ccError && (
+                            <div style={{ padding: '4px 10px 7px 34px', fontSize: '11px', color: '#dc2626', background: '#fef2f2' }}>
+                              ⚠ {ccError}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
 
         {/* Footer */}
         <div style={{ padding: '10px 24px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-          <button onClick={load} disabled={loading}
+          <button onClick={load} disabled={loading || ccCheckStatus === 'checking'}
             style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
-            <RefreshCw size={12} style={loading ? { animation: 'spin 1s linear infinite' } : {}} /> Refresh
+            <RefreshCw size={12} style={(loading || ccCheckStatus === 'checking') ? { animation: 'spin 1s linear infinite' } : {}} /> Refresh
           </button>
           <button className="btn btn-ghost" onClick={onClose}>Close</button>
         </div>
