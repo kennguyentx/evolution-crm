@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X, RefreshCw, CheckCircle2, AlertCircle, ArrowUpRight, Zap, Link2 } from 'lucide-react'
 
 interface NexusContact {
@@ -36,6 +36,7 @@ export default function CCSyncPanel({ onClose }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [notConnected, setNotConnected] = useState(false)
   const [contacts, setContacts] = useState<NexusContact[]>([])
+  const contactsRef = useRef<NexusContact[]>([]) // always tracks latest contacts for async reads
   const [lists, setLists] = useState<{ id: string; name: string; count: number | null }[]>([])
   const [selectedListId, setSelectedListId] = useState<string | null>(null)
   const [savingList, setSavingList] = useState(false)
@@ -60,29 +61,21 @@ export default function CCSyncPanel({ onClose }: Props) {
     setCcCheckStatus('checking')
     try {
       const res = await fetch('/api/constant-contact/compare')
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        console.error('[CC check] compare failed:', res.status, body)
-        setCcCheckStatus('done')
-        return
-      }
+      if (!res.ok) { setCcCheckStatus('done'); return }
       const data = await res.json()
       if (data.not_connected) { setCcCheckStatus('done'); return }
 
-      console.log('[CC check] cc_total:', data.cc_total, 'matched:', data.matched?.length)
-
       // matched = nexus contacts already in CC (matched by email)
       const matchedIds = new Set<string>((data.matched || []).map((c: any) => c.id))
-      console.log('[CC check] matchedIds sample:', [...matchedIds].slice(0, 3))
 
-      setContacts(prev => {
-        console.log('[CC check] contacts in state before filter:', prev.length, 'sample id:', prev[0]?.id)
-        const next = prev.filter(c => !matchedIds.has(c.id))
-        const removed = prev.length - next.length
-        console.log('[CC check] removed:', removed, 'remaining:', next.length)
-        if (removed > 0) setCcAlreadyInCount(removed)
-        return next
-      })
+      // Read current contacts from ref (avoids stale closure issue)
+      const current = contactsRef.current
+      const next = current.filter(c => !matchedIds.has(c.id))
+      const removed = current.length - next.length
+
+      contactsRef.current = next
+      setContacts(next)
+      if (removed > 0) setCcAlreadyInCount(removed)
     } catch (err) {
       console.error('[CC check] error:', err)
     } finally {
@@ -116,7 +109,9 @@ export default function CCSyncPanel({ onClose }: Props) {
 
       const contactsBody = await contactsRes.json()
       // Only show types that belong in CC — exclude management, other, etc.
-      setContacts((contactsBody.contacts || []).filter((c: NexusContact) => CC_TYPES.includes(c.contact_type)))
+      const loaded = (contactsBody.contacts || []).filter((c: NexusContact) => CC_TYPES.includes(c.contact_type))
+      contactsRef.current = loaded
+      setContacts(loaded)
 
       if (listsRes.ok) {
         const listsBody = await listsRes.json()
@@ -135,7 +130,6 @@ export default function CCSyncPanel({ onClose }: Props) {
   }
 
   useEffect(() => { load() }, [])
-  useEffect(() => { console.log('[contacts state changed]:', contacts.length) }, [contacts])
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', h)
@@ -177,7 +171,8 @@ export default function CCSyncPanel({ onClose }: Props) {
             synced++
             setSyncedIds(prev => new Set([...prev, c.id]))
             // Remove immediately — cc_synced_at stamped in DB
-            setContacts(prev => prev.filter(x => x.id !== c.id))
+            contactsRef.current = contactsRef.current.filter(x => x.id !== c.id)
+            setContacts(contactsRef.current)
           } else {
             failed++
             setContactErrors(prev => ({ ...prev, [c.id]: json.error || `HTTP ${res.status}` }))
