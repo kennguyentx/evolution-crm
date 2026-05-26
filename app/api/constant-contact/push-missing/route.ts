@@ -1,6 +1,7 @@
 // POST /api/constant-contact/push-missing
-// Pushes all Nexus contacts that don't exist in Constant Contact (matched by email).
-// Runs server-side so it can handle large batches without browser timeouts.
+// Uses CC's bulk activity API (POST /v3/activities/contacts) which is fully async —
+// we submit all missing contacts in one request and CC processes them in the background.
+// This avoids Vercel timeouts regardless of how many contacts need syncing.
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -19,14 +20,13 @@ function serviceClient() {
 
 async function fetchAllCCEmails(token: string): Promise<Set<string>> {
   const emails = new Set<string>()
-  // email_address is returned by default — no include param needed
   let url = `${CC_API}/contacts?status=all&limit=500`
 
   while (url) {
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
     })
-    if (!res.ok) throw new Error(`CC API ${res.status}`)
+    if (!res.ok) throw new Error(`CC API ${res.status}: ${await res.text()}`)
     const data = await res.json()
     for (const c of data.contacts || []) {
       const addr = (c.email_address?.address || '').toLowerCase()
@@ -39,39 +39,13 @@ async function fetchAllCCEmails(token: string): Promise<Set<string>> {
 }
 
 async function getSyncListId(): Promise<string | null> {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const supabase = serviceClient()
   const { data } = await supabase
     .from('app_settings')
     .select('value')
     .eq('key', 'cc_sync_list_id')
     .single()
   return data?.value ?? null
-}
-
-async function pushContact(token: string, contact: any, listId: string | null): Promise<boolean> {
-  const body: Record<string, any> = {
-    first_name: contact.first_name || '',
-    last_name: contact.last_name || '',
-  }
-  if (contact.title) body.job_title = contact.title
-  if (contact.firm) body.company_name = contact.firm
-  if (contact.email) body.email_address = { address: contact.email, permission_to_send: 'implicit' }
-  if (contact.phone) body.phone_numbers = [{ phone_number: contact.phone, kind: 'work' }]
-  if (listId) body.list_memberships = [listId]
-
-  const res = await fetch(`${CC_API}/contacts?action=create_or_update`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify(body),
-  })
-  return res.ok
 }
 
 export async function POST() {
@@ -82,7 +56,15 @@ export async function POST() {
     return NextResponse.json({ error: err.message }, { status: 503 })
   }
 
-  // 1. Get the set of emails already in CC
+  // Require a list to be selected — bulk API needs at least one list_id
+  const listId = await getSyncListId()
+  if (!listId) {
+    return NextResponse.json({
+      error: 'Please select a Constant Contact list first using the "Sync to list" dropdown.',
+    }, { status: 400 })
+  }
+
+  // 1. Get emails already in CC
   let ccEmails: Set<string>
   try {
     ccEmails = await fetchAllCCEmails(token)
@@ -106,40 +88,51 @@ export async function POST() {
     from += PAGE
   }
 
+  // Only sync contacts with an email address (CC requires email for deduplication)
   const missing = nexusContacts.filter(
-    c => !c.email || !ccEmails.has(c.email.toLowerCase())
+    c => c.email && !ccEmails.has(c.email.toLowerCase())
   )
 
   if (!missing.length) {
-    return NextResponse.json({ synced: 0, failed: 0, message: 'All contacts already in CC' })
+    return NextResponse.json({ synced: 0, message: 'All contacts (with email) are already in CC' })
   }
 
-  // 3. Push in batches of 5 to respect CC rate limits (~4 req/s)
-  const listId = await getSyncListId()
-  let synced = 0
-  let failed = 0
-  const errors: string[] = []
+  // 3. Submit to CC bulk activity API — async, CC processes in background
+  const importData = missing.map(c => {
+    const row: Record<string, string> = {
+      email_address: c.email,
+      first_name: c.first_name || '',
+      last_name: c.last_name || '',
+    }
+    if (c.firm) row.company_name = c.firm
+    if (c.title) row.job_title = c.title
+    if (c.phone) row.phone = c.phone
+    return row
+  })
 
-  for (let i = 0; i < missing.length; i += 5) {
-    const batch = missing.slice(i, i + 5)
-    const results = await Promise.allSettled(
-      batch.map(c => pushContact(token, c, listId))
-    )
-    for (let j = 0; j < results.length; j++) {
-      const r = results[j]
-      if (r.status === 'fulfilled' && r.value) {
-        synced++
-      } else {
-        failed++
-        const name = `${batch[j].first_name} ${batch[j].last_name}`.trim()
-        errors.push(name)
-      }
-    }
-    // Small delay between batches to stay within CC rate limits
-    if (i + 5 < missing.length) {
-      await new Promise(r => setTimeout(r, 300))
-    }
+  const res = await fetch(`${CC_API}/activities/contacts`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      import_data: importData,
+      list_ids: [listId],
+    }),
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    console.error('[push-missing] CC bulk API error:', res.status, text)
+    return NextResponse.json({ error: `CC API error (${res.status}): ${text}` }, { status: 500 })
   }
 
-  return NextResponse.json({ synced, failed, total_missing: missing.length, errors })
+  const result = await res.json()
+  return NextResponse.json({
+    submitted: missing.length,
+    activity_id: result.activity_id,
+    message: `${missing.length} contacts submitted to CC — processing in background`,
+  })
 }

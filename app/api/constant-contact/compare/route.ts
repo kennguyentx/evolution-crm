@@ -87,8 +87,9 @@ export async function GET() {
     if (c.email) nexusByEmail.set(c.email.toLowerCase(), c)
   }
 
+  // Only contacts WITH an email can be meaningfully synced/matched (CC deduplicates by email)
   const nexusOnly = (nexusContacts || []).filter(
-    c => !c.email || !ccByEmail.has(c.email.toLowerCase())
+    c => c.email && !ccByEmail.has(c.email.toLowerCase())
   )
   const matched = (nexusContacts || []).filter(
     c => c.email && ccByEmail.has(c.email.toLowerCase())

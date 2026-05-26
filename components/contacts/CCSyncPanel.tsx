@@ -44,7 +44,7 @@ export default function CCSyncPanel({ onClose }: Props) {
   const [data, setData] = useState<CompareResult | null>(null)
   const [tab, setTab] = useState<Tab>('overview')
   const [pushing, setPushing] = useState(false)
-  const [pushResult, setPushResult] = useState<{ synced: number; failed: number; message?: string; errors?: string[] } | null>(null)
+  const [pushResult, setPushResult] = useState<{ synced?: number; submitted?: number; failed?: number; message?: string; error?: string; errors?: string[] } | null>(null)
   const [pushingSingle, setPushingSingle] = useState<string | null>(null)
   const [syncedIds, setSyncedIds] = useState<Set<string>>(new Set())
   const [lists, setLists] = useState<{ id: string; name: string; count: number | null }[]>([])
@@ -109,13 +109,13 @@ export default function CCSyncPanel({ onClose }: Props) {
     try {
       const res = await fetch('/api/constant-contact/push-missing', { method: 'POST' })
       const json = await res.json()
-      setPushResult(json)
-      if (json.synced > 0) {
-        // Refresh comparison data
-        await load()
+      if (!res.ok) {
+        setPushResult({ error: json.error || `HTTP ${res.status}` })
+      } else {
+        setPushResult(json)
       }
     } catch {
-      setPushResult({ synced: 0, failed: 1, errors: ['Request failed'] })
+      setPushResult({ error: 'Request failed — check network connection' })
     } finally {
       setPushing(false)
     }
@@ -259,16 +259,20 @@ export default function CCSyncPanel({ onClose }: Props) {
               {/* Push result banner */}
               {pushResult && (
                 <div style={{
-                  background: pushResult.failed > 0 ? '#fef3c7' : '#f0fdf4',
-                  border: `1px solid ${pushResult.failed > 0 ? '#fde68a' : '#bbf7d0'}`,
+                  background: pushResult.error ? '#fef2f2' : '#f0fdf4',
+                  border: `1px solid ${pushResult.error ? '#fecaca' : '#bbf7d0'}`,
                   borderRadius: 8, padding: '10px 14px', marginBottom: 16,
                   display: 'flex', alignItems: 'center', gap: 8, fontSize: '13px',
                 }}>
-                  <CheckCircle2 size={15} color={pushResult.failed > 0 ? '#d97706' : '#16a34a'} />
-                  <span>
-                    <strong>{pushResult.synced}</strong> synced to CC
-                    {pushResult.failed > 0 && <span style={{ color: '#b45309' }}>, {pushResult.failed} failed</span>}
-                    {pushResult.message && ` — ${pushResult.message}`}
+                  {pushResult.error
+                    ? <AlertCircle size={15} color="#dc2626" />
+                    : <CheckCircle2 size={15} color="#16a34a" />}
+                  <span style={{ color: pushResult.error ? '#991b1b' : undefined }}>
+                    {pushResult.error
+                      ? pushResult.error
+                      : pushResult.submitted
+                        ? <><strong>{pushResult.submitted}</strong> contacts submitted to CC — processing in background</>
+                        : <>{pushResult.message}</>}
                   </span>
                 </div>
               )}
