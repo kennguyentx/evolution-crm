@@ -120,7 +120,11 @@ export default function PipelinePage() {
     setSending(true)
     setSendResult(null)
     setSendError(null)
-    const res = await fetch('/api/pipeline/weekly-email', { method: 'POST' })
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch('/api/pipeline/weekly-email', {
+      method: 'POST',
+      headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+    })
     if (res.ok) {
       setSendResult('success')
       setTimeout(() => setSendResult(null), 5000)

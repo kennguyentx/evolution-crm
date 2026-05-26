@@ -19,17 +19,20 @@ const STALE_DAYS = 14
 // ── GET — Vercel Cron ─────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET
-  if (cronSecret) {
-    const auth = req.headers.get('authorization')
-    if (auth !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  if (!cronSecret) return NextResponse.json({ error: 'Server misconfigured: CRON_SECRET not set' }, { status: 500 })
+  if (req.headers.get('authorization') !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   return runSend()
 }
 
-// ── POST — manual trigger from UI ────────────────────────────────────────────
-export async function POST() {
+// ── POST — manual trigger from UI (requires valid Supabase session) ───────────
+export async function POST(req: NextRequest) {
+  const authHeader = req.headers.get('authorization')
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
+  if (error || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   return runSend()
 }
 
