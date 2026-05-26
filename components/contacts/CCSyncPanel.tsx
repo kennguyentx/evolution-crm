@@ -47,6 +47,9 @@ export default function CCSyncPanel({ onClose }: Props) {
   const [pushResult, setPushResult] = useState<{ synced: number; failed: number; message?: string; errors?: string[] } | null>(null)
   const [pushingSingle, setPushingSingle] = useState<string | null>(null)
   const [syncedIds, setSyncedIds] = useState<Set<string>>(new Set())
+  const [lists, setLists] = useState<{ id: string; name: string; count: number | null }[]>([])
+  const [selectedListId, setSelectedListId] = useState<string | null>(null)
+  const [savingList, setSavingList] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -54,23 +57,42 @@ export default function CCSyncPanel({ onClose }: Props) {
     setNotConnected(false)
     setPushResult(null)
     try {
-      const res = await fetch('/api/constant-contact/compare')
-      const body = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        if (body.not_connected || res.status === 503) {
+      const [compareRes, listsRes] = await Promise.all([
+        fetch('/api/constant-contact/compare'),
+        fetch('/api/constant-contact/lists'),
+      ])
+      const compareBody = await compareRes.json().catch(() => ({}))
+      if (!compareRes.ok) {
+        if (compareBody.not_connected || compareRes.status === 503) {
           setNotConnected(true)
         } else {
-          throw new Error(body.error || `HTTP ${res.status}`)
+          throw new Error(compareBody.error || `HTTP ${compareRes.status}`)
         }
         return
       }
-      setData(body)
-      if (body.nexus_only_count > 0) setTab('nexus_only')
+      setData(compareBody)
+      if (compareBody.nexus_only_count > 0) setTab('nexus_only')
+
+      if (listsRes.ok) {
+        const listsBody = await listsRes.json()
+        setLists(listsBody.lists || [])
+        setSelectedListId(listsBody.selected_list_id ?? null)
+      }
     } catch (e: any) {
       setError(e.message)
     } finally {
       setLoading(false)
     }
+  }
+
+  const saveListChoice = async (listId: string | null) => {
+    setSelectedListId(listId)
+    setSavingList(true)
+    await fetch('/api/constant-contact/lists', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ list_id: listId }),
+    }).finally(() => setSavingList(false))
   }
 
   useEffect(() => { load() }, [])
@@ -213,6 +235,26 @@ export default function CCSyncPanel({ onClose }: Props) {
                   </div>
                 ))}
               </div>
+
+              {/* List picker */}
+              {lists.length > 0 && (
+                <div style={{ background: 'var(--surface-raised)', borderRadius: 8, padding: '12px 14px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Sync to list:</span>
+                  <select
+                    value={selectedListId ?? ''}
+                    onChange={e => saveListChoice(e.target.value || null)}
+                    style={{ flex: 1, fontSize: '12px', padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-primary)', cursor: 'pointer' }}
+                  >
+                    <option value="">No list (contacts only)</option>
+                    {lists.map(l => (
+                      <option key={l.id} value={l.id}>
+                        {l.name}{l.count !== null ? ` (${l.count.toLocaleString()})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {savingList && <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
+                </div>
+              )}
 
               {/* Push result banner */}
               {pushResult && (

@@ -38,7 +38,20 @@ async function fetchAllCCEmails(token: string): Promise<Set<string>> {
   return emails
 }
 
-async function pushContact(token: string, contact: any): Promise<boolean> {
+async function getSyncListId(): Promise<string | null> {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+  const { data } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'cc_sync_list_id')
+    .single()
+  return data?.value ?? null
+}
+
+async function pushContact(token: string, contact: any, listId: string | null): Promise<boolean> {
   const body: Record<string, any> = {
     first_name: contact.first_name || '',
     last_name: contact.last_name || '',
@@ -47,6 +60,7 @@ async function pushContact(token: string, contact: any): Promise<boolean> {
   if (contact.firm) body.company_name = contact.firm
   if (contact.email) body.email_address = { address: contact.email, permission_to_send: 'implicit' }
   if (contact.phone) body.phone_numbers = [{ phone_number: contact.phone, kind: 'work' }]
+  if (listId) body.list_memberships = [listId]
 
   const res = await fetch(`${CC_API}/contacts?action=create_or_update`, {
     method: 'POST',
@@ -101,6 +115,7 @@ export async function POST() {
   }
 
   // 3. Push in batches of 5 to respect CC rate limits (~4 req/s)
+  const listId = await getSyncListId()
   let synced = 0
   let failed = 0
   const errors: string[] = []
@@ -108,7 +123,7 @@ export async function POST() {
   for (let i = 0; i < missing.length; i += 5) {
     const batch = missing.slice(i, i + 5)
     const results = await Promise.allSettled(
-      batch.map(c => pushContact(token, c))
+      batch.map(c => pushContact(token, c, listId))
     )
     for (let j = 0; j < results.length; j++) {
       const r = results[j]

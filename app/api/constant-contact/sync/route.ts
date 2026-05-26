@@ -1,7 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 import { getValidCCToken } from '@/lib/constant-contact'
 
 const CC_API = 'https://api.cc.email/v3'
+
+async function getSyncListId(): Promise<string | null> {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+  const { data } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'cc_sync_list_id')
+    .single()
+  return data?.value ?? null
+}
 
 // POST — create or update a single contact in Constant Contact
 // Uses action=create_or_update so edits also propagate (matched by email)
@@ -19,6 +33,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'email or first_name required' }, { status: 400 })
   }
 
+  const listId = await getSyncListId()
+
   const body: Record<string, any> = {
     first_name: first_name || '',
     last_name: last_name || '',
@@ -26,6 +42,7 @@ export async function POST(req: NextRequest) {
     company_name: firm || undefined,
     email_address: email ? { address: email, permission_to_send: 'implicit' } : undefined,
     phone_numbers: phone ? [{ phone_number: phone, kind: 'work' }] : undefined,
+    list_memberships: listId ? [listId] : undefined,
   }
 
   // Remove undefined fields
