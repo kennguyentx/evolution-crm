@@ -44,7 +44,7 @@ export default function CCSyncPanel({ onClose }: Props) {
   const [data, setData] = useState<CompareResult | null>(null)
   const [tab, setTab] = useState<Tab>('overview')
   const [pushing, setPushing] = useState(false)
-  const [pushResult, setPushResult] = useState<{ synced: number; failed: number; errors?: string[] } | null>(null)
+  const [pushResult, setPushResult] = useState<{ synced: number; failed: number; message?: string; errors?: string[] } | null>(null)
   const [pushingSingle, setPushingSingle] = useState<string | null>(null)
   const [syncedIds, setSyncedIds] = useState<Set<string>>(new Set())
 
