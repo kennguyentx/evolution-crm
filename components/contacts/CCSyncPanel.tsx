@@ -73,15 +73,16 @@ export default function CCSyncPanel({ onClose }: Props) {
 
       // matched = nexus contacts already in CC (matched by email)
       const matchedIds = new Set<string>((data.matched || []).map((c: any) => c.id))
-      if (matchedIds.size > 0) {
-        // Count only contacts actually removed from the panel (banker/lender/lp)
-        setContacts(prev => {
-          const next = prev.filter(c => !matchedIds.has(c.id))
-          const removed = prev.length - next.length
-          if (removed > 0) setCcAlreadyInCount(removed)
-          return next
-        })
-      }
+      console.log('[CC check] matchedIds sample:', [...matchedIds].slice(0, 3))
+
+      setContacts(prev => {
+        console.log('[CC check] contacts in state before filter:', prev.length, 'sample id:', prev[0]?.id)
+        const next = prev.filter(c => !matchedIds.has(c.id))
+        const removed = prev.length - next.length
+        console.log('[CC check] removed:', removed, 'remaining:', next.length)
+        if (removed > 0) setCcAlreadyInCount(removed)
+        return next
+      })
     } catch (err) {
       console.error('[CC check] error:', err)
     } finally {
