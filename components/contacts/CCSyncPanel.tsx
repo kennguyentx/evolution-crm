@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { X, RefreshCw, CheckCircle2, AlertCircle, Users, ArrowUpRight, ArrowDownLeft, Zap } from 'lucide-react'
+import { X, RefreshCw, CheckCircle2, AlertCircle, Users, ArrowUpRight, ArrowDownLeft, Zap, Link2 } from 'lucide-react'
 
 interface CCContact {
   cc_id?: string
@@ -40,6 +40,7 @@ interface Props {
 export default function CCSyncPanel({ onClose }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [notConnected, setNotConnected] = useState(false)
   const [data, setData] = useState<CompareResult | null>(null)
   const [tab, setTab] = useState<Tab>('overview')
   const [pushing, setPushing] = useState(false)
@@ -50,16 +51,21 @@ export default function CCSyncPanel({ onClose }: Props) {
   const load = async () => {
     setLoading(true)
     setError(null)
+    setNotConnected(false)
     setPushResult(null)
     try {
       const res = await fetch('/api/constant-contact/compare')
+      const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body.error || `HTTP ${res.status}`)
+        if (body.not_connected || res.status === 503) {
+          setNotConnected(true)
+        } else {
+          throw new Error(body.error || `HTTP ${res.status}`)
+        }
+        return
       }
-      const json = await res.json()
-      setData(json)
-      if (json.nexus_only_count > 0) setTab('nexus_only')
+      setData(body)
+      if (body.nexus_only_count > 0) setTab('nexus_only')
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -154,17 +160,36 @@ export default function CCSyncPanel({ onClose }: Props) {
             </div>
           )}
 
+          {/* Not connected — prompt OAuth */}
+          {notConnected && !loading && (
+            <div style={{ textAlign: 'center', padding: '40px 24px' }}>
+              <div style={{ width: 56, height: 56, borderRadius: 14, background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                <Link2 size={24} color="#d97706" />
+              </div>
+              <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 8px' }}>Connect Constant Contact</h3>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 24px', lineHeight: 1.6 }}>
+                Authorize Nexus to sync contacts with your Constant Contact account.<br />
+                You'll be redirected to CC and brought right back.
+              </p>
+              <a
+                href="/api/constant-contact/oauth"
+                className="btn btn-primary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}
+              >
+                <Zap size={14} /> Connect Constant Contact
+              </a>
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: 16 }}>
+                Requires <code>CONSTANT_CONTACT_CLIENT_ID</code> and <code>CONSTANT_CONTACT_CLIENT_SECRET</code> in Vercel env vars.
+              </p>
+            </div>
+          )}
+
           {error && (
             <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
               <AlertCircle size={16} color="#dc2626" style={{ flexShrink: 0, marginTop: 1 }} />
               <div>
                 <div style={{ fontSize: '13px', fontWeight: 600, color: '#dc2626', marginBottom: 4 }}>Failed to compare</div>
                 <div style={{ fontSize: '12px', color: '#991b1b' }}>{error}</div>
-                {error.includes('401') && (
-                  <div style={{ fontSize: '12px', color: '#991b1b', marginTop: 6 }}>
-                    Your Constant Contact access token may be expired. Update <code>CONSTANT_CONTACT_ACCESS_TOKEN</code> in Vercel env vars.
-                  </div>
-                )}
               </div>
             </div>
           )}

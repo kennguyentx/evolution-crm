@@ -94,16 +94,24 @@ export default function ContactsPage() {
   useEffect(() => { setOffset(0); fetchContacts(true) }, [typeFilter])
 
   // Auto-open a contact from ?open=<id> (e.g. navigated from global search)
+  // Also handle CC OAuth redirect: ?cc_connected=1 or ?cc_error=...
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const openId = params.get('open')
-    if (!openId) return
-    supabase.from('contacts').select('*').eq('id', openId).single().then(({ data }) => {
-      if (data) setEditingContact(data as Contact)
-    })
-    // Clean the param from the URL without a full navigation
+    if (openId) {
+      supabase.from('contacts').select('*').eq('id', openId).single().then(({ data }) => {
+        if (data) setEditingContact(data as Contact)
+      })
+    }
+    // After CC OAuth redirect, open the sync panel automatically
+    if (params.get('cc_connected') === '1') {
+      setShowCCSync(true)
+    }
+    // Clean all handled params from the URL
     const url = new URL(window.location.href)
     url.searchParams.delete('open')
+    url.searchParams.delete('cc_connected')
+    url.searchParams.delete('cc_error')
     window.history.replaceState({}, '', url.toString())
   }, [])
 

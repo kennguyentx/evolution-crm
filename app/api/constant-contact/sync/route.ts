@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getValidCCToken } from '@/lib/constant-contact'
 
 const CC_API = 'https://api.cc.email/v3'
-
-function getToken() {
-  return process.env.CONSTANT_CONTACT_ACCESS_TOKEN
-}
 
 // POST — create or update a single contact in Constant Contact
 // Uses action=create_or_update so edits also propagate (matched by email)
 export async function POST(req: NextRequest) {
-  const token = getToken()
-  if (!token) {
-    return NextResponse.json({ error: 'CONSTANT_CONTACT_ACCESS_TOKEN not configured' }, { status: 503 })
+  let token: string
+  try {
+    token = await getValidCCToken()
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 503 })
   }
 
   const { first_name, last_name, email, phone, firm, title } = await req.json()

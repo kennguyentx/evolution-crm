@@ -4,6 +4,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getValidCCToken } from '@/lib/constant-contact'
 
 export const maxDuration = 60
 
@@ -59,9 +60,11 @@ async function pushContact(token: string, contact: any): Promise<boolean> {
 }
 
 export async function POST() {
-  const token = process.env.CONSTANT_CONTACT_ACCESS_TOKEN
-  if (!token) {
-    return NextResponse.json({ error: 'CONSTANT_CONTACT_ACCESS_TOKEN not configured' }, { status: 503 })
+  let token: string
+  try {
+    token = await getValidCCToken()
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 503 })
   }
 
   // 1. Get the set of emails already in CC

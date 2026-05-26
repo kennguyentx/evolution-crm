@@ -4,6 +4,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getValidCCToken } from '@/lib/constant-contact'
 
 const CC_API = 'https://api.cc.email/v3'
 
@@ -38,9 +39,11 @@ async function fetchAllCCContacts(token: string): Promise<any[]> {
 }
 
 export async function GET() {
-  const token = process.env.CONSTANT_CONTACT_ACCESS_TOKEN
-  if (!token) {
-    return NextResponse.json({ error: 'CONSTANT_CONTACT_ACCESS_TOKEN not configured' }, { status: 503 })
+  let token: string
+  try {
+    token = await getValidCCToken()
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message, not_connected: true }, { status: 503 })
   }
 
   // Fetch CC contacts
