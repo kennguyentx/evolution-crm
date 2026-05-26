@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
     email_address: email ? { address: email, permission_to_send: 'implicit' } : undefined,
     phone_numbers: phone ? [{ phone_number: phone, kind: 'work' }] : undefined,
     list_memberships: listId ? [listId] : undefined,
+    create_source: 'Account',
   }
 
   // Remove undefined fields
