@@ -32,6 +32,7 @@ export default function PipelinePage() {
   const [savingRecipients, setSavingRecipients] = useState(false)
   const [sending, setSending] = useState(false)
   const [sendResult, setSendResult] = useState<'success' | 'error' | null>(null)
+  const [sendError, setSendError] = useState<string | null>(null)
 
   const supabase = createClient()
   const isMobile = useIsMobile()
@@ -118,10 +119,18 @@ export default function PipelinePage() {
   const sendNow = async () => {
     setSending(true)
     setSendResult(null)
+    setSendError(null)
     const res = await fetch('/api/pipeline/weekly-email', { method: 'POST' })
-    setSendResult(res.ok ? 'success' : 'error')
+    if (res.ok) {
+      setSendResult('success')
+      setTimeout(() => setSendResult(null), 5000)
+    } else {
+      const body = await res.json().catch(() => ({}))
+      setSendError(body.error || `HTTP ${res.status}`)
+      setSendResult('error')
+      setTimeout(() => { setSendResult(null); setSendError(null) }, 10000)
+    }
     setSending(false)
-    setTimeout(() => setSendResult(null), 4000)
   }
 
   const dealsByStage = (stage: DealStage) => deals.filter(d => d.stage === stage)
@@ -216,7 +225,9 @@ export default function PipelinePage() {
                 </span>
               )}
               {sendResult === 'error' && (
-                <span style={{ fontSize: '12px', color: 'var(--red)' }}>Send failed — check logs</span>
+                <span style={{ fontSize: '12px', color: 'var(--red)' }}>
+                  {sendError || 'Send failed'}
+                </span>
               )}
               {savingRecipients && (
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Saving...</span>
