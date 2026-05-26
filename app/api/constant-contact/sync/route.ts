@@ -60,13 +60,22 @@ export async function POST(req: NextRequest) {
     body: JSON.stringify(body),
   })
 
-  if (!res.ok) {
-    const text = await res.text()
-    console.error('[cc-sync] error:', res.status, text)
-    return NextResponse.json({ error: text }, { status: res.status })
-  }
+  const text = await res.text()
+  let data: any = {}
+  try { data = JSON.parse(text) } catch {}
 
-  const data = await res.json()
+  if (!res.ok) {
+    // CC returns a conflict when the email already exists in their system under
+    // certain conditions even with create_or_update. Treat it as already-synced
+    // rather than an error — the contact is in CC, just stamp and move on.
+    const isAlreadyExists = res.status === 409 ||
+      text.toLowerCase().includes('already exists') ||
+      text.toLowerCase().includes('email_address') && res.status === 400
+    if (!isAlreadyExists) {
+      console.error('[cc-sync] error:', res.status, text)
+      return NextResponse.json({ error: text }, { status: res.status })
+    }
+  }
 
   // Stamp cc_synced_at so this contact is excluded from future sync panel loads
   if (id) {
@@ -80,5 +89,5 @@ export async function POST(req: NextRequest) {
       .eq('id', id)
   }
 
-  return NextResponse.json({ synced: true, contact_id: data.contact_id, action: data.action })
+  return NextResponse.json({ synced: true, contact_id: data.contact_id, action: data.action ?? 'already_exists' })
 }

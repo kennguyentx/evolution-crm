@@ -75,28 +75,30 @@ export async function GET() {
 
   // Build email → CC contact map
   // CC v3 returns email_address (singular object) by default on each contact
+  const normalize = (email: string) => email.toLowerCase().trim()
+
   const ccByEmail = new Map<string, any>()
   for (const c of ccContacts) {
-    const addr = (c.email_address?.address || '').toLowerCase()
+    const addr = normalize(c.email_address?.address || '')
     if (addr) ccByEmail.set(addr, c)
   }
 
   // Build email → Nexus contact map
   const nexusByEmail = new Map<string, any>()
   for (const c of nexusContacts || []) {
-    if (c.email) nexusByEmail.set(c.email.toLowerCase(), c)
+    if (c.email) nexusByEmail.set(normalize(c.email), c)
   }
 
   // Only contacts WITH an email can be meaningfully synced/matched (CC deduplicates by email)
   const nexusOnly = (nexusContacts || []).filter(
-    c => c.email && !ccByEmail.has(c.email.toLowerCase())
+    c => c.email && !ccByEmail.has(normalize(c.email))
   )
   const matched = (nexusContacts || []).filter(
-    c => c.email && ccByEmail.has(c.email.toLowerCase())
+    c => c.email && ccByEmail.has(normalize(c.email))
   )
   const ccOnly = ccContacts
     .filter(c => {
-      const addr = (c.email_address?.address || '').toLowerCase()
+      const addr = normalize(c.email_address?.address || '')
       return !addr || !nexusByEmail.has(addr)
     })
     .map(c => ({
