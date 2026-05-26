@@ -18,6 +18,9 @@ interface NexusContact {
   email: string
   firm: string
   contact_type: string
+  created_at?: string
+  phone?: string
+  title?: string
 }
 
 interface CompareResult {
@@ -44,7 +47,8 @@ export default function CCSyncPanel({ onClose }: Props) {
   const [data, setData] = useState<CompareResult | null>(null)
   const [tab, setTab] = useState<Tab>('overview')
   const [pushing, setPushing] = useState(false)
-  const [pushResult, setPushResult] = useState<{ synced?: number; submitted?: number; failed?: number; message?: string; error?: string; errors?: string[] } | null>(null)
+  const [syncProgress, setSyncProgress] = useState<{ done: number; total: number } | null>(null)
+  const [syncDone, setSyncDone] = useState<{ synced: number; failed: number } | null>(null)
   const [pushingSingle, setPushingSingle] = useState<string | null>(null)
   const [syncedIds, setSyncedIds] = useState<Set<string>>(new Set())
   const [lists, setLists] = useState<{ id: string; name: string; count: number | null }[]>([])
@@ -104,21 +108,41 @@ export default function CCSyncPanel({ onClose }: Props) {
   }, [onClose])
 
   const pushAll = async () => {
+    if (!data?.nexus_only?.length) return
     setPushing(true)
-    setPushResult(null)
-    try {
-      const res = await fetch('/api/constant-contact/push-missing', { method: 'POST' })
-      const json = await res.json()
-      if (!res.ok) {
-        setPushResult({ error: json.error || `HTTP ${res.status}` })
-      } else {
-        setPushResult(json)
-      }
-    } catch {
-      setPushResult({ error: 'Request failed — check network connection' })
-    } finally {
-      setPushing(false)
+    setSyncDone(null)
+    setSyncProgress({ done: 0, total: data.nexus_only.length })
+
+    const contacts = data.nexus_only
+    let synced = 0
+    let failed = 0
+    const BATCH = 3
+
+    for (let i = 0; i < contacts.length; i += BATCH) {
+      const batch = contacts.slice(i, i + BATCH)
+      await Promise.all(batch.map(async c => {
+        try {
+          const res = await fetch('/api/constant-contact/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(c),
+          })
+          if (res.ok) {
+            synced++
+            setSyncedIds(prev => new Set([...prev, c.id]))
+          } else {
+            failed++
+          }
+        } catch {
+          failed++
+        }
+        setSyncProgress(prev => prev ? { ...prev, done: prev.done + 1 } : null)
+      }))
     }
+
+    setSyncProgress(null)
+    setSyncDone({ synced, failed })
+    setPushing(false)
   }
 
   const pushOne = async (contact: NexusContact) => {
@@ -256,23 +280,31 @@ export default function CCSyncPanel({ onClose }: Props) {
                 </div>
               )}
 
-              {/* Push result banner */}
-              {pushResult && (
+              {/* Progress bar */}
+              {syncProgress && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-muted)', marginBottom: 6 }}>
+                    <span>Syncing to Constant Contact…</span>
+                    <span>{syncProgress.done} / {syncProgress.total}</span>
+                  </div>
+                  <div style={{ height: 6, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', background: 'var(--accent)', borderRadius: 99, width: `${Math.round((syncProgress.done / syncProgress.total) * 100)}%`, transition: 'width 0.2s' }} />
+                  </div>
+                </div>
+              )}
+
+              {/* Sync result banner */}
+              {syncDone && (
                 <div style={{
-                  background: pushResult.error ? '#fef2f2' : '#f0fdf4',
-                  border: `1px solid ${pushResult.error ? '#fecaca' : '#bbf7d0'}`,
-                  borderRadius: 8, padding: '10px 14px', marginBottom: 16,
-                  display: 'flex', alignItems: 'center', gap: 8, fontSize: '13px',
+                  background: syncDone.failed > 0 ? '#fef3c7' : '#f0fdf4',
+                  border: `1px solid ${syncDone.failed > 0 ? '#fde68a' : '#bbf7d0'}`,
+                  borderRadius: 8, padding: '12px 16px', marginBottom: 16,
+                  display: 'flex', alignItems: 'center', gap: 10, fontSize: '13px',
                 }}>
-                  {pushResult.error
-                    ? <AlertCircle size={15} color="#dc2626" />
-                    : <CheckCircle2 size={15} color="#16a34a" />}
-                  <span style={{ color: pushResult.error ? '#991b1b' : undefined }}>
-                    {pushResult.error
-                      ? pushResult.error
-                      : pushResult.submitted
-                        ? <><strong>{pushResult.submitted}</strong> contacts submitted to CC — processing in background</>
-                        : <>{pushResult.message}</>}
+                  <CheckCircle2 size={16} color={syncDone.failed > 0 ? '#d97706' : '#16a34a'} />
+                  <span>
+                    <strong>{syncDone.synced}</strong> contact{syncDone.synced !== 1 ? 's' : ''} synced to Constant Contact
+                    {syncDone.failed > 0 && <span style={{ color: '#b45309' }}> · {syncDone.failed} failed</span>}
                   </span>
                 </div>
               )}
@@ -317,7 +349,7 @@ export default function CCSyncPanel({ onClose }: Props) {
                           style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 6 }}
                         >
                           {pushing ? <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <ArrowUpRight size={12} />}
-                          {pushing ? 'Syncing…' : `Sync All ${data.nexus_only_count}`}
+                          {pushing && syncProgress ? `${syncProgress.done} / ${syncProgress.total}` : pushing ? 'Starting…' : `Sync All ${data.nexus_only_count}`}
                         </button>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -337,6 +369,7 @@ export default function CCSyncPanel({ onClose }: Props) {
                                 </div>
                                 <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                                   {[c.firm, c.email].filter(Boolean).join(' · ')}
+                                  {c.created_at && <span style={{ marginLeft: 6, color: 'var(--text-muted)', opacity: 0.7 }}>· {new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
                                 </div>
                               </div>
                               <span style={{

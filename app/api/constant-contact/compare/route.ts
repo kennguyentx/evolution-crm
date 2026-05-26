@@ -63,8 +63,8 @@ export async function GET() {
   while (true) {
     const { data, error: dbErr } = await supabase
       .from('contacts')
-      .select('id, first_name, last_name, email, firm, title, contact_type, phone')
-      .order('last_name', { ascending: true, nullsFirst: false })
+      .select('id, first_name, last_name, email, firm, title, contact_type, phone, created_at')
+      .order('created_at', { ascending: false, nullsFirst: false })
       .range(from, from + PAGE - 1)
     if (dbErr) return NextResponse.json({ error: dbErr.message }, { status: 500 })
     if (!data?.length) break
