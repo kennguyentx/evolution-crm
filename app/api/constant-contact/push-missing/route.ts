@@ -19,7 +19,8 @@ function serviceClient() {
 
 async function fetchAllCCEmails(token: string): Promise<Set<string>> {
   const emails = new Set<string>()
-  let url = `${CC_API}/contacts?include=email_addresses&status=all&limit=500`
+  // email_address is returned by default — no include param needed
+  let url = `${CC_API}/contacts?status=all&limit=500`
 
   while (url) {
     const res = await fetch(url, {
@@ -28,7 +29,7 @@ async function fetchAllCCEmails(token: string): Promise<Set<string>> {
     if (!res.ok) throw new Error(`CC API ${res.status}`)
     const data = await res.json()
     for (const c of data.contacts || []) {
-      const addr = (c.email_addresses?.[0]?.address || '').toLowerCase()
+      const addr = (c.email_address?.address || '').toLowerCase()
       if (addr) emails.add(addr)
     }
     const nextHref = data._links?.next?.href

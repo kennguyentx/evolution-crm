@@ -17,7 +17,8 @@ function serviceClient() {
 
 async function fetchAllCCContacts(token: string): Promise<any[]> {
   const all: any[] = []
-  let url = `${CC_API}/contacts?include=email_addresses&status=all&limit=500`
+  // email_address is returned by default on every contact — no include param needed
+  let url = `${CC_API}/contacts?status=all&limit=500`
 
   while (url) {
     const res = await fetch(url, {
@@ -64,9 +65,10 @@ export async function GET() {
   if (dbErr) return NextResponse.json({ error: dbErr.message }, { status: 500 })
 
   // Build email → CC contact map
+  // CC v3 returns email_address (singular object) by default on each contact
   const ccByEmail = new Map<string, any>()
   for (const c of ccContacts) {
-    const addr = (c.email_addresses?.[0]?.address || '').toLowerCase()
+    const addr = (c.email_address?.address || '').toLowerCase()
     if (addr) ccByEmail.set(addr, c)
   }
 
@@ -84,14 +86,14 @@ export async function GET() {
   )
   const ccOnly = ccContacts
     .filter(c => {
-      const addr = (c.email_addresses?.[0]?.address || '').toLowerCase()
+      const addr = (c.email_address?.address || '').toLowerCase()
       return !addr || !nexusByEmail.has(addr)
     })
     .map(c => ({
       cc_id: c.contact_id,
       first_name: c.first_name || '',
       last_name: c.last_name || '',
-      email: c.email_addresses?.[0]?.address || '',
+      email: c.email_address?.address || '',
       firm: c.company_name || '',
       title: c.job_title || '',
     }))
