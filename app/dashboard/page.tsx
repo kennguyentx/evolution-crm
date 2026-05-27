@@ -95,6 +95,7 @@ function PortfolioNews() {
   const [loading, setLoading]     = useState(true)
   const [sending, setSending]     = useState(false)
   const [sent, setSent]           = useState(false)
+  const supabase = createClient()
 
   useEffect(() => {
     fetch('/api/portfolio-news')
