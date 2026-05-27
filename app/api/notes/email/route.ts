@@ -2,13 +2,35 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import { dropboxConfigured, dropboxUpload, dropboxMove, expectedDropboxFolder } from '@/lib/dropbox'
+import { parseAiJson, extractText } from '@/lib/ai-json'
 
 export const maxDuration = 120
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+const STORAGE_BUCKET = 'intake-temp'
 
 function serviceClient() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
+
+// Resolve an attachment's buffer — supports both inline base64 (Postmark direct)
+// and storage-path references uploaded by the email-server relay.
+async function resolveAttachmentBuffer(att: any, supabase: ReturnType<typeof serviceClient>): Promise<Buffer | null> {
+  if (att.StoragePath) {
+    const { data, error } = await supabase.storage.from(STORAGE_BUCKET).download(att.StoragePath)
+    if (error || !data) {
+      console.error(`[email-intake] Storage download failed for ${att.StoragePath}:`, error?.message)
+      return null
+    }
+    const buf = Buffer.from(await data.arrayBuffer())
+    // Best-effort cleanup; don't await so it doesn't block processing
+    supabase.storage.from(STORAGE_BUCKET).remove([att.StoragePath]).catch(() => {})
+    return buf
+  }
+  if (att.Content) {
+    return Buffer.from(att.Content, 'base64')
+  }
+  return null
 }
 
 // ── DOCX text extraction ─────────────────────────────────────────────────────
@@ -127,14 +149,7 @@ async function processAttachment(
     messages: [{ role: 'user', content: messageContent }],
   })
 
-  const raw = response.content
-    .filter((b: any) => b.type === 'text')
-    .map((b: any) => b.text)
-    .join('')
-    .replace(/```json|```/g, '')
-    .trim()
-
-  return JSON.parse(raw)
+  return parseAiJson(extractText(response.content as any))
 }
 
 // ── Normalize a Dropbox path to a folder (strip filename if present) ──────────
@@ -217,8 +232,7 @@ If no contacts found, return contacts: [].`,
   })
 
   try {
-    const raw = response.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').replace(/```json|```/g, '').trim()
-    const parsed = JSON.parse(raw)
+    const parsed = parseAiJson<any>(extractText(response.content as any))
     // Merge header CC contacts with body-extracted contacts, dedupe by email
     const bodyContacts = filterInternalContacts(parsed.contacts ?? [])
     const merged = [...headerContacts]
@@ -315,15 +329,23 @@ async function upsertContacts(supabase: any, contacts: any[], dealId: string) {
 }
 
 export async function POST(req: NextRequest) {
-  // ── Webhook token verification ─────────────────────────────────────────────
-  const webhookToken = process.env.POSTMARK_WEBHOOK_TOKEN
-  if (!webhookToken) {
-    console.error('[email-intake] POSTMARK_WEBHOOK_TOKEN is not set — rejecting request')
-    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
-  }
-  const provided = req.nextUrl.searchParams.get('token') ?? req.headers.get('x-webhook-token')
-  if (provided !== webhookToken) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  // ── Auth: accept either a Postmark webhook token or the relay internal secret ──
+  // Direct Postmark path: token in query param or X-Webhook-Token header.
+  // Relay path: email-server uploads large attachments to Supabase Storage and
+  //   forwards a compact payload with X-Internal-Secret instead of the webhook token.
+  const internalSecret = process.env.INTERNAL_WEBHOOK_SECRET
+  const isRelay = internalSecret && req.headers.get('x-internal-secret') === internalSecret
+
+  if (!isRelay) {
+    const webhookToken = process.env.POSTMARK_WEBHOOK_TOKEN
+    if (!webhookToken) {
+      console.error('[email-intake] POSTMARK_WEBHOOK_TOKEN is not set — rejecting request')
+      return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
+    }
+    const provided = req.nextUrl.searchParams.get('token') ?? req.headers.get('x-webhook-token')
+    if (provided !== webhookToken) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
   }
 
   try {
@@ -379,10 +401,12 @@ export async function POST(req: NextRequest) {
     // migration has been run.
 
     // ── Path A: process document attachments ──────────────────────────────────
+    // Attachments arriving from the relay have StoragePath instead of Content.
     const docAttachments = attachments.filter((a: any) => {
       const name = (a.Name ?? '').toLowerCase()
       const ct   = (a.ContentType ?? '').toLowerCase()
-      return ct.includes('pdf') || ct.includes('word') || name.endsWith('.pdf') || /\.docx?$/.test(name)
+      const hasContent = !!(a.Content || a.StoragePath)
+      return hasContent && (ct.includes('pdf') || ct.includes('word') || name.endsWith('.pdf') || /\.docx?$/.test(name))
     })
 
     if (docAttachments.length > 0) {
@@ -424,17 +448,19 @@ export async function POST(req: NextRequest) {
       // Add NDAs as stub entries — no extraction needed
       for (const att of ndaAttachments) {
         const fileName = att.Name ?? 'nda'
-        const buffer   = Buffer.from(att.Content, 'base64')
+        const buffer   = await resolveAttachmentBuffer(att, supabase)
+        if (!buffer) { console.warn(`[email-intake] Could not resolve buffer for NDA ${fileName}`); continue }
         extracted_docs.push({ fileName, buffer, extracted: { doc_type: 'nda', company_name: null, contacts: [] } })
       }
 
       for (const att of dealAttachments) {
         const fileName    = att.Name ?? 'document'
-        const buffer      = Buffer.from(att.Content, 'base64')
+        const buffer      = await resolveAttachmentBuffer(att, supabase)
         const contentType = att.ContentType ?? ''
-        console.log(`[email-intake] Extracting ${fileName} (${(buffer.length / 1024 / 1024).toFixed(1)} MB)…`)
+        if (!buffer) { console.warn(`[email-intake] Could not resolve buffer for ${fileName}`); continue }
+        console.log(`[email-intake] Extracting ${fileName} (${(buffer!.length / 1024 / 1024).toFixed(1)} MB)…`)
         try {
-          const extracted = await processAttachment(fileName, buffer, contentType)
+          const extracted = await processAttachment(fileName, buffer!, contentType)
           if (extracted) {
             extracted_docs.push({ fileName, buffer, extracted })
             console.log(`[email-intake] Extracted ${fileName}: doc_type=${extracted.doc_type} company="${extracted.company_name}"`)
@@ -750,9 +776,7 @@ export async function POST(req: NextRequest) {
       messages: [{ role: 'user', content: `Extract CRM data from this email:\n\n${emailContent}` }],
     })
 
-    const parsed = JSON.parse(
-      response.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').replace(/```json|```/g, '').trim()
-    )
+    const parsed = parseAiJson<any>(extractText(response.content as any))
 
     // Match existing deal and contact
     let deal_id: string | null = null
