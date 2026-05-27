@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { AI_MODELS } from '@/lib/ai-config'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -32,7 +33,7 @@ async function fetchNews({ company_name, sector, geoContext, portcoCtx }: {
   portcoCtx: string
 }) {
   const resp = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: AI_MODELS.balanced,
     max_tokens: 4000,
     tools: [{
       type: 'web_search_20250305',

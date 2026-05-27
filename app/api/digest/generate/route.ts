@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { AI_MODELS } from '@/lib/ai-config'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -35,7 +36,7 @@ Write a concise, professional weekly digest in Discord-friendly markdown format.
 Keep it sharp, data-focused, and useful for a 3-person deal team. Use plain business language.`
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: AI_MODELS.balanced,
       max_tokens: 1200,
       messages: [{ role: 'user', content: prompt }],
     })

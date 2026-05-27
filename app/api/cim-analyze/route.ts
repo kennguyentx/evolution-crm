@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase'
 import { dropboxUpload } from '@/lib/dropbox'
+import { AI_MODELS } from '@/lib/ai-config'
 
 export const maxDuration = 120
 
@@ -173,7 +174,7 @@ Return ONLY valid JSON:
     })
 
     const response = await anthropic.messages.create({
-      model: 'claude-opus-4-5',
+      model: AI_MODELS.powerful,
       max_tokens: 4000,
       messages: [{ role: 'user', content }],
     })

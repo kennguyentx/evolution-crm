@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
+import { AI_MODELS } from '@/lib/ai-config'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
 
     // Use Claude with web search tool
     const resp = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: AI_MODELS.balanced,
       max_tokens: 3000,
       tools: [{
         type: 'web_search_20250305',

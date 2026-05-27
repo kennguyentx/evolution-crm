@@ -245,6 +245,17 @@ export default function DealDetailPage() {
     setDeal(prev => prev ? { ...prev, stage: stage as any, status } : null)
     setEditingStage(false)
 
+    // Log stage change to activity timeline (non-blocking)
+    if (currentDeal?.stage && currentDeal.stage !== stage) {
+      const { data: newEntry } = await supabase.from('interactions').insert({
+        deal_id: dealId,
+        interaction_type: 'stage-change',
+        summary: `Stage changed: ${currentDeal.stage} → ${stage}`,
+        interaction_date: new Date().toISOString().split('T')[0],
+      }).select().single()
+      if (newEntry) setInteractions(prev => [newEntry, ...prev])
+    }
+
     // Move Dropbox folder and track the resolved path
     let resolvedDropboxPath = currentDeal?.dropbox_path ?? null
     if (currentDeal) {
@@ -1454,6 +1465,17 @@ export default function DealDetailPage() {
               )
 
               return merged.map((item, idx) => {
+                // Stage-change events — compact pill style
+                if (item._type === 'interaction' && item.interaction_type === 'stage-change') return (
+                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', padding: '0 4px' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', flex: 1 }}>{item.summary}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}>
+                      {item.interaction_date ? new Date(item.interaction_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                    </div>
+                  </div>
+                )
+
                 if (item._type === 'note') return (
                   <div key={`note-${item.id}`} className="card-2" style={{ padding: '14px 16px', marginBottom: '8px', borderLeft: '3px solid var(--border)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: item.summary ? '6px' : 0 }}>

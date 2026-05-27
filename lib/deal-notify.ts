@@ -3,8 +3,8 @@
 // and the weekly pipeline email API.
 
 import { generateLoiIcs, icsAttachment } from './ics'
+import { getRecipients } from '@/lib/notify-config'
 
-const DEAL_NOTIFY_RECIPIENTS = ['ken@evolutionstrategy.com', 'sean@evolutionstrategy.com']
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrategy.com'
 
 export interface DealNotifyPayload {
@@ -105,6 +105,8 @@ export async function sendDealNotification(payload: DealNotifyPayload): Promise<
   </table>
 </body>
 </html>`
+
+  const DEAL_NOTIFY_RECIPIENTS = await getRecipients('deal_notify_recipients')
 
   const res = await fetch('https://api.postmarkapp.com/email', {
     method: 'POST',

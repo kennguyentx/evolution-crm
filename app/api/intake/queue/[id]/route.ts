@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendDealNotification } from '@/lib/deal-notify'
+import { IntakeQueueActionSchema } from '@/lib/schemas'
+import { apiError } from '@/lib/api-response'
 
 function serviceClient() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -8,8 +10,10 @@ function serviceClient() {
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const supabase = serviceClient()
-  const body = await req.json()
-  const { action, edited } = body // action: 'approve' | 'reject', edited: partial deal fields
+
+  const parsed = IntakeQueueActionSchema.safeParse(await req.json())
+  if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+  const { action, edited } = parsed.data
 
   if (action === 'reject') {
     await supabase.from('intake_queue').update({ status: 'rejected', reviewed_at: new Date().toISOString() }).eq('id', params.id)

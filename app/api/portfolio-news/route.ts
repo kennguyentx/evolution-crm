@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
+import { AI_MODELS } from '@/lib/ai-config'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -167,7 +168,7 @@ Only include articles that are genuinely relevant. Omit irrelevant articles enti
 
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5',
+      model: AI_MODELS.fast,
       max_tokens: 4000,
       messages: [{ role: 'user', content: prompt }],
     })

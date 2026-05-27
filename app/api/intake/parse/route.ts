@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import { dropboxConfigured, dropboxUpload, dropboxFolderExists } from '@/lib/dropbox'
+import { AI_MODELS } from '@/lib/ai-config'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 const BUCKET = 'intake-temp'
@@ -106,7 +107,7 @@ export async function POST(req: NextRequest) {
     }
 
     const response = await anthropic.messages.create({
-      model: 'claude-opus-4-7',
+      model: AI_MODELS.powerful_latest,
       max_tokens: 2500,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: messageContent }],

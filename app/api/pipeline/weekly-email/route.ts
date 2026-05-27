@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getRecipients } from '@/lib/notify-config'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -52,13 +53,7 @@ export async function PUT(req: NextRequest) {
 // ── Core send logic ───────────────────────────────────────────────────────────
 async function runSend() {
   // 1. Recipients
-  const { data: setting } = await supabaseAdmin
-    .from('app_settings')
-    .select('value')
-    .eq('key', 'pipeline_email_recipients')
-    .single()
-
-  const recipients: string[] = setting?.value || []
+  const recipients = await getRecipients('pipeline_email_recipients')
   if (!recipients.length) {
     return NextResponse.json({ error: 'No recipients configured' }, { status: 400 })
   }

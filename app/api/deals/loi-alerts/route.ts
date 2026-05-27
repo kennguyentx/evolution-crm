@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { generateLoiIcs, icsAttachment } from '@/lib/ics'
+import { getRecipients } from '@/lib/notify-config'
 
-const NOTIFY = ['ken@evolutionstrategy.com', 'sean@evolutionstrategy.com']
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrategy.com'
 
 function serviceClient() {
@@ -27,6 +27,8 @@ async function sendAlerts() {
   const supabase = serviceClient()
   const serverToken = process.env.POSTMARK_SERVER_TOKEN
   if (!serverToken) return NextResponse.json({ error: 'No Postmark token' }, { status: 500 })
+
+  const NOTIFY = await getRecipients('deal_notify_recipients')
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)

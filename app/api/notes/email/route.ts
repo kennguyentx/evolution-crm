@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import { dropboxConfigured, dropboxUpload, dropboxMove, expectedDropboxFolder } from '@/lib/dropbox'
 import { parseAiJson, extractText } from '@/lib/ai-json'
+import { AI_MODELS } from '@/lib/ai-config'
 
 export const maxDuration = 120
 
@@ -143,7 +144,7 @@ async function processAttachment(
   }
 
   const response = await anthropic.messages.create({
-    model: 'claude-opus-4-5',
+    model: AI_MODELS.powerful,
     max_tokens: 3000,
     system: DOC_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: messageContent }],
@@ -201,7 +202,7 @@ async function parseForwardingNote(bodyText: string, emailHeaders: { from: strin
     }))
 
   const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5',
+    model: AI_MODELS.fast,
     max_tokens: 600,
     system: `Extract deal instructions AND contact info from a forwarding note. Return ONLY valid JSON.
 
@@ -770,7 +771,7 @@ export async function POST(req: NextRequest) {
     const emailContent = `From: ${from}\nSubject: ${subject}\nDate: ${date}\n\n${text}`.trim()
 
     const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5',
+      model: AI_MODELS.fast,
       max_tokens: 800,
       system: EMAIL_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: `Extract CRM data from this email:\n\n${emailContent}` }],

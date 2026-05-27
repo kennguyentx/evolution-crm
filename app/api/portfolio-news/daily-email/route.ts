@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getRecipients } from '@/lib/notify-config'
 
 export const maxDuration = 60
 
@@ -12,7 +13,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const RECIPIENTS = ['ken@evolutionstrategy.com', 'sean@evolutionstrategy.com']
 const FROM_EMAIL = 'intake@evolutionstrategy.com'
 
 // ── Types (mirrored from main route) ─────────────────────────────────────────
@@ -222,6 +222,8 @@ function escHtml(s: string): string {
 // ── Send logic ────────────────────────────────────────────────────────────────
 
 async function runSend() {
+  const RECIPIENTS = await getRecipients('portfolio_news_recipients')
+
   const serverToken = process.env.POSTMARK_SERVER_TOKEN
   if (!serverToken) {
     return NextResponse.json({ error: 'POSTMARK_SERVER_TOKEN not configured' }, { status: 500 })

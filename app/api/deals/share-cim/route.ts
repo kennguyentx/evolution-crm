@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getDropboxToken } from '@/lib/dropbox'
+import { AI_MODELS } from '@/lib/ai-config'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 const DBX_CONTENT = 'https://content.dropboxapi.com/2'
@@ -55,7 +56,7 @@ async function generatePreview(body: any) {
     : null
 
   const resp = await anthropic.messages.create({
-    model: 'claude-haiku-4-5',
+    model: AI_MODELS.fast,
     max_tokens: 1200,
     messages: [{
       role: 'user',

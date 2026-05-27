@@ -5,6 +5,7 @@ export const maxDuration = 120 // seconds — Vercel default is 10s, agent loops
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
+import { AI_MODELS } from '@/lib/ai-config'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 4 })
 const supabase = createClient(
@@ -570,7 +571,7 @@ async function executeTool(name: string, input: any): Promise<any> {
 
     case 'web_search': {
       const resp = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
+        model: AI_MODELS.balanced,
         max_tokens: 1500,
         tools: [{ type: 'web_search_20250305', name: 'web_search' } as any],
         messages: [{ role: 'user', content: `Search for: ${input.query}. Return a concise factual summary with source names.` }],
@@ -653,7 +654,7 @@ async function executeTool(name: string, input: any): Promise<any> {
         return { error: `File type ${fileExt} cannot be read directly. Ask the user to convert to PDF.` }
       }
       const extractResp = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
+        model: AI_MODELS.balanced,
         max_tokens: 4000,
         messages: [{ role: 'user', content: [
           { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
@@ -686,7 +687,7 @@ async function executeTool(name: string, input: any): Promise<any> {
         ? `Focus especially on: ${input.analysis_question}`
         : 'Provide a comprehensive summary covering all key terms, standards, thresholds, typical ranges, and important provisions.'
       const extractResp = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
+        model: AI_MODELS.balanced,
         max_tokens: 4000,
         messages: [{ role: 'user', content: [
           { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
@@ -712,7 +713,7 @@ async function executeTool(name: string, input: any): Promise<any> {
         return { error: `File type ${fileExt} cannot be read directly. Try a PDF or CSV version.` }
       }
       const extractResp = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
+        model: AI_MODELS.balanced,
         max_tokens: 4000,
         messages: [{ role: 'user', content: [
           { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
@@ -929,7 +930,7 @@ export async function POST(req: NextRequest) {
           : [{ type: 'tool_result' as const, tool_use_id: confirming.tool_use_id, content: JSON.stringify(result) }]
         const continueMessages = [...messages, { role: 'user', content: toolResults }]
         const claudeStream = anthropic.messages.stream({
-          model: 'claude-sonnet-4-6',
+          model: AI_MODELS.balanced,
           max_tokens: 2000,
           system: systemPrompt,
           tools: TOOLS,
@@ -948,7 +949,7 @@ export async function POST(req: NextRequest) {
       const MAX_ITER = 10
       for (let i = 0; i < MAX_ITER; i++) {
         // Use Sonnet for first call (routing quality), Haiku for subsequent tool-only iterations
-        const model = i === 0 ? 'claude-sonnet-4-6' : 'claude-haiku-4-5'
+        const model = i === 0 ? AI_MODELS.balanced : AI_MODELS.fast
         const claudeStream = anthropic.messages.stream({
           model,
           max_tokens: 2000,
