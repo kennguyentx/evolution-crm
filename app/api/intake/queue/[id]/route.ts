@@ -84,13 +84,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       reviewed_at: new Date().toISOString(),
     }).eq('id', params.id)
 
-    // Generate embedding for similar-deals search (non-blocking)
-    if (deal?.id) {
-      const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrategy.com').replace(/\/$/, '')
-      fetch(`${appUrl}/api/deals/${deal.id}/embed`, { method: 'POST' })
-        .catch(e => console.error('[embed] intake approve:', e?.message))
-    }
-
     // Send deal notification email (non-blocking)
     sendDealNotification({
       companyName: ext.company_name || 'Unknown Company',
