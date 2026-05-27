@@ -11,42 +11,48 @@ function serviceClient() {
 }
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const supabase = serviceClient()
+  try {
+    const supabase = serviceClient()
 
-  const { data: deal, error } = await supabase
-    .from('deals')
-    .select('company_name, sector, geography, deal_type, description, financial_summary, revenue, ebitda, embedding')
-    .eq('id', params.id)
-    .single()
+    const { data: deal, error } = await supabase
+      .from('deals')
+      .select('company_name, sector, geography, deal_type, description, financial_summary, revenue, ebitda, embedding')
+      .eq('id', params.id)
+      .single()
 
-  if (error || !deal) {
-    return NextResponse.json({ error: error?.message ?? 'Deal not found' }, { status: 404 })
-  }
-
-  let queryEmbedding: string
-
-  if (deal.embedding) {
-    // Use stored embedding — fastest path
-    queryEmbedding = deal.embedding
-  } else {
-    // Generate on the fly via Edge Function
-    const text = dealTextBlob(deal)
-    if (!text.trim()) {
-      return NextResponse.json({ error: 'Deal has no text to embed' }, { status: 400 })
+    if (error || !deal) {
+      return NextResponse.json({ error: error?.message ?? 'Deal not found' }, { status: 404 })
     }
-    const vector = await embed(text, supabase)
-    queryEmbedding = vectorLiteral(vector)
+
+    let queryEmbedding: string
+
+    if (deal.embedding) {
+      // Use stored embedding — fastest path
+      queryEmbedding = deal.embedding
+    } else {
+      // Generate on the fly via Edge Function
+      const text = dealTextBlob(deal)
+      if (!text.trim()) {
+        return NextResponse.json({ error: 'Deal has no text to embed' }, { status: 400 })
+      }
+      const vector = await embed(text, supabase)
+      queryEmbedding = vectorLiteral(vector)
+    }
+
+    const { data: similar, error: rpcErr } = await supabase.rpc('match_deals', {
+      query_embedding: queryEmbedding,
+      exclude_id: params.id,
+      match_count: 8,
+    })
+
+    if (rpcErr) {
+      return NextResponse.json({ error: rpcErr.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ results: similar ?? [] })
+
+  } catch (err: any) {
+    console.error('[similar] error:', err?.message)
+    return NextResponse.json({ error: err?.message ?? 'Internal error' }, { status: 500 })
   }
-
-  const { data: similar, error: rpcErr } = await supabase.rpc('match_deals', {
-    query_embedding: queryEmbedding,
-    exclude_id: params.id,
-    match_count: 8,
-  })
-
-  if (rpcErr) {
-    return NextResponse.json({ error: rpcErr.message }, { status: 500 })
-  }
-
-  return NextResponse.json({ results: similar ?? [] })
 }
