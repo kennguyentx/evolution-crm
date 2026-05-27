@@ -282,8 +282,9 @@ const TOOLS: any[] = [
         end_time:    { type: 'string', description: 'End time HH:MM (24h), optional' },
         event_type:  { type: 'string', description: 'meeting | call | deadline | reminder | site visit | other' },
         description: { type: 'string', description: 'Notes or agenda, optional' },
-        deal_id:     { type: 'string', description: 'Link to deal UUID from search_deals, optional' },
-        contact_id:  { type: 'string', description: 'Link to contact UUID from search_contacts, optional' },
+        deal_id:              { type: 'string', description: 'Link to deal UUID from search_deals, optional' },
+        contact_id:           { type: 'string', description: 'Link to contact UUID from search_contacts, optional' },
+        portfolio_company_id: { type: 'string', description: 'Link to portfolio company UUID from get_portfolio, optional. Use this when the event is related to a portco (board meetings, site visits, etc.)' },
       },
       required: ['title', 'event_date', 'event_type'],
     },
@@ -609,8 +610,9 @@ async function executeTool(name: string, input: any): Promise<any> {
         end_time:    input.end_time    || null,
         event_type:  input.event_type  || 'meeting',
         description: input.description || null,
-        deal_id:     input.deal_id     || null,
-        contact_id:  input.contact_id  || null,
+        deal_id:              input.deal_id              || null,
+        contact_id:           input.contact_id           || null,
+        portfolio_company_id: input.portfolio_company_id || null,
       }).select().single()
       if (error) return { error: error.message }
       return { success: true, event_id: data?.id, message: `Calendar event "${input.title}" created for ${input.event_date}` }
