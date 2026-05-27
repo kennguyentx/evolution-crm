@@ -58,11 +58,6 @@ export default function DealDetailPage() {
   const [loadingNews, setLoadingNews] = useState(false)
   const [newsError, setNewsError] = useState<string | null>(null)
 
-  // Similar deals
-  const [similarDeals, setSimilarDeals] = useState<any[]>([])
-  const [loadingSimilar, setLoadingSimilar] = useState(false)
-  const [similarError, setSimilarError] = useState<string | null>(null)
-
   // Share CIM modal
   const [showCimModal, setShowCimModal] = useState(false)
   const [cimSummary, setCimSummary] = useState('')
@@ -433,22 +428,6 @@ export default function DealDetailPage() {
       setNewsError(e.message)
     }
     setLoadingNews(false)
-  }
-
-  const pullSimilarDeals = async () => {
-    if (!deal) return
-    setLoadingSimilar(true)
-    setSimilarError(null)
-    setSimilarDeals([])
-    try {
-      const res = await fetch(`/api/deals/${dealId}/similar`)
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to load similar deals')
-      setSimilarDeals(data.results || [])
-    } catch (e: any) {
-      setSimilarError(e.message)
-    }
-    setLoadingSimilar(false)
   }
 
   // ── Share CIM ─────────────────────────────────────────────────────────────
@@ -973,50 +952,6 @@ export default function DealDetailPage() {
                   </div>
                 )
               })()}
-            </div>
-
-            {/* SIMILAR DEALS */}
-            <div className="card" style={{ padding: '20px', marginTop: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                <div>
-                  <div className="label">Similar Deals</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>Semantically similar deals in your pipeline</div>
-                </div>
-                <button className="btn btn-ghost" style={{ fontSize: '12px' }} onClick={pullSimilarDeals} disabled={loadingSimilar}>
-                  {loadingSimilar ? '⏳ Searching…' : similarDeals.length > 0 ? '↺ Refresh' : '⬇ Find similar'}
-                </button>
-              </div>
-              {similarError && <div style={{ fontSize: '12px', color: 'var(--red)', marginBottom: '12px' }}>{similarError}</div>}
-              {loadingSimilar && <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>Finding similar deals…</div>}
-              {!loadingSimilar && similarDeals.length === 0 && !similarError && (
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>Click "Find similar" to discover deals with similar business profile, sector, and financials.</div>
-              )}
-              {similarDeals.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {similarDeals.map((d: any) => {
-                    const pct = Math.round((d.similarity ?? 0) * 100)
-                    return (
-                      <Link key={d.id} href={`/deals/${d.id}`} style={{ textDecoration: 'none' }}>
-                        <div style={{ padding: '10px 12px', background: 'var(--surface-2)', borderRadius: '7px', display: 'flex', alignItems: 'center', gap: '12px' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-3)')} onMouseLeave={e => (e.currentTarget.style.background = 'var(--surface-2)')}>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.company_name}</div>
-                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                              {[d.sector, d.geography, d.stage].filter(Boolean).join(' · ')}
-                              {d.ebitda ? ` · EBITDA $${(d.ebitda / 1e6).toFixed(1)}M` : ''}
-                            </div>
-                          </div>
-                          <div style={{ flexShrink: 0, textAlign: 'right', minWidth: '60px' }}>
-                            <div style={{ fontSize: '11px', fontWeight: 600, color: pct >= 80 ? 'var(--green)' : pct >= 60 ? 'var(--accent)' : 'var(--text-muted)' }}>{pct}%</div>
-                            <div style={{ marginTop: '4px', height: '4px', background: 'var(--border)', borderRadius: '2px', width: '60px' }}>
-                              <div style={{ height: '100%', width: `${pct}%`, background: pct >= 80 ? 'var(--green)' : pct >= 60 ? 'var(--accent)' : 'var(--text-muted)', borderRadius: '2px' }} />
-                            </div>
-                          </div>
-                        </div>
-                      </Link>
-                    )
-                  })}
-                </div>
-              )}
             </div>
 
             {/* COMPS */}
