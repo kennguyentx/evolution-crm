@@ -1,27 +1,18 @@
 // lib/embeddings.ts
-// OpenAI text-embedding-3-small (1536d) — used for semantic "similar deals" search.
-// Calls the REST API directly so no openai package is needed.
+// Embedding utilities for semantic "similar deals" search.
+// Uses the Supabase Edge Function `embed` which runs gte-small (384-dim)
+// locally on Supabase's infrastructure — no external API key needed.
 
-const OPENAI_EMBED_URL = 'https://api.openai.com/v1/embeddings'
-const MODEL = 'text-embedding-3-small'
+import { SupabaseClient } from '@supabase/supabase-js'
 
-export async function embed(text: string): Promise<number[]> {
-  const key = process.env.OPENAI_API_KEY
-  if (!key) throw new Error('OPENAI_API_KEY is not set')
-
-  const res = await fetch(OPENAI_EMBED_URL, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, input: text.slice(0, 8000) }),
+/** Call the `embed` Edge Function to get a 384-dim vector for the given text. */
+export async function embed(text: string, supabase: SupabaseClient): Promise<number[]> {
+  const { data, error } = await supabase.functions.invoke('embed', {
+    body: { text },
   })
-
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`OpenAI embeddings error ${res.status}: ${err}`)
-  }
-
-  const data = await res.json()
-  return data.data[0].embedding as number[]
+  if (error) throw new Error(`embed edge function error: ${error.message}`)
+  if (!Array.isArray(data?.embedding)) throw new Error('embed edge function returned no embedding')
+  return data.embedding as number[]
 }
 
 /** Format a number[] for Postgres pgvector literal: '[0.1,0.2,...]' */

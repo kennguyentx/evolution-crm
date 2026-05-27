@@ -1,6 +1,6 @@
 // app/api/deals/[id]/embed/route.ts
-// POST — generate and store an embedding for a single deal.
-// Called automatically after deal creation; can also be triggered manually.
+// POST — generate and store an embedding for a single deal via the Supabase
+// Edge Function `embed` (runs gte-small locally, no external API needed).
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -28,7 +28,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'Deal has no text to embed' }, { status: 400 })
   }
 
-  const vector = await embed(text)
+  const vector = await embed(text, supabase)
 
   const { error: updateErr } = await supabase
     .from('deals')
