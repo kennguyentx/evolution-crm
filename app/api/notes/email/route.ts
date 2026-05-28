@@ -493,6 +493,25 @@ export async function POST(req: NextRequest) {
       // Track all file names for the note
       const allFileNames = extracted_docs.map(d => d.fileName).join(', ')
 
+      // ── Early exit: non-deal document with no identifiable company ───────────
+      // Industry newsletters, M&A digests, and other 'other'-type PDFs with no
+      // company name should NOT create "Unknown — FW: ..." garbage deals.
+      // Save as a plain note and stop processing.
+      if (primary.extracted.doc_type === 'other' && !primary.extracted.company_name) {
+        console.log(`[email-intake] Skipping deal creation: doc_type=other, no company_name. Saving as note.`)
+        await supabase.from('notes').insert({
+          note_date:  noteDate,
+          raw_text:   `Forwarded via email by ${from}\nSubject: ${subject}\nFiles: ${allFileNames}`,
+          summary:    `Received document(s) via email: ${allFileNames}. Subject: "${subject}".${instructions.forwarder_note ? ` Note: ${instructions.forwarder_note}` : ''}`,
+          next_steps: null,
+          logged_by:  from.split('@')[0] ?? 'email',
+          source:     'email',
+          deal_id:    null,
+        })
+        results.push({ type: 'other', status: 'saved-as-note', files: allFileNames })
+        return NextResponse.json({ success: true, processed: results })
+      }
+
       // ── Step 3: Look up existing deal by company name ─────────────────────
       // If a deal already exists, associate the CIM/teaser with it instead of
       // creating a duplicate. Use the existing deal's stage for Dropbox routing.
@@ -609,8 +628,10 @@ export async function POST(req: NextRequest) {
         console.log(`[email-intake] Deal will be renamed: "${existingDeal.company_name}" → "${newCompanyName}"`)
       }
 
-      // Use the (possibly renamed) folder for uploads
-      const uploadFolder = dealFolderPath ?? targetFolder
+      // Use the (possibly renamed) folder for uploads.
+      // Fall back to a shared inbox folder so files are never silently dropped.
+      const DROPBOX_INBOX = '/evolution strategy partners/Deals/Inbox'
+      const uploadFolder = dealFolderPath ?? targetFolder ?? DROPBOX_INBOX
       console.log(`[email-intake] Step 4: Dropbox upload target="${uploadFolder}" existing=${!!existingDeal}`)
       if (dropboxConfigured() && uploadFolder) {
         for (const doc of extracted_docs) {
