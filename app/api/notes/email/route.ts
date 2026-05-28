@@ -771,6 +771,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, processed: [{ type: 'skipped', reason: 'duplicate email body' }] })
     }
 
+    // Parse the forwarding note for explicit instructions (same as Path A).
+    // In a no-attachment context "for Amped" or "parent_portco: Amped" both mean
+    // "file this under the Amped portfolio company", not an add-on acquisition.
+    const pathBInstructions = await parseForwardingNote(text, { from, fromName, cc: ccFull })
+    console.log(`[email-intake] Path B instructions:`, JSON.stringify(pathBInstructions))
+
     const emailContent = `From: ${from}\nSubject: ${subject}\nDate: ${date}\n\n${text}`.trim()
 
     const response = await anthropic.messages.create({
@@ -787,18 +793,24 @@ export async function POST(req: NextRequest) {
     let contact_id: string | null = null
     let portfolio_company_id: string | null = null
 
-    if (parsed.deal_names?.length > 0) {
+    // Only try deal matching if the forwarding note didn't explicitly name a portco
+    const hasExplicitPortco = !!(pathBInstructions.portco_name || pathBInstructions.parent_portco)
+
+    if (!hasExplicitPortco && parsed.deal_names?.length > 0) {
       for (const name of parsed.deal_names) {
         const { data } = await supabase.from('deals').select('id').ilike('company_name', `%${name}%`).limit(1).maybeSingle()
         if (data) { deal_id = data.id; break }
       }
     }
 
-    // If no deal matched, try to match a portfolio company
-    // Priority: explicit portco_name from forwarding note, then portco_names from email body
+    // If no deal matched, try to match a portfolio company.
+    // In Path B (no attachment), both portco_name AND parent_portco from the
+    // forwarding note are valid portco signals — "for Amped" sets parent_portco
+    // but here it means "file under Amped", not "acquire for Amped".
     if (!deal_id) {
       const portcoNames = [
-        instructions?.portco_name,
+        pathBInstructions.portco_name,
+        pathBInstructions.parent_portco,  // "for Amped" → parent_portco in LLM, but means portco note here
         ...(parsed.portco_names ?? []),
       ].filter(Boolean) as string[]
 
