@@ -19,11 +19,12 @@ export default function PortfolioCompanyPage() {
   const [company, setCompany] = useState<any>(null)
   const [financials, setFinancials] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview'|'financials'|'upload'|'analysis'|'documents'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview'|'financials'|'upload'|'analysis'|'notes'|'documents'>('overview')
   const [showAddPeriod, setShowAddPeriod] = useState(false)
   const [analysis, setAnalysis] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [addons, setAddons] = useState<any[]>([])
+  const [notes, setNotes] = useState<any[]>([])
 
   // Company Details inline editing
   const [editingDetails, setEditingDetails] = useState(false)
@@ -63,6 +64,12 @@ export default function PortfolioCompanyPage() {
       if (addonDeals) setAddons(addonDeals)
     }
     if (fins) setFinancials(fins)
+    const { data: portcoNotes } = await supabase
+      .from('notes')
+      .select('id, note_date, summary, next_steps, logged_by, source, created_at')
+      .eq('portfolio_company_id', companyId)
+      .order('note_date', { ascending: false })
+    if (portcoNotes) setNotes(portcoNotes)
     setLoading(false)
   }, [supabase, companyId])
 
@@ -245,6 +252,7 @@ export default function PortfolioCompanyPage() {
     { key: 'financials', label: `Financials (${financials.length})` },
     { key: 'upload', label: 'Upload Financials' },
     { key: 'analysis', label: 'AI Analysis' },
+    { key: 'notes', label: `Notes (${notes.length})` },
     { key: 'documents', label: 'Documents' },
   ]
 
@@ -675,6 +683,31 @@ export default function PortfolioCompanyPage() {
                 <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>{analysis}</div>
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === 'notes' && (
+          <div style={{ maxWidth: '700px' }}>
+            {notes.length === 0 && (
+              <div style={{ color: 'var(--text-muted)', fontSize: '13px', fontStyle: 'italic' }}>
+                No notes yet. Forward an email with "portco: {company?.name}" to attach a note here.
+              </div>
+            )}
+            {notes.map((note: any) => (
+              <div key={note.id} className="card-2" style={{ padding: '14px 16px', marginBottom: '8px', borderLeft: '3px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: note.summary ? '6px' : 0 }}>
+                  <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', background: 'var(--surface-2)', borderRadius: '4px', padding: '1px 6px' }}>
+                    {note.source === 'email' ? 'Email' : 'Note'}
+                  </span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    {note.note_date ? new Date(note.note_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                    {note.logged_by ? ` · ${note.logged_by}` : ''}
+                  </span>
+                </div>
+                {note.summary && <div style={{ fontSize: '13px', color: 'var(--text-primary)', lineHeight: 1.5 }}>{note.summary}</div>}
+                {note.next_steps && <div style={{ fontSize: '12px', color: 'var(--accent)', marginTop: '4px' }}>→ {note.next_steps}</div>}
+              </div>
+            ))}
           </div>
         )}
 

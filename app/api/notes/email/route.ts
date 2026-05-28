@@ -106,7 +106,8 @@ const EMAIL_SYSTEM_PROMPT = `You extract structured information from forwarded e
 {
   "summary": "string — 1-3 sentence factual summary",
   "next_steps": "string or null — explicit action items or follow-ups",
-  "deal_names": ["string array — company or deal names mentioned"],
+  "deal_names": ["string array — prospective deal/target company names mentioned"],
+  "portco_names": ["string array — names of OUR EXISTING PORTFOLIO COMPANIES mentioned. These are companies we already own, not acquisition targets."],
   "contact_names": ["string array — personal names in First Last format"],
   "logged_by": "string or null — first name of person who forwarded this"
 }
@@ -182,6 +183,7 @@ function filterInternalContacts(contacts: any[]): any[] {
 async function parseForwardingNote(bodyText: string, emailHeaders: { from: string; fromName: string; cc: any[] }): Promise<{
   stage: string | null
   deal_name: string | null
+  portco_name: string | null
   status: string | null
   deal_type: string | null
   parent_portco: string | null
@@ -189,7 +191,7 @@ async function parseForwardingNote(bodyText: string, emailHeaders: { from: strin
   auto_approve: boolean
   contacts: any[]
 }> {
-  const empty = { stage: null, deal_name: null, status: null, deal_type: null, parent_portco: null, forwarder_note: null, auto_approve: false, contacts: [] }
+  const empty = { stage: null, deal_name: null, portco_name: null, status: null, deal_type: null, parent_portco: null, forwarder_note: null, auto_approve: false, contacts: [] }
   if (!bodyText?.trim()) return empty
 
   // Build CC contact list from headers directly
@@ -209,6 +211,7 @@ async function parseForwardingNote(bodyText: string, emailHeaders: { from: strin
 {
   "stage": "exact stage or null — one of: Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity | Closed (Platform) | Closed (Add-On) | Pass (DOA) | Pass (Pre-LOI) | Pass (Post-LOI) | Hold",
   "deal_name": "string or null — name of a SPECIFIC EXISTING DEAL to link this document to (e.g. 'for Project Anchor', 're: Anchor deal'). Only set if the sender is linking to a previously-created deal by a project codename or company name. Do NOT set this to a portfolio company name when the sender is describing an add-on acquisition.",
+  "portco_name": "string or null — name of OUR EXISTING PORTFOLIO COMPANY this email note should be filed under. Set when the sender explicitly wants to attach a note/article/update to a portco they already own (e.g. 'portco: Ethoscapes', 'file under Ethoscapes', 'industry note for Ethoscapes'). Do NOT set for acquisition targets or add-ons.",
   "status": "Active | Dead | Closed | null",
   "deal_type": "platform | add-on | null",
   "parent_portco": "string or null — name of our EXISTING PORTFOLIO COMPANY that would acquire this target. Set when sender uses language like 'add-on for Amped', 'under Amped', 'bolt-on for Amped', 'for the Amped platform'. This is NOT the target company — it is the acquirer we already own.",
@@ -779,14 +782,34 @@ export async function POST(req: NextRequest) {
 
     const parsed = parseAiJson<any>(extractText(response.content as any))
 
-    // Match existing deal and contact
+    // Match existing deal, portco, and contact
     let deal_id: string | null = null
     let contact_id: string | null = null
+    let portfolio_company_id: string | null = null
 
     if (parsed.deal_names?.length > 0) {
       for (const name of parsed.deal_names) {
         const { data } = await supabase.from('deals').select('id').ilike('company_name', `%${name}%`).limit(1).maybeSingle()
         if (data) { deal_id = data.id; break }
+      }
+    }
+
+    // If no deal matched, try to match a portfolio company
+    // Priority: explicit portco_name from forwarding note, then portco_names from email body
+    if (!deal_id) {
+      const portcoNames = [
+        instructions?.portco_name,
+        ...(parsed.portco_names ?? []),
+      ].filter(Boolean) as string[]
+
+      for (const name of portcoNames) {
+        const { data } = await supabase
+          .from('portfolio_companies')
+          .select('id')
+          .ilike('name', `%${name}%`)
+          .limit(1)
+          .maybeSingle()
+        if (data) { portfolio_company_id = data.id; break }
       }
     }
 
@@ -800,14 +823,15 @@ export async function POST(req: NextRequest) {
     }
 
     const { data: note, error } = await supabase.from('notes').insert({
-      note_date:  noteDate,
-      raw_text:   `From: ${from}\nSubject: ${subject}\n\n${text}`.slice(0, 4000),
-      summary:    parsed.summary    ?? null,
-      next_steps: parsed.next_steps ?? null,
-      logged_by:  parsed.logged_by  ?? from.split('@')[0] ?? 'email',
-      source:     'email',
+      note_date:            noteDate,
+      raw_text:             `From: ${from}\nSubject: ${subject}\n\n${text}`.slice(0, 4000),
+      summary:              parsed.summary    ?? null,
+      next_steps:           parsed.next_steps ?? null,
+      logged_by:            parsed.logged_by  ?? from.split('@')[0] ?? 'email',
+      source:               'email',
       deal_id,
       contact_id,
+      portfolio_company_id,
     }).select().single()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })

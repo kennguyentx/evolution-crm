@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { Plus, Search, X, Check, Mail, MessageSquare, Edit3, Pencil, UserPlus } from 'lucide-react'
+import Link from 'next/link'
 import { useIsMobile } from '@/hooks/useIsMobile'
 
 type Note = {
@@ -23,6 +24,7 @@ type Note = {
   contact?: { first_name: string; last_name: string; firm: string | null } | null
   raise?: { name: string } | null
   capital_contact?: { firm: string; contact_name: string | null } | null
+  portfolio_company?: { id: string; name: string } | null
 }
 
 type UnknownName = {
@@ -128,7 +130,8 @@ export default function NotesPage() {
         deal:deals(company_name),
         contact:contacts(first_name, last_name, firm),
         raise:capital_raises(name),
-        capital_contact:capital_contacts(firm, contact_name)
+        capital_contact:capital_contacts(firm, contact_name),
+        portfolio_company:portfolio_companies(id, name)
       `, { count: 'exact' })
       .order('note_date', { ascending: false })
       .order('created_at', { ascending: false })
@@ -696,6 +699,11 @@ export default function NotesPage() {
                         {links.map((l, i) => (
                           <span key={i} style={{ fontSize: '10px', padding: '1px 7px', background: 'var(--accent-muted)', color: 'var(--accent)', borderRadius: '4px' }}>{l}</span>
                         ))}
+                        {note.portfolio_company && (
+                          <Link href={`/portfolio/${note.portfolio_company.id}`} onClick={e => e.stopPropagation()} style={{ fontSize: '10px', padding: '1px 7px', background: 'var(--accent-muted)', color: 'var(--accent)', borderRadius: '4px', textDecoration: 'none' }}>
+                            {note.portfolio_company.name}
+                          </Link>
+                        )}
                         {note.deal_stage_updated && (
                           <span style={{ fontSize: '10px', padding: '1px 7px', background: 'var(--surface-2)', color: 'var(--text-muted)', borderRadius: '4px' }}>Stage → {note.deal_stage_updated}</span>
                         )}
