@@ -102,13 +102,12 @@ export async function GET() {
       // Query 1: direct company name search
       // Query 2: sector M&A / transactions in geography
       // Query 3: sector industry news in geography
-      // Query 4: broader end-market and macro trends (labor, materials, regulation, spending)
-      const sectorBroad = sector.replace(/\s*\/\s*.+/, '').trim() // e.g. "Civil / Public Works" → "Civil"
+      // Query 4: sector-specific operational trends (labor, supply chain, costs, regulation)
       const [companyArticles, maArticles, industryArticles, macroArticles] = await Promise.all([
         fetchRss(`"${name}"`),
         fetchRss(`${sector} acquisition OR "private equity" OR "PE deal" OR "deal closed" ${geo}`),
         fetchRss(`${sector} ${geo} industry OR market OR outlook OR growth`),
-        fetchRss(`${sectorBroad} labor OR backlog OR materials OR pricing OR regulation OR infrastructure spending`),
+        fetchRss(`${sector} ${geo} labor OR workforce OR "supply chain" OR backlog OR "materials costs" OR regulation`),
       ])
 
       // Dedupe by link across all four searches
