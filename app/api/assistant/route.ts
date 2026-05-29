@@ -603,7 +603,7 @@ async function executeTool(name: string, input: any): Promise<any> {
     }
 
     case 'create_calendar_event': {
-      const { data, error } = await supabase.from('calendar_events').insert({
+      const payload = {
         title:       input.title,
         event_date:  input.event_date,
         start_time:  input.start_time  || null,
@@ -613,8 +613,14 @@ async function executeTool(name: string, input: any): Promise<any> {
         deal_id:              input.deal_id              || null,
         contact_id:           input.contact_id           || null,
         portfolio_company_id: input.portfolio_company_id || null,
-      }).select().single()
-      if (error) return { error: error.message }
+      }
+      console.log('[create_calendar_event] inserting:', JSON.stringify(payload))
+      const { data, error } = await supabase.from('calendar_events').insert(payload).select().single()
+      if (error) {
+        console.error('[create_calendar_event] insert failed:', error)
+        return { error: error.message, payload }
+      }
+      console.log('[create_calendar_event] inserted id:', data?.id)
       return { success: true, event_id: data?.id, message: `Calendar event "${input.title}" created for ${input.event_date}` }
     }
 
@@ -1013,7 +1019,9 @@ export async function POST(req: NextRequest) {
     // ── Confirmation flow ──────────────────────────────────────
     if (confirming) {
       return makeStream(async (send, close) => {
+        console.log('[assistant] CONFIRMATION received:', confirming.tool_name, 'id=', confirming.tool_use_id, 'messages.len=', messages.length)
         const result = await executeTool(confirming.tool_name, confirming.input)
+        console.log('[assistant] CONFIRMATION executeTool result:', JSON.stringify(result).slice(0, 200))
         // Build tool_results for every tool_use in the last assistant message
         const lastMsg = messages[messages.length - 1]
         const allToolUses: any[] = Array.isArray(lastMsg?.content)
