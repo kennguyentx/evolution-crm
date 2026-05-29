@@ -72,6 +72,44 @@ async function fetchRss(query: string): Promise<{ title: string; link: string; p
   }
 }
 
+// ── Geographic mismatch filter ────────────────────────────────────────────────
+// Deterministic pre-filter applied BEFORE Claude sees the articles.
+// Rejects articles whose titles contain place names from clearly different regions.
+
+const REGION_KEYWORDS: [string[], string[]][] = [
+  // [signals that indicate this region, place names that belong to it]
+  [['houston', 'texas', ' tx'], ['houston', 'san antonio', 'austin', 'corpus christi', 'lubbock', 'el paso', 'texas', ' tx ']],
+  [['carolina', 'charlotte', 'raleigh', 'durham'], ['charlotte', 'raleigh', 'durham', 'greensboro', 'asheville', 'wilmington', 'charleston', 'columbia', 'north carolina', 'south carolina', ' nc ', ' sc ']],
+  [['michigan', 'detroit', 'grand rapids'], ['detroit', 'grand rapids', 'lansing', 'flint', 'ann arbor', 'kalamazoo', 'michigan', ' mi ']],
+  [['dallas', 'fort worth', 'dfw'], ['dallas', 'fort worth', 'dfw', 'arlington', 'plano', 'frisco', 'mckinney', 'garland']],
+  [['chicago', 'ohio', 'indiana', 'illinois'], ['chicago', 'cleveland', 'columbus', 'cincinnati', 'indianapolis', 'milwaukee', 'ohio', 'indiana', 'illinois', 'wisconsin']],
+]
+
+function isGeographicMismatch(title: string, geography: string | null): boolean {
+  if (!geography) return false
+  const t = ' ' + title.toLowerCase() + ' '
+  const geo = geography.toLowerCase()
+
+  // Find which region(s) this company belongs to
+  const ownPlaces = new Set<string>()
+  const otherPlaces = new Set<string>()
+
+  for (const [signals, places] of REGION_KEYWORDS) {
+    const isOwn = signals.some(s => geo.includes(s))
+    for (const p of places) {
+      if (isOwn) ownPlaces.add(p)
+      else otherPlaces.add(p)
+    }
+  }
+
+  const mentionsOther = [...otherPlaces].some(p => t.includes(p))
+  if (!mentionsOther) return false
+
+  // If the title also mentions own region, it could be a multi-region story — keep it
+  const mentionsOwn = [...ownPlaces].some(p => t.includes(p))
+  return !mentionsOwn
+}
+
 // ── Per-company Claude curation ───────────────────────────────────────────────
 
 const JSON_SHAPE = `
@@ -185,15 +223,16 @@ export async function fetchCuratedPortfolioNews(): Promise<CompanyNews[]> {
         fetchRss(`${sector} ${geo} labor OR workforce OR "supply chain" OR backlog OR "materials costs" OR regulation`),
       ])
 
-      // Dedupe by link
+      // Dedupe by link, then drop any article whose title places it in the wrong region
       const seen = new Set<string>()
       const allArticles = [...companyArticles, ...maArticles, ...industryArticles, ...macroArticles].filter(a => {
         if (seen.has(a.link)) return false
         seen.add(a.link)
+        if (isGeographicMismatch(a.title, c.geography)) return false
         return true
       })
 
-      // Claude curates only this company's articles
+      // Claude curates only this company's geo-filtered articles
       const curated = await curateForCompany(anthropic, c, allArticles, today)
 
       return {
