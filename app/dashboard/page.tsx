@@ -568,11 +568,30 @@ export default function DashboardPage() {
                 {nextSteps.map((note: any) => {
                   const deal = unwrap(note.deal) as any
                   return (
-                    <Link key={note.id} href={deal ? `/deals/${deal.id}` : '/notes'} style={{ textDecoration: 'none' }}>
-                      <div style={{ padding: '9px 10px', borderRadius: '6px', transition: 'background 0.1s' }}
-                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
-                      >
+                    <div key={note.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', padding: '9px 10px', borderRadius: '6px', transition: 'background 0.1s' }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'transparent'}
+                    >
+                      {/* Done button */}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation()
+                          await supabase.from('notes').update({ next_steps: null }).eq('id', note.id)
+                          setNextSteps(prev => prev.filter((n: any) => n.id !== note.id))
+                        }}
+                        title="Mark done"
+                        style={{
+                          flexShrink: 0, marginTop: '1px',
+                          width: '16px', height: '16px', borderRadius: '50%',
+                          border: '1.5px solid var(--border)', background: 'transparent',
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'border-color 0.15s, background 0.15s',
+                        }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--green)'; (e.currentTarget as HTMLElement).style.background = '#16a34a18' }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                      />
+                      {/* Row content */}
+                      <Link href={deal ? `/deals/${deal.id}` : '/notes'} style={{ textDecoration: 'none', flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
                           {deal && <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--accent)' }}>{deal.company_name}</span>}
                           <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: 'auto' }}>{fmtShort(note.note_date)}</span>
@@ -580,8 +599,8 @@ export default function DashboardPage() {
                         <div style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.4, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>
                           → {note.next_steps}
                         </div>
-                      </div>
-                    </Link>
+                      </Link>
+                    </div>
                   )
                 })}
               </div>
