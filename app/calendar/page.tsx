@@ -87,10 +87,12 @@ export default function CalendarPage() {
     const pad = (n: number) => String(n).padStart(2, '0')
     const first = `${y}-${pad(m + 1)}-01`
     const last = `${y}-${pad(m + 1)}-${String(new Date(y, m + 1, 0).getDate()).padStart(2, '0')}`
-    const { data } = await supabase.from('calendar_events')
+    const { data, error } = await supabase.from('calendar_events')
       .select('*, deal:deals(company_name), contact:contacts(first_name, last_name), portfolio_company:portfolio_companies(name)')
       .gte('event_date', first).lte('event_date', last)
       .order('start_time', { ascending: true, nullsFirst: false })
+    if (error) console.error('[calendar] loadEvents error:', error)
+    console.log(`[calendar] loaded ${data?.length ?? 0} events for ${first}..${last}`, data?.slice(0, 3))
     setEvents(data ?? [])
     setLoading(false)
   }
