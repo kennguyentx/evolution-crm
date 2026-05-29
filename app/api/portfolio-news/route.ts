@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
 import { AI_MODELS } from '@/lib/ai-config'
+import { DAILY_NEWS_BRIEF_PROMPT, fillPrompt } from '@/lib/prompts'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -130,24 +131,32 @@ export async function GET() {
     })
   }
 
-  // 4. Pass all raw articles to Claude for curation, categorization, and multiple extraction
-  const prompt = `You are helping a private equity firm curate news for their portfolio companies.
+  // 4. Pass all raw articles to Claude for curation using the canonical brief prompt
+  const today = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/New_York',
+  })
 
-Portfolio companies:
-${companies.map(c => `- ${c.name} (${[c.sector, c.geography].filter(Boolean).join(', ')})`).join('\n')}
+  const portfolioList = companies
+    .map(c => `- ${c.name} (${[c.sector, c.geography].filter(Boolean).join(', ')})`)
+    .join('\n')
 
-Below are raw news articles collected in the last 3 days. For each portfolio company, return the relevant articles categorized as:
-- "company": directly about THIS specific company (filter out articles that merely share a similar name with an unrelated company)
-- "industry": relevant market trends, sector news, or regulatory news for this company's sector and geography
-- "transaction": announced or closed M&A deals, acquisitions, or investments in similar companies in the same sector. If a revenue or EBITDA multiple is mentioned (e.g., "acquired for 8x EBITDA", "$50M deal, $6M EBITDA"), extract it as a short string like "8.0x EBITDA" or "6.5x revenue".
+  const rawArticlesJson = JSON.stringify(
+    rawByCompany.map(r => ({
+      company: r.company.name,
+      articles: r.articles.map((a, i) => ({ id: i, title: a.title, source: a.source, pubDate: a.pubDate, link: a.link })),
+    })),
+    null, 2
+  )
 
-Raw articles (JSON):
-${JSON.stringify(rawByCompany.map(r => ({
-  company: r.company.name,
-  articles: r.articles.map((a, i) => ({ id: i, title: a.title, source: a.source, pubDate: a.pubDate, link: a.link }))
-})), null, 2)}
+  const basePrompt = fillPrompt(DAILY_NEWS_BRIEF_PROMPT, {
+    TODAY: today,
+    PORTFOLIO_COMPANIES: portfolioList,
+    RAW_ARTICLES: rawArticlesJson,
+  })
 
-Return ONLY valid JSON in this exact shape:
+  const prompt = basePrompt + `
+
+Return ONLY valid JSON in this exact shape — no prose, no markdown fences:
 {
   "companies": [
     {
@@ -166,7 +175,7 @@ Return ONLY valid JSON in this exact shape:
   ]
 }
 
-Only include articles that are genuinely relevant. Omit irrelevant articles entirely. It's fine to have 0 articles for a company.`
+Only include articles that are genuinely relevant and meet the 3-day freshness rule. Omit irrelevant articles entirely. It's fine to have 0 articles for a company.`
 
   try {
     const response = await anthropic.messages.create({
