@@ -54,6 +54,13 @@ DROP POLICY IF EXISTS "authenticated_all" ON portfolio_companies;
 CREATE POLICY "authenticated_all" ON portfolio_companies
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
+-- ── calendar_events ──────────────────────────────────────────
+ALTER TABLE calendar_events ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "authenticated_all" ON calendar_events;
+CREATE POLICY "authenticated_all" ON calendar_events
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
 -- ── assistant_threads ────────────────────────────────────────
 -- Threads are user-scoped: each user only sees their own.
 ALTER TABLE assistant_threads ENABLE ROW LEVEL SECURITY;
