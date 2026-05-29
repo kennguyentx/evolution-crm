@@ -72,7 +72,7 @@ async function fetchRss(query: string): Promise<{ title: string; link: string; p
     })
     if (!res.ok) return []
     const xml = await res.text()
-    return parseItems(xml).filter(a => isWithinDays(a.pubDate, 3))
+    return parseItems(xml).filter(a => isWithinDays(a.pubDate, 7))
   } catch {
     return []
   }
@@ -102,15 +102,18 @@ export async function GET() {
       // Query 1: direct company name search
       // Query 2: sector M&A / transactions in geography
       // Query 3: sector industry news in geography
-      const [companyArticles, maArticles, industryArticles] = await Promise.all([
+      // Query 4: broader end-market and macro trends (labor, materials, regulation, spending)
+      const sectorBroad = sector.replace(/\s*\/\s*.+/, '').trim() // e.g. "Civil / Public Works" → "Civil"
+      const [companyArticles, maArticles, industryArticles, macroArticles] = await Promise.all([
         fetchRss(`"${name}"`),
-        fetchRss(`${sector} acquisition OR transaction OR "deal closed" ${geo}`),
-        fetchRss(`${sector} ${geo}`),
+        fetchRss(`${sector} acquisition OR "private equity" OR "PE deal" OR "deal closed" ${geo}`),
+        fetchRss(`${sector} ${geo} industry OR market OR outlook OR growth`),
+        fetchRss(`${sectorBroad} labor OR backlog OR materials OR pricing OR regulation OR infrastructure spending`),
       ])
 
-      // Dedupe by title across all three searches
+      // Dedupe by link across all four searches
       const seen = new Set<string>()
-      const all = [...companyArticles, ...maArticles, ...industryArticles].filter(a => {
+      const all = [...companyArticles, ...maArticles, ...industryArticles, ...macroArticles].filter(a => {
         if (seen.has(a.link)) return false
         seen.add(a.link)
         return true
