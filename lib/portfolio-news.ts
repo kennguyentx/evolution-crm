@@ -217,7 +217,7 @@ export async function fetchCuratedPortfolioNews(): Promise<CompanyNews[]> {
 
       // Four targeted RSS searches
       const [companyArticles, maArticles, industryArticles, macroArticles] = await Promise.all([
-        fetchRss(`"${name}"`),
+        fetchRss(geo ? `"${name}" ${geo}` : `"${name}"`),
         fetchRss(`${sector} acquisition OR "private equity" OR "PE deal" OR "deal closed" ${geo}`),
         fetchRss(`${sector} ${geo} industry OR market OR outlook OR growth`),
         fetchRss(`${sector} ${geo} labor OR workforce OR "supply chain" OR backlog OR "materials costs" OR regulation`),
