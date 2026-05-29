@@ -831,6 +831,53 @@ async function executeTool(name: string, input: any): Promise<any> {
   }
 }
 
+// ─── Message sanitizer ────────────────────────────────────────
+// Ensures every assistant message that contains tool_use blocks is immediately
+// followed by a user message containing matching tool_result blocks.
+// If an orphaned tool_use is found (no result in the next message), a synthetic
+// error result is injected so Claude doesn't 400.
+function sanitizeMessages(msgs: any[]): any[] {
+  const out: any[] = []
+  for (let i = 0; i < msgs.length; i++) {
+    const msg = msgs[i]
+    out.push(msg)
+    if (msg.role !== 'assistant') continue
+    const toolUses: any[] = Array.isArray(msg.content)
+      ? msg.content.filter((b: any) => b.type === 'tool_use')
+      : []
+    if (toolUses.length === 0) continue
+    const next = msgs[i + 1]
+    const allResolved = next?.role === 'user' &&
+      Array.isArray(next.content) &&
+      toolUses.every((tu: any) =>
+        next.content.some((b: any) => b.type === 'tool_result' && b.tool_use_id === tu.id)
+      )
+    if (!allResolved) {
+      // Inject synthetic results for every unresolved tool_use
+      const existingResults: Set<string> = new Set(
+        (next?.role === 'user' && Array.isArray(next?.content))
+          ? next.content.filter((b: any) => b.type === 'tool_result').map((b: any) => b.tool_use_id)
+          : []
+      )
+      const syntheticResults = toolUses
+        .filter((tu: any) => !existingResults.has(tu.id))
+        .map((tu: any) => ({
+          type: 'tool_result' as const,
+          tool_use_id: tu.id,
+          content: JSON.stringify({ error: 'Tool result unavailable — action was interrupted.' }),
+        }))
+      // If there's already a partial user message with some results, merge them
+      if (next?.role === 'user' && Array.isArray(next.content) && existingResults.size > 0) {
+        msgs[i + 1] = { role: 'user', content: [...next.content, ...syntheticResults] }
+      } else {
+        // Insert a brand-new synthetic results message right after this assistant message
+        out.push({ role: 'user', content: syntheticResults })
+      }
+    }
+  }
+  return out
+}
+
 // ─── Main handler ─────────────────────────────────────────────
 
 const SYSTEM_PROMPT = () => `You are Nexus Assistant, an AI agent for Evolution Strategy Partners — a lower middle market PE firm in Austin/Dallas focused on infrastructure services ($3–7M EBITDA).
@@ -909,49 +956,17 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // ── Confirmation flow ──────────────────────────────────────
-    if (confirming) {
-      return makeStream(async (send, close) => {
-        const result = await executeTool(confirming.tool_name, confirming.input)
-        const lastMsg = messages[messages.length - 1]
-        const allToolUses: any[] = Array.isArray(lastMsg?.content)
-          ? lastMsg.content.filter((b: any) => b.type === 'tool_use')
-          : []
-        const toolResults = allToolUses.length > 0
-          ? await Promise.all(allToolUses.map(async (t: any) => {
-              if (t.id === confirming.tool_use_id) {
-                return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify(result) }
-              }
-              try {
-                const r = await executeTool(t.name, t.input)
-                return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify(r) }
-              } catch (err: any) {
-                return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify({ error: err.message }) }
-              }
-            }))
-          : [{ type: 'tool_result' as const, tool_use_id: confirming.tool_use_id, content: JSON.stringify(result) }]
-        const continueMessages = [...messages, { role: 'user', content: toolResults }]
-        const claudeStream = anthropic.messages.stream({
-          model: AI_MODELS.balanced,
-          max_tokens: 2000,
-          system: systemPrompt,
-          tools: TOOLS,
-          messages: continueMessages,
-        } as any)
-        claudeStream.on('text', (text: string) => send('chunk', { text }))
-        await claudeStream.finalMessage()
-        send('done', {})
-        close()
-      })
-    }
-
-    // ── Agentic loop ───────────────────────────────────────────
-    return makeStream(async (send, close) => {
-      let currentMessages = [...messages]
+    // ── Shared agentic loop ────────────────────────────────────
+    const agenticLoop = async (
+      send: (event: string, data: object) => void,
+      close: () => void,
+      startMessages: any[],
+      firstModel = AI_MODELS.balanced,
+    ) => {
+      let currentMessages = sanitizeMessages(startMessages)
       const MAX_ITER = 10
       for (let i = 0; i < MAX_ITER; i++) {
-        // Use Sonnet for first call (routing quality), Haiku for subsequent tool-only iterations
-        const model = i === 0 ? AI_MODELS.balanced : AI_MODELS.fast
+        const model = i === 0 ? firstModel : AI_MODELS.fast
         const claudeStream = anthropic.messages.stream({
           model,
           max_tokens: 2000,
@@ -962,17 +977,9 @@ export async function POST(req: NextRequest) {
         let textSoFar = ''
         claudeStream.on('text', (text: string) => { textSoFar += text; send('chunk', { text }) })
         const resp = await claudeStream.finalMessage()
-        if (resp.stop_reason === 'end_turn') {
-          send('done', {})
-          close()
-          return
-        }
+        if (resp.stop_reason === 'end_turn') { send('done', {}); close(); return }
         const toolUses = resp.content.filter((b: any) => b.type === 'tool_use')
-        if (toolUses.length === 0) {
-          send('done', {})
-          close()
-          return
-        }
+        if (toolUses.length === 0) { send('done', {}); close(); return }
         const writeToolUse = toolUses.find((t: any) => WRITE_TOOLS.has(t.name)) as any
         if (writeToolUse) {
           send('confirmation', {
@@ -1001,6 +1008,38 @@ export async function POST(req: NextRequest) {
       send('chunk', { text: 'I reached my iteration limit. Try breaking the question into smaller parts.' })
       send('done', {})
       close()
+    }
+
+    // ── Confirmation flow ──────────────────────────────────────
+    if (confirming) {
+      return makeStream(async (send, close) => {
+        const result = await executeTool(confirming.tool_name, confirming.input)
+        // Build tool_results for every tool_use in the last assistant message
+        const lastMsg = messages[messages.length - 1]
+        const allToolUses: any[] = Array.isArray(lastMsg?.content)
+          ? lastMsg.content.filter((b: any) => b.type === 'tool_use')
+          : []
+        const toolResults = allToolUses.length > 0
+          ? await Promise.all(allToolUses.map(async (t: any) => {
+              if (t.id === confirming.tool_use_id) {
+                return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify(result) }
+              }
+              try {
+                const r = await executeTool(t.name, t.input)
+                return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify(r) }
+              } catch (err: any) {
+                return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify({ error: err.message }) }
+              }
+            }))
+          : [{ type: 'tool_result' as const, tool_use_id: confirming.tool_use_id, content: JSON.stringify(result) }]
+        // Continue via the full agentic loop so any follow-up tool calls are handled
+        await agenticLoop(send, close, [...messages, { role: 'user', content: toolResults }], AI_MODELS.balanced)
+      })
+    }
+
+    // ── Agentic loop ───────────────────────────────────────────
+    return makeStream(async (send, close) => {
+      await agenticLoop(send, close, messages)
     })
 
   } catch (err: any) {
@@ -1008,3 +1047,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err?.message || String(err) }, { status: 500 })
   }
 }
+
