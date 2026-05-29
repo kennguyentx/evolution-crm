@@ -33,7 +33,12 @@ export const DAILY_NEWS_BRIEF_PROMPT = `You are preparing the daily industry new
 
 ## Raw Articles (for curation)
 
-The following articles were collected via RSS in the past 7 days. Use them as a starting point, but apply the strict freshness and relevance rules above. Omit any article that does not meet the 3-day freshness requirement or is not a specific named event.
+The following articles were collected via RSS in the past 7 days, grouped by which portfolio company's search query found them. Use them as a starting point and apply these rules:
+
+- **Geography is a hard filter.** Each company has a defined geography. Do not assign a geographically-specific article to a company operating in a different region. For example, a project or contract award in Houston belongs only to Texas-based companies — not to a company based in the Carolinas or Michigan.
+- **Sector is a hard filter.** Do not assign an article about landscaping to an electrical contractor, or vice versa, just because both operate in the same region.
+- **Articles may only move between companies if the story is genuinely sector-wide and geography-agnostic** (e.g., a national OSHA rule, a broad federal infrastructure bill). In that case, assign it once to the most relevant company.
+- Omit any article that does not meet the 3-day freshness requirement or is not a specific named event.
 
 {{RAW_ARTICLES}}`
 
