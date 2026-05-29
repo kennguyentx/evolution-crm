@@ -2,11 +2,13 @@
 // Shared RSS fetch + Claude curation logic used by both:
 //   - app/api/portfolio-news/route.ts  (dashboard widget)
 //   - app/api/portfolio-news/daily-email/route.ts  (cron email)
+//
+// Each company is curated in its own Claude call so articles fetched for
+// one company can never bleed into another company's results.
 
 import { createClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
 import { AI_MODELS } from '@/lib/ai-config'
-import { DAILY_NEWS_BRIEF_PROMPT, fillPrompt } from '@/lib/prompts'
 
 export interface NewsArticle {
   title: string
@@ -70,102 +72,60 @@ async function fetchRss(query: string): Promise<{ title: string; link: string; p
   }
 }
 
-// ── Main export ───────────────────────────────────────────────────────────────
+// ── Per-company Claude curation ───────────────────────────────────────────────
 
-/**
- * Fetches RSS articles for all active portfolio companies, curates them with
- * Claude using the canonical daily brief prompt, and returns the result.
- */
-export async function fetchCuratedPortfolioNews(): Promise<CompanyNews[]> {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
-
-  // 1. Fetch active portfolio companies
-  const { data: companies, error } = await supabase
-    .from('portfolio_companies')
-    .select('id, name, sector, geography, news_search_name')
-    .eq('status', 'Active')
-    .order('name')
-
-  if (error || !companies?.length) return []
-
-  // 2. Four RSS searches per company in parallel
-  const rawByCompany = await Promise.all(
-    companies.map(async (c) => {
-      const name = c.news_search_name?.trim() || c.name
-      const sector = c.sector || ''
-      const geo = c.geography || ''
-
-      const [companyArticles, maArticles, industryArticles, macroArticles] = await Promise.all([
-        fetchRss(`"${name}"`),
-        fetchRss(`${sector} acquisition OR "private equity" OR "PE deal" OR "deal closed" ${geo}`),
-        fetchRss(`${sector} ${geo} industry OR market OR outlook OR growth`),
-        fetchRss(`${sector} ${geo} labor OR workforce OR "supply chain" OR backlog OR "materials costs" OR regulation`),
-      ])
-
-      const seen = new Set<string>()
-      const all = [...companyArticles, ...maArticles, ...industryArticles, ...macroArticles].filter(a => {
-        if (seen.has(a.link)) return false
-        seen.add(a.link)
-        return true
-      })
-
-      return { company: c, articles: all }
-    })
-  )
-
-  // 3. Build prompt
-  const today = new Date().toLocaleDateString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/New_York',
-  })
-
-  const portfolioList = companies
-    .map(c => `- ${c.name} (${[c.sector, c.geography].filter(Boolean).join(', ')})`)
-    .join('\n')
-
-  const rawArticlesJson = JSON.stringify(
-    rawByCompany.map(r => ({
-      company: r.company.name,
-      articles: r.articles.map((a, i) => ({ id: i, title: a.title, source: a.source, pubDate: a.pubDate, link: a.link })),
-    })),
-    null, 2
-  )
-
-  const prompt = fillPrompt(DAILY_NEWS_BRIEF_PROMPT, {
-    TODAY: today,
-    PORTFOLIO_COMPANIES: portfolioList,
-    RAW_ARTICLES: rawArticlesJson,
-  }) + `
-
-Return ONLY valid JSON in this exact shape — no prose, no markdown fences:
+const JSON_SHAPE = `
+Return ONLY valid JSON — no prose, no markdown fences:
 {
-  "companies": [
+  "articles": [
     {
-      "name": "Company Name",
-      "articles": [
-        {
-          "title": "...",
-          "link": "...",
-          "pubDate": "...",
-          "source": "...",
-          "category": "company" | "industry" | "transaction",
-          "multiple": "8.0x EBITDA" | null
-        }
-      ]
+      "title": "...",
+      "link": "...",
+      "pubDate": "...",
+      "source": "...",
+      "category": "company" | "industry" | "transaction",
+      "multiple": "8.0x EBITDA" | null
     }
   ]
-}
+}`
 
-Only include articles that are genuinely relevant and meet the 3-day freshness rule. Omit irrelevant articles entirely. It's fine to have 0 articles for a company.`
+async function curateForCompany(
+  anthropic: Anthropic,
+  company: { name: string; sector: string | null; geography: string | null },
+  articles: { title: string; link: string; pubDate: string; source: string }[],
+  today: string,
+): Promise<NewsArticle[]> {
+  if (articles.length === 0) return []
 
-  // 4. Claude curation
+  const prompt = `You are curating a daily industry news brief for Evolution Strategy Partners, a private equity firm. Today is ${today}.
+
+You are processing ONE portfolio company:
+  Name: ${company.name}
+  Sector: ${company.sector || 'unknown'}
+  Geography: ${company.geography || 'unknown'}
+
+Below are raw RSS articles fetched specifically for this company. Your job is to filter and categorize them.
+
+## Rules
+- **Only keep articles that are genuinely relevant** to this company's sector AND geography.
+- **Reject any article that is geographically mismatched.** If this company operates in ${company.geography || 'a specific region'}, discard articles about projects or events in other regions unless the story is explicitly national in scope.
+- **Only include items published within the past 3 days** (cutoff: ${today}). Discard anything older.
+- **No filler.** Each kept article must describe a specific named event: contract award, project announcement, acquisition, regulatory action, earnings release, etc.
+- Categorize each kept article as:
+  - "company": directly about ${company.name} itself
+  - "industry": sector/market news relevant to this company's geography and vertical
+  - "transaction": M&A deal or acquisition in this sector; extract any disclosed multiple as a short string like "8.0x EBITDA"
+- If an article doesn't fit — wrong sector, wrong geography, too vague, or older than 3 days — omit it entirely.
+- It is fine to return 0 articles.
+
+## Raw articles
+${JSON.stringify(articles.map((a, i) => ({ id: i, title: a.title, source: a.source, pubDate: a.pubDate, link: a.link })), null, 2)}
+${JSON_SHAPE}`
+
   try {
     const response = await anthropic.messages.create({
       model: AI_MODELS.fast,
-      max_tokens: 4000,
+      max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }],
     })
 
@@ -176,19 +136,72 @@ Only include articles that are genuinely relevant and meet the 3-day freshness r
       .replace(/```json|```/g, '')
       .trim()
 
-    const curated = JSON.parse(raw) as { companies: CompanyNews[] }
-
-    return curated.companies.map(c => {
-      const orig = companies.find(p => p.name === c.name)
-      return { ...c, sector: orig?.sector ?? null, geography: orig?.geography ?? null }
-    })
+    const parsed = JSON.parse(raw) as { articles: NewsArticle[] }
+    return parsed.articles ?? []
   } catch {
-    // Fallback: return raw company-name articles uncurated
-    return rawByCompany.map(r => ({
-      name: r.company.name,
-      sector: r.company.sector,
-      geography: r.company.geography,
-      articles: r.articles.slice(0, 5).map(a => ({ ...a, category: 'company' as const, multiple: null })),
-    }))
+    // Fallback: return direct company-name articles only, uncategorized
+    return articles.slice(0, 3).map(a => ({ ...a, category: 'company' as const, multiple: null }))
   }
+}
+
+// ── Main export ───────────────────────────────────────────────────────────────
+
+/**
+ * Fetches RSS articles for all active portfolio companies and curates each
+ * company independently with its own Claude call — preventing cross-company
+ * article bleed. All companies are processed in parallel.
+ */
+export async function fetchCuratedPortfolioNews(): Promise<CompanyNews[]> {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+
+  const { data: companies, error } = await supabase
+    .from('portfolio_companies')
+    .select('id, name, sector, geography, news_search_name')
+    .eq('status', 'Active')
+    .order('name')
+
+  if (error || !companies?.length) return []
+
+  const today = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/New_York',
+  })
+
+  // Fetch RSS + curate each company fully in parallel
+  return Promise.all(
+    companies.map(async (c) => {
+      const name = c.news_search_name?.trim() || c.name
+      const sector = c.sector || ''
+      const geo = c.geography || ''
+
+      // Four targeted RSS searches
+      const [companyArticles, maArticles, industryArticles, macroArticles] = await Promise.all([
+        fetchRss(`"${name}"`),
+        fetchRss(`${sector} acquisition OR "private equity" OR "PE deal" OR "deal closed" ${geo}`),
+        fetchRss(`${sector} ${geo} industry OR market OR outlook OR growth`),
+        fetchRss(`${sector} ${geo} labor OR workforce OR "supply chain" OR backlog OR "materials costs" OR regulation`),
+      ])
+
+      // Dedupe by link
+      const seen = new Set<string>()
+      const allArticles = [...companyArticles, ...maArticles, ...industryArticles, ...macroArticles].filter(a => {
+        if (seen.has(a.link)) return false
+        seen.add(a.link)
+        return true
+      })
+
+      // Claude curates only this company's articles
+      const curated = await curateForCompany(anthropic, c, allArticles, today)
+
+      return {
+        name: c.name,
+        sector: c.sector ?? null,
+        geography: c.geography ?? null,
+        articles: curated,
+      }
+    })
+  )
 }
