@@ -247,12 +247,13 @@ export default function DealDetailPage() {
 
     // Log stage change to activity timeline (non-blocking)
     if (currentDeal?.stage && currentDeal.stage !== stage) {
-      const { data: newEntry } = await supabase.from('interactions').insert({
+      const { data: newEntry, error: stageLogError } = await supabase.from('interactions').insert({
         deal_id: dealId,
         interaction_type: 'stage-change',
         summary: `Stage changed: ${currentDeal.stage} → ${stage}`,
-        interaction_date: new Date().toISOString().split('T')[0],
+        interaction_date: new Date().toISOString(),
       }).select().single()
+      if (stageLogError) console.error('[updateStage] activity log failed:', stageLogError)
       if (newEntry) setInteractions(prev => [newEntry, ...prev])
     }
 
@@ -617,7 +618,12 @@ export default function DealDetailPage() {
     }
     if (detectedContacts[0]?.id) insertPayload.contact_id = detectedContacts[0].id
     if (activityForm.raise_id) insertPayload.raise_id = activityForm.raise_id
-    const { data } = await supabase.from('interactions').insert(insertPayload).select('*, contact:contacts(first_name, last_name), raise:capital_raises(id,name)').single()
+    const { data, error } = await supabase.from('interactions').insert(insertPayload).select('*, contact:contacts(first_name, last_name), raise:capital_raises(id,name)').single()
+    if (error) {
+      console.error('[addInteraction] insert failed:', error)
+      alert(`Failed to log activity: ${error.message}`)
+      return
+    }
     if (data) setInteractions(prev => [data, ...prev])
     setShowActivityForm(false)
     setActivityForm({ interaction_type: 'call', summary: '', next_steps: '', raise_id: '' })
@@ -1466,15 +1472,21 @@ export default function DealDetailPage() {
 
               return merged.map((item, idx) => {
                 // Stage-change events — compact pill style
-                if (item._type === 'interaction' && item.interaction_type === 'stage-change') return (
-                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', padding: '0 4px' }}>
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', flex: 1 }}>{item.summary}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}>
-                      {item.interaction_date ? new Date(item.interaction_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                if (item._type === 'interaction' && item.interaction_type === 'stage-change') {
+                  // Handle either a date-only string ("2026-06-02") or a full ISO timestamp
+                  const dateStr = item.interaction_date ? String(item.interaction_date).slice(0, 10) : null
+                  const parsed = dateStr ? new Date(dateStr + 'T12:00:00') : null
+                  const dateLabel = parsed && !isNaN(parsed.getTime())
+                    ? parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                    : ''
+                  return (
+                    <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', padding: '0 4px' }}>
+                      <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', flex: 1 }}>{item.summary}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}>{dateLabel}</div>
                     </div>
-                  </div>
-                )
+                  )
+                }
 
                 if (item._type === 'note') return (
                   <div key={`note-${item.id}`} className="card-2" style={{ padding: '14px 16px', marginBottom: '8px', borderLeft: '3px solid var(--border)' }}>
