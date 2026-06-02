@@ -216,7 +216,15 @@ async function parseForwardingNote(bodyText: string, emailHeaders: { from: strin
   "deal_type": "platform | add-on | null",
   "parent_portco": "string or null — name of our EXISTING PORTFOLIO COMPANY that would acquire this target. Set when sender uses language like 'add-on for Amped', 'under Amped', 'bolt-on for Amped', 'for the Amped platform'. This is NOT the target company — it is the acquirer we already own.",
   "forwarder_note": "any context or commentary the sender added, else null",
-  "auto_approve": true or false — true only if sender made an explicit final decision (pass, hold, close),
+  "auto_approve": true or false — true if the sender made an explicit decision about how to log this deal. Examples that should be TRUE: "pass", "pass on this", "not for us", "no thanks", "skip", "hold", "park this", "closed", "done deal", or any clear stage like "submitted LOI". Default to TRUE for these short decisive phrases even without other context. Default to FALSE only when the email is purely informational (asking a question, sharing news, etc.).
+
+  When auto_approve is true, ALSO set "stage" to the appropriate value:
+  - "pass", "not for us", "no thanks", "skip" → "Pass (DOA)"
+  - "pass post-LOI", "passed after LOI" → "Pass (Post-LOI)"
+  - "pass pre-LOI" → "Pass (Pre-LOI)"
+  - "hold", "park" → "Hold"
+  - "submitted LOI", "LOI out" → "LOI Submitted"
+  - "closed", "done" → "Closed (Platform)" (or "Closed (Add-On)" if context suggests),
   "contacts": [
     {
       "name": "Full Name",
@@ -855,11 +863,57 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Create a deal from a plain-text email if it describes a new opportunity ─
+    // Triggers when: no existing deal matched, no portco matched, and the email
+    // body mentions a prospective target company name. Respects "pass / hold /
+    // closed" intent from the forwarding note so a quick "pass" email goes
+    // straight to the right stage instead of defaulting to Teaser → NDA flow.
+    let createdDeal: { id: string; company_name: string; stage: string } | null = null
+    if (!deal_id && !portfolio_company_id && parsed.deal_names?.length > 0) {
+      const candidateName = parsed.deal_names[0].trim()
+      const stage  = pathBInstructions.stage  || 'Teaser'
+      const status = pathBInstructions.status ?? (
+        stage.startsWith('Pass')   ? 'Dead'   :
+        stage.startsWith('Closed') ? 'Closed' : 'Active'
+      )
+      console.log(`[email-intake] Path B creating deal: "${candidateName}" stage="${stage}" status="${status}"`)
+      const { data: newDeal, error: dealErr } = await supabase.from('deals').insert({
+        company_name:   candidateName,
+        deal_type:      pathBInstructions.deal_type || 'platform',
+        parent_portco:  pathBInstructions.parent_portco || null,
+        stage,
+        status,
+        cim_parsed:     false,
+        expected_close: new Date().toISOString().split('T')[0],
+      }).select('id, company_name, stage').single()
+      if (dealErr) {
+        console.error('[email-intake] Path B deal create failed:', dealErr.message)
+      } else if (newDeal) {
+        createdDeal = newDeal
+        deal_id = newDeal.id
+        // Link any contacts extracted from the forwarding note
+        if (pathBInstructions.contacts?.length) {
+          try { await upsertContacts(supabase, pathBInstructions.contacts, newDeal.id) }
+          catch (e: any) { console.warn('[email-intake] contact link failed:', e?.message) }
+        }
+      }
+    }
+
+    // If forwarder explicitly decided pass/hold/closed, surface that as the note's
+    // next steps instead of whatever the LLM guessed (often "process NDA").
+    const explicitDecision = pathBInstructions.auto_approve && pathBInstructions.stage
+      ? `Logged as ${pathBInstructions.stage}`
+      : null
+
+    const summaryWithCreated = createdDeal
+      ? `Created new deal "${createdDeal.company_name}" in stage ${createdDeal.stage}.${parsed.summary ? ` ${parsed.summary}` : ''}`
+      : parsed.summary ?? null
+
     const { data: note, error } = await supabase.from('notes').insert({
       note_date:            noteDate,
       raw_text:             `From: ${from}\nSubject: ${subject}\n\n${text}`.slice(0, 4000),
-      summary:              parsed.summary    ?? null,
-      next_steps:           parsed.next_steps ?? null,
+      summary:              summaryWithCreated,
+      next_steps:           explicitDecision ?? parsed.next_steps ?? null,
       logged_by:            parsed.logged_by  ?? from.split('@')[0] ?? 'email',
       source:               'email',
       deal_id,
@@ -868,7 +922,15 @@ export async function POST(req: NextRequest) {
     }).select().single()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
-    return NextResponse.json({ success: true, processed: [{ type: 'note', note_id: note?.id }] })
+    return NextResponse.json({
+      success: true,
+      processed: [{
+        type: createdDeal ? 'deal-from-email' : 'note',
+        note_id: note?.id,
+        deal_id: createdDeal?.id,
+        deal_stage: createdDeal?.stage,
+      }],
+    })
 
   } catch (err: any) {
     console.error('Email intake error:', err)
