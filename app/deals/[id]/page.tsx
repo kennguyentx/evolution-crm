@@ -618,13 +618,33 @@ export default function DealDetailPage() {
     }
     if (detectedContacts[0]?.id) insertPayload.contact_id = detectedContacts[0].id
     if (activityForm.raise_id) insertPayload.raise_id = activityForm.raise_id
-    const { data, error } = await supabase.from('interactions').insert(insertPayload).select('*, contact:contacts(first_name, last_name), raise:capital_raises(id,name)').single()
-    if (error) {
-      console.error('[addInteraction] insert failed:', error)
-      alert(`Failed to log activity: ${error.message}`)
+
+    // Step 1: bare INSERT — no joins, so RLS on joined tables can't kill it
+    const { data: inserted, error: insertError } = await supabase
+      .from('interactions')
+      .insert(insertPayload)
+      .select('*')
+      .single()
+
+    if (insertError) {
+      console.error('[addInteraction] insert failed:', insertError)
+      alert(`Failed to log activity: ${insertError.message}`)
       return
     }
-    if (data) setInteractions(prev => [data, ...prev])
+    if (!inserted) {
+      console.error('[addInteraction] insert returned no data — likely RLS on read')
+      alert('Activity may have saved but could not be confirmed. Refresh to verify.')
+      return
+    }
+
+    // Step 2: try to fetch the row with joins; fall back to bare row if joins fail
+    const { data: hydrated } = await supabase
+      .from('interactions')
+      .select('*, contact:contacts(first_name, last_name), raise:capital_raises(id,name)')
+      .eq('id', inserted.id)
+      .single()
+
+    setInteractions(prev => [hydrated || inserted, ...prev])
     setShowActivityForm(false)
     setActivityForm({ interaction_type: 'call', summary: '', next_steps: '', raise_id: '' })
     setDetectedContacts([])
