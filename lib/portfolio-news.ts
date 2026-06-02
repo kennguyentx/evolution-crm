@@ -61,7 +61,7 @@ async function fetchRss(query: string): Promise<{ title: string; link: string; p
   const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`
   try {
     const res = await fetch(url, {
-      next: { revalidate: 3600 },
+      next: { revalidate: 60 },
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; EvolutionCRM/1.0)' },
     })
     if (!res.ok) return []

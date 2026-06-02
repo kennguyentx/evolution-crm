@@ -608,7 +608,11 @@ export default function DealDetailPage() {
   }
 
   const addInteraction = async () => {
-    if (!activityForm.summary.trim()) return
+    console.log('[addInteraction] CLICKED', { summary: activityForm.summary, type: activityForm.interaction_type })
+    if (!activityForm.summary.trim()) {
+      console.log('[addInteraction] aborted — empty summary')
+      return
+    }
     const insertPayload: any = {
       deal_id: dealId,
       interaction_type: activityForm.interaction_type,
@@ -619,12 +623,14 @@ export default function DealDetailPage() {
     if (detectedContacts[0]?.id) insertPayload.contact_id = detectedContacts[0].id
     if (activityForm.raise_id) insertPayload.raise_id = activityForm.raise_id
 
+    console.log('[addInteraction] inserting:', insertPayload)
     // Step 1: bare INSERT — no joins, so RLS on joined tables can't kill it
     const { data: inserted, error: insertError } = await supabase
       .from('interactions')
       .insert(insertPayload)
       .select('*')
       .single()
+    console.log('[addInteraction] insert result:', { inserted, insertError })
 
     if (insertError) {
       console.error('[addInteraction] insert failed:', insertError)
