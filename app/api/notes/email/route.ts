@@ -108,11 +108,24 @@ const EMAIL_SYSTEM_PROMPT = `You extract structured information from forwarded e
   "next_steps": "string or null — explicit action items or follow-ups",
   "deal_names": ["string array — prospective deal/target company names mentioned"],
   "portco_names": ["string array — names of OUR EXISTING PORTFOLIO COMPANIES mentioned. These are companies we already own, not acquisition targets."],
-  "contact_names": ["string array — personal names in First Last format"],
+  "contacts": [
+    {
+      "name": "Full Name",
+      "email": "email or null",
+      "phone": "phone or null",
+      "firm": "company / firm or null",
+      "title": "job title or null",
+      "role": "Source / Banker | Management | Advisor | Lender | Other"
+    }
+  ],
   "logged_by": "string or null — first name of person who forwarded this"
 }
 
-Rules: factual only, no opinions, null/[] if nothing found.`
+Rules:
+- factual only, no opinions, null/[] if nothing found.
+- For contacts: extract EVERY named person mentioned ANYWHERE in the email — including the original sender, anyone in the email signature, bankers, brokers, sellers, management team members, advisors. Match emails from "From:" lines, "To:" lines, signatures, and inline references. If a name appears without a discoverable email, still include them with email: null.
+- Skip anyone with an @evolutionstrategy.com email.
+- "role": "Source / Banker" for bankers/brokers/M&A advisors; "Management" for target-company executives; "Advisor" for lawyers/accountants; "Lender" for debt providers; "Other" for everyone else.`
 
 // ── Process a single attachment through Claude ────────────────────────────────
 async function processAttachment(
@@ -810,7 +823,7 @@ export async function POST(req: NextRequest) {
 
     const response = await anthropic.messages.create({
       model: AI_MODELS.fast,
-      max_tokens: 800,
+      max_tokens: 1800, // larger budget so multi-contact extraction isn't truncated
       system: EMAIL_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: `Extract CRM data from this email:\n\n${emailContent}` }],
     })
@@ -854,13 +867,28 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (parsed.contact_names?.length > 0) {
-      for (const name of parsed.contact_names) {
-        const parts = name.trim().split(/\s+/)
-        if (parts.length < 2) continue
-        const { data } = await supabase.from('contacts').select('id').ilike('first_name', parts[0]).ilike('last_name', parts.slice(1).join(' ')).limit(1).maybeSingle()
-        if (data) { contact_id = data.id; break }
-      }
+    // Merge contacts from email body, forwarding note, and CC headers — dedupe by email
+    const bodyContacts: any[] = filterInternalContacts(parsed.contacts ?? [])
+    const allPathBContacts: any[] = []
+    const seenEmails = new Set<string>()
+    const seenNames  = new Set<string>()
+    for (const c of [...(pathBInstructions.contacts ?? []), ...bodyContacts]) {
+      if (!c.name?.trim()) continue
+      const emailKey = c.email?.toLowerCase()
+      const nameKey  = c.name.toLowerCase().trim()
+      if (emailKey && seenEmails.has(emailKey)) continue
+      if (!emailKey && seenNames.has(nameKey)) continue
+      if (emailKey) seenEmails.add(emailKey)
+      seenNames.add(nameKey)
+      allPathBContacts.push(c)
+    }
+
+    // Try to match a single primary contact for the note (first one with a real DB hit)
+    for (const c of allPathBContacts) {
+      const parts = c.name.trim().split(/\s+/)
+      if (parts.length < 2) continue
+      const { data } = await supabase.from('contacts').select('id').ilike('first_name', parts[0]).ilike('last_name', parts.slice(1).join(' ')).limit(1).maybeSingle()
+      if (data) { contact_id = data.id; break }
     }
 
     // ── Create a deal from a plain-text email if it describes a new opportunity ─
@@ -891,9 +919,10 @@ export async function POST(req: NextRequest) {
       } else if (newDeal) {
         createdDeal = newDeal
         deal_id = newDeal.id
-        // Link any contacts extracted from the forwarding note
-        if (pathBInstructions.contacts?.length) {
-          try { await upsertContacts(supabase, pathBInstructions.contacts, newDeal.id) }
+        // Link ALL contacts (body + forwarding note + CC) to the new deal
+        if (allPathBContacts.length) {
+          console.log(`[email-intake] Path B linking ${allPathBContacts.length} contacts to deal ${newDeal.id}`)
+          try { await upsertContacts(supabase, allPathBContacts, newDeal.id) }
           catch (e: any) { console.warn('[email-intake] contact link failed:', e?.message) }
         }
       }
