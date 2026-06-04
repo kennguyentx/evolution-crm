@@ -15,6 +15,7 @@ const STAGES: { name: DealStage; label: string }[] = [
   { name: 'Pre-LOI',       label: 'Pre-LOI' },
   { name: 'LOI Submitted', label: 'LOI Submitted' },
   { name: 'Exclusivity',   label: 'Exclusivity' },
+  { name: 'Hold',          label: 'Hold' },
 ]
 
 export default function PipelinePage() {
@@ -41,7 +42,7 @@ export default function PipelinePage() {
     const { data } = await supabase
   .from('deals')
   .select('*')
-  .in('stage', ['Teaser', 'Reviewing', 'Pre-LOI', 'LOI Submitted', 'Exclusivity'])
+  .in('stage', ['Teaser', 'Reviewing', 'Pre-LOI', 'LOI Submitted', 'Exclusivity', 'Hold'])
   .order('updated_at', { ascending: false })
     if (data) {
       setDeals(data)

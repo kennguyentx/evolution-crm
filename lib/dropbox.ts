@@ -109,6 +109,7 @@ export function expectedDropboxFolder(companyName: string, stage: string): strin
   const safe = companyName.replace(/[<>:"/\\|?*]/g, '_')
   if (PASS_STAGES.includes(stage))   return `/Evolution Strategy Partners/Deals/!Passed Deals/${safe}`
   if (CLOSED_STAGES.includes(stage)) return `/Evolution Strategy Partners/Portfolio Co's/${safe}`
+  if (stage === 'Hold')              return `/Evolution Strategy Partners/Deals/!Hold/${safe}`
   return `/Evolution Strategy Partners/Deals/${safe}`
 }
 

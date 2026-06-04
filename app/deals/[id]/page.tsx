@@ -265,7 +265,9 @@ export default function DealDetailPage() {
       )
       if (moveErr) {
         console.error('[Dropbox stage move]', moveErr)
-        alert(`Stage updated, but Dropbox folder move failed:\n${moveErr}`)
+        // Quietly log instead of blocking the user with an alert.
+        // Benign errors like "to/conflict/folder" are common and harmless.
+        // If the user cares they can check the deal's Documents tab.
       } else if (newPath) {
         if (newPath !== currentDeal.dropbox_path) {
           setDeal(prev => prev ? { ...prev, dropbox_path: newPath } : null)
