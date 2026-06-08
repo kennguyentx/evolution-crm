@@ -298,16 +298,9 @@ export default function DashboardPage() {
       const today         = new Date().toISOString().split('T')[0]
       const twoWeeksOut   = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0]
 
-      const [
-        { data: dealData },
-        { data: raiseData },
-        { data: partData },
-        { data: evtData },
-        { count: pendingCnt },
-        { data: notesData },
-        { data: nextStepsData },
-        { data: activityData },
-      ] = await Promise.all([
+      // Run all 8 queries independently — Promise.allSettled means one failure
+      // doesn't stick the whole dashboard. Each widget gets its data or stays empty.
+      const results = await Promise.allSettled([
         supabase.from('deals').select('id, company_name, stage, ebitda, revenue, sector, loi_date').in('stage', ACTIVE_STAGES),
         supabase.from('capital_raises').select('id, name, target_equity, target_debt, deal:deals(company_name)').eq('status', 'Open'),
         supabase.from('raise_participants').select('raise_id, committed_amount, debt_amount, status').in('status', ['invested', 'confirmed']),
@@ -338,15 +331,32 @@ export default function DashboardPage() {
           .order('note_date', { ascending: false }),
       ])
 
-      setDeals(dealData ?? [])
-      setRaises(raiseData ?? [])
-      setPendingCount(pendingCnt ?? 0)
-      setRecentNotes((notesData ?? []) as any)
-      setNextSteps((nextStepsData ?? []) as any)
+      // Helper — extract data on fulfilled, fall back to empty/null on rejected
+      const grab = <T,>(i: number, key: 'data' | 'count' = 'data', fallback: T): T => {
+        const r = results[i]
+        if (r.status === 'fulfilled') return ((r.value as any)?.[key] ?? fallback)
+        console.error(`[dashboard] Query ${i} failed:`, r.reason)
+        return fallback
+      }
+
+      const dealData       = grab<any[]>(0, 'data', [])
+      const raiseData      = grab<any[]>(1, 'data', [])
+      const partData       = grab<any[]>(2, 'data', [])
+      const evtData        = grab<any[]>(3, 'data', [])
+      const pendingCnt     = grab<number>(4, 'count', 0)
+      const notesData      = grab<any[]>(5, 'data', [])
+      const nextStepsData  = grab<any[]>(6, 'data', [])
+      const activityData   = grab<any[]>(7, 'data', [])
+
+      setDeals(dealData)
+      setRaises(raiseData)
+      setPendingCount(pendingCnt)
+      setRecentNotes(notesData as any)
+      setNextSteps(nextStepsData as any)
 
       // Build most-recent-activity map per deal
       const actMap: Record<string, string> = {}
-      for (const row of (activityData ?? [])) {
+      for (const row of activityData) {
         if (row.deal_id && !actMap[row.deal_id]) {
           actMap[row.deal_id] = row.note_date
         }
@@ -354,14 +364,17 @@ export default function DashboardPage() {
       setLastActivityByDeal(actMap)
 
       const c: Record<string, number> = {}
-      for (const p of (partData ?? [])) {
+      for (const p of partData) {
         c[p.raise_id] = (c[p.raise_id] ?? 0) + (p.committed_amount ?? p.debt_amount ?? 0)
       }
       setCommitted(c)
-      setUpcomingEvents(evtData ?? [])
+      setUpcomingEvents(evtData)
       setLoading(false)
     }
-    load()
+    load().catch(err => {
+      console.error('[dashboard] Load failed:', err)
+      setLoading(false) // never leave the dashboard stuck loading
+    })
   }, [])
 
   const stageSummary = FUNNEL_STAGES.map(s => ({
