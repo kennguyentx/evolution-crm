@@ -34,7 +34,12 @@ export const IntakeQueueActionSchema = z.object({
     sector:            z.string().max(100).optional().nullable(),
     geography:         z.string().max(100).optional().nullable(),
     deal_type:         z.string().max(50).optional().nullable(),
-    parent_portco:     z.string().uuid().optional().nullable(),
+    parent_portco:     z.string().max(200).optional().nullable(),  // portco name, not UUID
+    stage:             z.enum([
+      'Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity',
+      'Closed (Platform)','Closed (Add-On)',
+      'Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold',
+    ]).optional(),
     revenue:           z.number().nonnegative().optional().nullable(),
     ebitda:            z.number().optional().nullable(),
     description:       z.string().max(5000).optional().nullable(),

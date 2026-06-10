@@ -1273,6 +1273,8 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
       ebitda:       item.extracted?.ebitda ?? null,
       deal_type:    item.extracted?.deal_type ?? 'platform',
       parent_portco: '',
+      // Default stage uses the forwarder's suggestion if present, otherwise Teaser
+      stage:        item.extracted?._stage_suggestion ?? 'Teaser',
     }
   }
 
@@ -1406,6 +1408,35 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
                         </select>
                       )}
                     </div>
+                  </div>
+
+                  {/* Stage selector — choose where the deal lands in the pipeline */}
+                  <div>
+                    <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>Stage</label>
+                    <select
+                      className="select"
+                      style={{ width: '100%', fontSize: '13px' }}
+                      value={edit.stage ?? 'Teaser'}
+                      onChange={e => setEdit(item.id, { stage: e.target.value })}
+                    >
+                      <optgroup label="Active">
+                        <option value="Teaser">Teaser</option>
+                        <option value="Reviewing">Reviewing</option>
+                        <option value="Pre-LOI">Pre-LOI</option>
+                        <option value="LOI Submitted">LOI Submitted</option>
+                        <option value="Exclusivity">Exclusivity</option>
+                        <option value="Hold">Hold</option>
+                      </optgroup>
+                      <optgroup label="Closed">
+                        <option value="Closed (Platform)">Closed (Platform)</option>
+                        <option value="Closed (Add-On)">Closed (Add-On)</option>
+                      </optgroup>
+                      <optgroup label="Passed">
+                        <option value="Pass (DOA)">Pass (DOA)</option>
+                        <option value="Pass (Pre-LOI)">Pass (Pre-LOI)</option>
+                        <option value="Pass (Post-LOI)">Pass (Post-LOI)</option>
+                      </optgroup>
+                    </select>
                   </div>
 
                   {/* Source info */}

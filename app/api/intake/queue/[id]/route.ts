@@ -44,6 +44,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const ext = { ...item.extracted, ...edited }
 
+    // Resolve stage and derive status
+    const stage  = edited?.stage || 'Teaser'
+    const status =
+      stage.startsWith('Pass')   ? 'Dead'   :
+      stage.startsWith('Closed') ? 'Closed' :
+      'Active'
+
     // Create deal
     const { data: deal, error: dealErr } = await supabase.from('deals').insert({
       company_name:           ext.company_name || 'Unknown Company',
@@ -58,8 +65,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       historical_financials:  ext.historical_financials?.length ? ext.historical_financials : null,
       customer_concentration: ext.customer_concentration || null,
       employee_count:         ext.employee_count         ?? null,
-      stage:                  'Teaser',
-      status:                 'Active',
+      stage,
+      status,
       cim_parsed:             item.doc_type === 'cim',
       dropbox_path:           item.dropbox_path || null,
       expected_close:         new Date().toISOString().split('T')[0],
@@ -91,8 +98,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     // Send deal notification email (non-blocking)
     sendDealNotification({
       companyName: ext.company_name || 'Unknown Company',
-      stage:       'Teaser',
-      status:      'Active',
+      stage,
+      status,
       sector:      ext.sector      || null,
       geography:   ext.geography   || null,
       revenue:     ext.revenue     ?? null,
