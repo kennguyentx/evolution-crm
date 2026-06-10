@@ -213,13 +213,6 @@ function buildText({ deals, contactsByDeal, loiDeals, staleDeals, weekOf }: {
     }
   }
 
-  if (staleDeals.length) {
-    out += `\n${div}\nNO ACTIVITY IN ${STALE_DAYS}+ DAYS\n${div}\n`
-    for (const d of staleDeals) {
-      out += `  • ${d.company_name} (${d.stage}) — ${daysSince(d.updated_at)}d quiet\n`
-    }
-  }
-
   for (const stage of STAGES) {
     const stageDeals = deals.filter(d => d.stage === stage)
     if (!stageDeals.length) continue
@@ -367,13 +360,6 @@ function buildHtml({ deals, contactsByDeal, loiDeals, staleDeals, weekOf }: {
             <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:14px 16px;margin-bottom:24px;">
               <div style="font-size:11px;font-weight:700;color:#d97706;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:10px;">📅 LOI Deadlines — Next 14 Days</div>
               <table width="100%" cellpadding="0" cellspacing="0">${loiDeals.map(loiRow).join('')}</table>
-            </div>` : ''}
-
-            <!-- Stale Deals (if any) -->
-            ${staleDeals.length ? `
-            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;margin-bottom:24px;">
-              <div style="font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:10px;">🔕 No Activity in ${STALE_DAYS}+ Days</div>
-              <table width="100%" cellpadding="0" cellspacing="0">${staleDeals.map(staleRow).join('')}</table>
             </div>` : ''}
 
             <!-- Deals by stage -->
