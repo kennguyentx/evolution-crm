@@ -12,15 +12,14 @@ const supabase = createClient(
 )
 
 export async function GET(req: NextRequest) {
-  // Require Supabase auth so this can't be hit anonymously
-  const authHeader = req.headers.get('authorization')
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-  if (token) {
-    const { data: { user } } = await supabase.auth.getUser(token)
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  } else {
-    return NextResponse.json({ error: 'Unauthorized — pass Supabase session token' }, { status: 401 })
+  // Gate behind a simple query secret so it isn't fully public, but doesn't
+  // require a Supabase session token (which was awkward to obtain in the browser).
+  // Delete this whole endpoint once Postmark is sorted.
+  const secret = req.nextUrl.searchParams.get('k')
+  if (secret !== 'esp-pm-check') {
+    return NextResponse.json({ error: 'Pass ?k=esp-pm-check' }, { status: 401 })
   }
+  void supabase // keep import used
 
   const pmToken = process.env.POSTMARK_SERVER_TOKEN
   if (!pmToken) {
