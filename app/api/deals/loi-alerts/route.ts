@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { generateLoiIcs, icsAttachment } from '@/lib/ics'
 import { getRecipients } from '@/lib/notify-config'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrategy.com'
 
@@ -9,10 +10,9 @@ function serviceClient() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
 
-// GET — Vercel Cron (daily 9am ET = 14:00 UTC)
+// GET — scheduled trigger (GitHub Actions, daily 14:00 UTC)
 export async function GET(req: NextRequest) {
-  const auth = req.headers.get('authorization')
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   return sendAlerts()

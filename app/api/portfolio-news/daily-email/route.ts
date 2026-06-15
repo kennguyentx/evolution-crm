@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchCuratedPortfolioNews, CompanyNews, NewsArticle } from '@/lib/portfolio-news'
 import { getRecipients } from '@/lib/notify-config'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 
 export const maxDuration = 60
 
@@ -216,9 +217,8 @@ async function runSend() {
 // ── GET — Vercel Cron ─────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET
-  if (!cronSecret) return NextResponse.json({ error: 'Server misconfigured: CRON_SECRET not set' }, { status: 500 })
-  if (req.headers.get('authorization') !== `Bearer ${cronSecret}`) {
+  if (!process.env.CRON_SECRET) return NextResponse.json({ error: 'Server misconfigured: CRON_SECRET not set' }, { status: 500 })
+  if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   return runSend()
