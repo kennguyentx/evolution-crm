@@ -12,30 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CRON_SECRET: ${{ secrets.CRON_SECRET }}
-      # Bypasses Vercel Deployment Protection for automated (cookie-less) requests.
-      BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
     steps:
-      - name: Debug — which bypass form clears the wall? (remove later)
-        run: |
-          B=$(printf '%s' "$BYPASS" | tr -d '[:space:]')
-          echo "BYPASS length=${#B} sha=$(printf '%s' "$B" | sha256sum | cut -c1-16)"
-          echo "--- A) bypass via HEADER ---"
-          curl -s -H "x-vercel-protection-bypass: $B" \
-            "https://nexus.evolutionstrategy.com/api/debug/cron-secret?k=esp-pm-check"; echo
-          echo "--- B) bypass via QUERY PARAM ---"
-          curl -s \
-            "https://nexus.evolutionstrategy.com/api/debug/cron-secret?k=esp-pm-check&x-vercel-protection-bypass=$B"; echo
-          echo "--- C) bypass HEADER + set-cookie ---"
-          curl -s -H "x-vercel-protection-bypass: $B" -H "x-vercel-set-bypass-cookie: true" \
-            "https://nexus.evolutionstrategy.com/api/debug/cron-secret?k=esp-pm-check"; echo
-
       - name: Pipeline weekly email
         run: |
           SECRET=$(printf '%s' "$CRON_SECRET" | tr -d '[:space:]')
-          B=$(printf '%s' "$BYPASS" | tr -d '[:space:]')
           code=$(curl -s -o /tmp/out.txt -w "%{http_code}" \
-            -H "x-vercel-protection-bypass: $B" \
-            -X GET "https://nexus.evolutionstrategy.com/api/pipeline/weekly-email?cron_secret=$SECRET")
+            "https://nexus.evolutionstrategy.com/api/pipeline/weekly-email?cron_secret=$SECRET")
           echo "pipeline/weekly-email -> HTTP $code"; cat /tmp/out.txt; echo
           test "$code" -ge 200 -a "$code" -lt 300
 
@@ -43,7 +25,6 @@ jobs:
         run: |
           SECRET=$(printf '%s' "$CRON_SECRET" | tr -d '[:space:]')
           code=$(curl -s -o /tmp/out.txt -w "%{http_code}" \
-            -H "x-vercel-protection-bypass: $BYPASS" \
-            -X GET "https://nexus.evolutionstrategy.com/api/digest?cron_secret=$SECRET")
+            "https://nexus.evolutionstrategy.com/api/digest?cron_secret=$SECRET")
           echo "digest -> HTTP $code"; cat /tmp/out.txt; echo
           test "$code" -ge 200 -a "$code" -lt 300
