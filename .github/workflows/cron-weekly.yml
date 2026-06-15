@@ -13,6 +13,13 @@ jobs:
     env:
       CRON_SECRET: ${{ secrets.CRON_SECRET }}
     steps:
+      - name: Debug — does curl+secret authorize via debug endpoint?
+        run: |
+          SECRET=$(printf '%s' "$CRON_SECRET" | tr -d '[:space:]')
+          echo "len=${#SECRET} sha=$(printf '%s' "$SECRET" | sha256sum | cut -c1-16)"
+          curl -s "https://nexus.evolutionstrategy.com/api/debug/cron-secret?k=esp-pm-check&cron_secret=$SECRET"
+          echo
+
       - name: Pipeline weekly email
         run: |
           SECRET=$(printf '%s' "$CRON_SECRET" | tr -d '[:space:]')
