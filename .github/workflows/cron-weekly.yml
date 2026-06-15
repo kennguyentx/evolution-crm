@@ -19,6 +19,7 @@ jobs:
           echo "length=${#S}"
           echo "first4=${S:0:4}"
           echo "last4=${S: -4}"
+          echo "sha256_16=$(printf '%s' "$S" | sha256sum | cut -c1-16)"
 
       - name: Pipeline weekly email
         run: |
