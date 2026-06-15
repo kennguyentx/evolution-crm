@@ -140,6 +140,7 @@ async function runSend() {
   const text = buildText({ deals, contactsByDeal, loiDeals, staleDeals, weekOf })
 
   // 6. Send via Postmark
+  console.log(`[pipeline-email] Sending to ${recipients.length} recipient(s): ${recipients.join(', ')}, ${deals.length} deals`)
   const res = await fetch('https://api.postmarkapp.com/email', {
     method: 'POST',
     headers: {
@@ -159,12 +160,24 @@ async function runSend() {
   })
 
   const result = await res.json()
+  console.log(`[pipeline-email] Postmark response status=${res.status}:`, JSON.stringify(result).slice(0, 500))
+
   if (!res.ok) {
     console.error('[pipeline-email] Postmark error:', result)
-    return NextResponse.json({ error: result.Message || 'Send failed' }, { status: 500 })
+    return NextResponse.json({
+      error: result.Message || 'Send failed',
+      postmark_code: result.ErrorCode,
+      postmark_status: res.status,
+    }, { status: 500 })
   }
 
-  return NextResponse.json({ success: true, deals: deals.length, recipients: recipients.length })
+  return NextResponse.json({
+    success: true,
+    deals: deals.length,
+    recipients,
+    postmark_message_id: result.MessageID,
+    postmark_submitted_at: result.SubmittedAt,
+  })
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────

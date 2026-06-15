@@ -126,14 +126,17 @@ export default function PipelinePage() {
       method: 'POST',
       headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
     })
+    const body = await res.json().catch(() => ({}))
+    console.log('[pipeline send] response:', { status: res.status, body })
     if (res.ok) {
       setSendResult('success')
-      setTimeout(() => setSendResult(null), 5000)
+      const recipsList = Array.isArray(body.recipients) ? body.recipients.join(', ') : `${body.recipients ?? '?'} recipient(s)`
+      setSendError(`Sent to ${recipsList} · ${body.deals ?? '?'} deals · Postmark id ${body.postmark_message_id ?? '—'}`)
+      setTimeout(() => { setSendResult(null); setSendError(null) }, 15000)
     } else {
-      const body = await res.json().catch(() => ({}))
-      setSendError(body.error || `HTTP ${res.status}`)
+      setSendError(body.error ? `${body.error}${body.postmark_code ? ` (Postmark code ${body.postmark_code})` : ''}` : `HTTP ${res.status}`)
       setSendResult('error')
-      setTimeout(() => { setSendResult(null); setSendError(null) }, 10000)
+      setTimeout(() => { setSendResult(null); setSendError(null) }, 15000)
     }
     setSending(false)
   }
@@ -226,7 +229,7 @@ export default function PipelinePage() {
               </button>
               {sendResult === 'success' && (
                 <span style={{ fontSize: '12px', color: 'var(--green)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Check size={13} /> Sent to {recipients.length} recipient{recipients.length !== 1 ? 's' : ''}
+                  <Check size={13} /> {sendError || `Sent to ${recipients.length} recipient${recipients.length !== 1 ? 's' : ''}`}
                 </span>
               )}
               {sendResult === 'error' && (
