@@ -11,11 +11,13 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
     steps:
       - name: Portfolio news daily email
         run: |
           SECRET=$(printf '%s' "$CRON_SECRET" | tr -d '[:space:]')
           code=$(curl -s -o /tmp/out.txt -w "%{http_code}" \
+            -H "x-vercel-protection-bypass: $BYPASS" \
             -X GET "https://nexus.evolutionstrategy.com/api/portfolio-news/daily-email?cron_secret=$SECRET")
           echo "portfolio-news/daily-email -> HTTP $code"; cat /tmp/out.txt; echo
           test "$code" -ge 200 -a "$code" -lt 300
