@@ -1,4 +1,3 @@
 {
-  "$comment": "Cron jobs moved to GitHub Actions (.github/workflows/cron-*.yml) because Vercel Deployment Protection blocks Vercel-native crons with 401. The GitHub workflows hit the public custom domain nexus.evolutionstrategy.com with CRON_SECRET, which is exempt from Standard Protection.",
   "crons": []
 }
