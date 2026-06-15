@@ -1,0 +1,28 @@
+name: Weekly emails (digest + pipeline)
+
+# Mondays at 13:00 UTC (09:00 ET). GitHub may delay scheduled runs a few
+# minutes under load — fine for a weekly digest.
+on:
+  schedule:
+    - cron: '0 13 * * 1'
+  workflow_dispatch: {}   # allows manual "Run workflow" from the Actions tab
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pipeline weekly email
+        run: |
+          code=$(curl -s -o /tmp/out.txt -w "%{http_code}" \
+            -X GET "https://nexus.evolutionstrategy.com/api/pipeline/weekly-email" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "pipeline/weekly-email -> HTTP $code"; cat /tmp/out.txt; echo
+          test "$code" -ge 200 -a "$code" -lt 300
+
+      - name: Weekly digest
+        run: |
+          code=$(curl -s -o /tmp/out.txt -w "%{http_code}" \
+            -X GET "https://nexus.evolutionstrategy.com/api/digest" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "digest -> HTTP $code"; cat /tmp/out.txt; echo
+          test "$code" -ge 200 -a "$code" -lt 300

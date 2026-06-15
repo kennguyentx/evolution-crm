@@ -1,20 +1,4 @@
 {
-  "crons": [
-    {
-      "path": "/api/digest",
-      "schedule": "0 13 * * 1"
-    },
-    {
-      "path": "/api/pipeline/weekly-email",
-      "schedule": "0 13 * * 1"
-    },
-    {
-      "path": "/api/portfolio-news/daily-email",
-      "schedule": "0 17 * * *"
-    },
-    {
-      "path": "/api/deals/loi-alerts",
-      "schedule": "0 14 * * *"
-    }
-  ]
+  "$comment": "Cron jobs moved to GitHub Actions (.github/workflows/cron-*.yml) because Vercel Deployment Protection blocks Vercel-native crons with 401. The GitHub workflows hit the public custom domain nexus.evolutionstrategy.com with CRON_SECRET, which is exempt from Standard Protection.",
+  "crons": []
 }

@@ -1,0 +1,19 @@
+name: Daily LOI alerts
+
+# Every day at 14:00 UTC (10:00 ET).
+on:
+  schedule:
+    - cron: '0 14 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: LOI alerts
+        run: |
+          code=$(curl -s -o /tmp/out.txt -w "%{http_code}" \
+            -X GET "https://nexus.evolutionstrategy.com/api/deals/loi-alerts" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "deals/loi-alerts -> HTTP $code"; cat /tmp/out.txt; echo
+          test "$code" -ge 200 -a "$code" -lt 300
