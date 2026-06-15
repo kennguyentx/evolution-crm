@@ -9,11 +9,14 @@ on:
 jobs:
   trigger:
     runs-on: ubuntu-latest
+    env:
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
     steps:
       - name: LOI alerts
         run: |
+          SECRET=$(printf '%s' "$CRON_SECRET" | tr -d '[:space:]')
           code=$(curl -s -o /tmp/out.txt -w "%{http_code}" \
             -X GET "https://nexus.evolutionstrategy.com/api/deals/loi-alerts" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+            -H "Authorization: Bearer $SECRET")
           echo "deals/loi-alerts -> HTTP $code"; cat /tmp/out.txt; echo
           test "$code" -ge 200 -a "$code" -lt 300

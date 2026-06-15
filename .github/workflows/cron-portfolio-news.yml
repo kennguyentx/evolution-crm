@@ -9,11 +9,14 @@ on:
 jobs:
   trigger:
     runs-on: ubuntu-latest
+    env:
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
     steps:
       - name: Portfolio news daily email
         run: |
+          SECRET=$(printf '%s' "$CRON_SECRET" | tr -d '[:space:]')
           code=$(curl -s -o /tmp/out.txt -w "%{http_code}" \
             -X GET "https://nexus.evolutionstrategy.com/api/portfolio-news/daily-email" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+            -H "Authorization: Bearer $SECRET")
           echo "portfolio-news/daily-email -> HTTP $code"; cat /tmp/out.txt; echo
           test "$code" -ge 200 -a "$code" -lt 300
