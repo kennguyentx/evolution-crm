@@ -15,10 +15,19 @@ jobs:
       # Bypasses Vercel Deployment Protection for automated (cookie-less) requests.
       BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
     steps:
-      - name: Debug — secret fingerprints (remove later)
+      - name: Debug — which bypass form clears the wall? (remove later)
         run: |
           B=$(printf '%s' "$BYPASS" | tr -d '[:space:]')
           echo "BYPASS length=${#B} sha=$(printf '%s' "$B" | sha256sum | cut -c1-16)"
+          echo "--- A) bypass via HEADER ---"
+          curl -s -H "x-vercel-protection-bypass: $B" \
+            "https://nexus.evolutionstrategy.com/api/debug/cron-secret?k=esp-pm-check"; echo
+          echo "--- B) bypass via QUERY PARAM ---"
+          curl -s \
+            "https://nexus.evolutionstrategy.com/api/debug/cron-secret?k=esp-pm-check&x-vercel-protection-bypass=$B"; echo
+          echo "--- C) bypass HEADER + set-cookie ---"
+          curl -s -H "x-vercel-protection-bypass: $B" -H "x-vercel-set-bypass-cookie: true" \
+            "https://nexus.evolutionstrategy.com/api/debug/cron-secret?k=esp-pm-check"; echo
 
       - name: Pipeline weekly email
         run: |
