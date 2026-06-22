@@ -1,9 +1,7 @@
 name: Daily LOI alerts
 
-# Every day at 14:00 UTC (10:00 ET).
+# MANUAL BACKUP ONLY — real scheduler is Vercel native crons (vercel.json).
 on:
-  schedule:
-    - cron: '0 14 * * *'
   workflow_dispatch: {}
 
 jobs:

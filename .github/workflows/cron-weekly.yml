@@ -1,11 +1,11 @@
 name: Weekly emails (digest + pipeline)
 
-# Mondays at 13:00 UTC (09:00 ET). GitHub may delay scheduled runs a few
-# minutes under load — fine for a weekly digest.
+# MANUAL BACKUP ONLY. The real scheduler is Vercel native crons (vercel.json);
+# GitHub's scheduled runs proved unreliable (top-of-hour runs get dropped), so the
+# schedule trigger is disabled here to avoid double-sends. Use "Run workflow" to
+# fire a send by hand if ever needed.
 on:
-  schedule:
-    - cron: '0 13 * * 1'
-  workflow_dispatch: {}   # allows manual "Run workflow" from the Actions tab
+  workflow_dispatch: {}
 
 jobs:
   trigger:

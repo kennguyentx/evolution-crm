@@ -1,9 +1,7 @@
 name: Daily portfolio news
 
-# Every day at 17:00 UTC (13:00 ET / 12:00 CT).
+# MANUAL BACKUP ONLY — real scheduler is Vercel native crons (vercel.json).
 on:
-  schedule:
-    - cron: '0 17 * * *'
   workflow_dispatch: {}
 
 jobs:
