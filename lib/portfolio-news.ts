@@ -79,7 +79,20 @@ async function fetchRss(query: string): Promise<{ title: string; link: string; p
 const REGION_KEYWORDS: [string[], string[]][] = [
   // [signals that indicate this region, place names that belong to it]
   [['houston', 'texas', ' tx'], ['houston', 'san antonio', 'austin', 'corpus christi', 'lubbock', 'el paso', 'texas', ' tx ']],
-  [['carolina', 'charlotte', 'raleigh', 'durham'], ['charlotte', 'raleigh', 'durham', 'greensboro', 'asheville', 'wilmington', 'charleston', 'columbia', 'north carolina', 'south carolina', ' nc ', ' sc ']],
+  [
+    // Carolinas — both SC (Amped Electric) and NC (fiber optics)
+    ['carolina', 'charlotte', 'raleigh', 'durham', 'greenville', 'columbia', 'charleston', 'spartanburg'],
+    [
+      // North Carolina
+      'charlotte', 'raleigh', 'durham', 'greensboro', 'winston-salem', 'asheville', 'wilmington',
+      'cary', 'fayetteville', 'high point', 'chapel hill', 'concord', 'gastonia',
+      // South Carolina
+      'columbia', 'charleston', 'north charleston', 'greenville', 'spartanburg', 'myrtle beach',
+      'rock hill', 'mount pleasant', 'summerville', 'sumter', 'florence', 'hilton head', 'anderson', 'aiken',
+      // States
+      'north carolina', 'south carolina', ' nc ', ' sc ',
+    ],
+  ],
   [['michigan', 'detroit', 'grand rapids'], ['detroit', 'grand rapids', 'lansing', 'flint', 'ann arbor', 'kalamazoo', 'michigan', ' mi ']],
   [['dallas', 'fort worth', 'dfw'], ['dallas', 'fort worth', 'dfw', 'arlington', 'plano', 'frisco', 'mckinney', 'garland']],
   [['chicago', 'ohio', 'indiana', 'illinois'], ['chicago', 'cleveland', 'columbus', 'cincinnati', 'indianapolis', 'milwaukee', 'ohio', 'indiana', 'illinois', 'wisconsin']],
