@@ -10,11 +10,11 @@
     },
     {
       "path": "/api/portfolio-news/daily-email",
-      "schedule": "0 17 * * *"
+      "schedule": "0 17 * * 1-5"
     },
     {
       "path": "/api/deals/loi-alerts",
-      "schedule": "0 14 * * *"
+      "schedule": "0 14 * * 1-5"
     }
   ]
 }

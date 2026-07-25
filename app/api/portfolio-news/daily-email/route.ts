@@ -4,7 +4,7 @@
 // Uses the same Claude-curated output as the dashboard widget (lib/portfolio-news.ts).
 
 import { NextRequest, NextResponse } from 'next/server'
-import { fetchCuratedPortfolioNews, CompanyNews, NewsArticle } from '@/lib/portfolio-news'
+import { fetchCuratedPortfolioNews, defaultLookbackDays, CompanyNews, NewsArticle } from '@/lib/portfolio-news'
 import { getRecipients } from '@/lib/notify-config'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 
@@ -114,7 +114,7 @@ function buildHtmlEmail(companies: CompanyNews[], dateStr: string): string {
                 Portfolio Industry News
               </div>
               <div style="font-size:13px;color:#a0aec0;">
-                3-day digest &nbsp;·&nbsp; ${escHtml(dateStr)}
+                Daily digest &nbsp;·&nbsp; ${escHtml(dateStr)}
               </div>
             </td>
           </tr>
@@ -138,7 +138,7 @@ function buildHtmlEmail(companies: CompanyNews[], dateStr: string): string {
           <tr>
             <td style="background:#ffffff;padding:28px 32px 8px;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">
               ${withArticles.length === 0
-                ? '<p style="font-size:13px;color:#6b7280;font-style:italic;">No qualifying news found in the last 3 days for any portfolio company.</p>'
+                ? '<p style="font-size:13px;color:#6b7280;font-style:italic;">No qualifying news found for any portfolio company today.</p>'
                 : companySections
               }
               ${noNewsSection}
@@ -175,7 +175,9 @@ async function runSend() {
 
   const RECIPIENTS = await getRecipients('portfolio_news_recipients')
 
-  const companies = await fetchCuratedPortfolioNews()
+  // Tight window so the daily blast isn't repetitive: 1 day (yesterday), except
+  // Monday looks back 3 days to cover the weekend. Weekends don't send (cron is Mon-Fri).
+  const companies = await fetchCuratedPortfolioNews({ lookbackDays: defaultLookbackDays() })
 
   const dateStr = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/New_York',

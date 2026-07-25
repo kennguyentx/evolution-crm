@@ -57,7 +57,7 @@ function isWithinDays(pubDate: string, days: number): boolean {
   return parsed.getTime() >= Date.now() - days * 24 * 60 * 60 * 1000
 }
 
-async function fetchRss(query: string): Promise<{ title: string; link: string; pubDate: string; source: string }[]> {
+async function fetchRss(query: string, lookbackDays: number): Promise<{ title: string; link: string; pubDate: string; source: string }[]> {
   const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`
   try {
     const res = await fetch(url, {
@@ -66,7 +66,7 @@ async function fetchRss(query: string): Promise<{ title: string; link: string; p
     })
     if (!res.ok) return []
     const xml = await res.text()
-    return parseItems(xml).filter(a => isWithinDays(a.pubDate, 7))
+    return parseItems(xml).filter(a => isWithinDays(a.pubDate, lookbackDays))
   } catch {
     return []
   }
@@ -145,8 +145,11 @@ async function curateForCompany(
   company: { name: string; sector: string | null; geography: string | null },
   articles: { title: string; link: string; pubDate: string; source: string }[],
   today: string,
+  lookbackDays: number,
 ): Promise<NewsArticle[]> {
   if (articles.length === 0) return []
+
+  const windowText = lookbackDays <= 1 ? 'past 24 hours' : `past ${lookbackDays} days`
 
   const prompt = `You are curating a daily industry news brief for Evolution Strategy Partners, a private equity firm. Today is ${today}.
 
@@ -160,13 +163,13 @@ Below are raw RSS articles fetched specifically for this company. Your job is to
 ## Rules
 - **Only keep articles that are genuinely relevant** to this company's sector AND geography.
 - **Reject any article that is geographically mismatched.** If this company operates in ${company.geography || 'a specific region'}, discard articles about projects or events in other regions unless the story is explicitly national in scope.
-- **Only include items published within the past 3 days** (cutoff: ${today}). Discard anything older.
+- **Only include items published within the ${windowText}** (cutoff: ${today}). Discard anything older.
 - **No filler.** Each kept article must describe a specific named event: contract award, project announcement, acquisition, regulatory action, earnings release, etc.
 - Categorize each kept article as:
   - "company": directly about ${company.name} itself
   - "industry": sector/market news relevant to this company's geography and vertical
   - "transaction": M&A deal or acquisition in this sector; extract any disclosed multiple as a short string like "8.0x EBITDA"
-- If an article doesn't fit — wrong sector, wrong geography, too vague, or older than 3 days — omit it entirely.
+- If an article doesn't fit — wrong sector, wrong geography, too vague, or outside the ${windowText} — omit it entirely.
 - It is fine to return 0 articles.
 
 ## Raw articles
@@ -198,11 +201,28 @@ ${JSON_SHAPE}`
 // ── Main export ───────────────────────────────────────────────────────────────
 
 /**
+ * Returns a news lookback window (in days) that avoids weekend gaps and daily
+ * repetition. On Monday it looks back 3 days so Fri/Sat/Sun news is covered;
+ * every other weekday it looks back just 1 day (yesterday's news). Uses ET.
+ */
+export function defaultLookbackDays(): number {
+  // 0=Sun, 1=Mon … 6=Sat in the America/New_York timezone
+  const weekday = new Date().toLocaleDateString('en-US', { weekday: 'short', timeZone: 'America/New_York' })
+  return weekday === 'Mon' ? 3 : 1
+}
+
+/**
  * Fetches RSS articles for all active portfolio companies and curates each
  * company independently with its own Claude call — preventing cross-company
  * article bleed. All companies are processed in parallel.
+ *
+ * @param opts.lookbackDays  How many days of news to include. Defaults to 7
+ *   (broad — good for the always-on dashboard widget). The daily email passes a
+ *   tight value via defaultLookbackDays() so it isn't repetitive day to day.
  */
-export async function fetchCuratedPortfolioNews(): Promise<CompanyNews[]> {
+export async function fetchCuratedPortfolioNews(opts?: { lookbackDays?: number }): Promise<CompanyNews[]> {
+  const lookbackDays = opts?.lookbackDays ?? 7
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -230,10 +250,10 @@ export async function fetchCuratedPortfolioNews(): Promise<CompanyNews[]> {
 
       // Four targeted RSS searches
       const [companyArticles, maArticles, industryArticles, macroArticles] = await Promise.all([
-        fetchRss(geo ? `"${name}" ${geo}` : `"${name}"`),
-        fetchRss(`${sector} acquisition OR "private equity" OR "PE deal" OR "deal closed" ${geo}`),
-        fetchRss(`${sector} ${geo} industry OR market OR outlook OR growth`),
-        fetchRss(`${sector} ${geo} labor OR workforce OR "supply chain" OR backlog OR "materials costs" OR regulation`),
+        fetchRss(geo ? `"${name}" ${geo}` : `"${name}"`, lookbackDays),
+        fetchRss(`${sector} acquisition OR "private equity" OR "PE deal" OR "deal closed" ${geo}`, lookbackDays),
+        fetchRss(`${sector} ${geo} industry OR market OR outlook OR growth`, lookbackDays),
+        fetchRss(`${sector} ${geo} labor OR workforce OR "supply chain" OR backlog OR "materials costs" OR regulation`, lookbackDays),
       ])
 
       // Dedupe by link, then drop any article whose title places it in the wrong region
@@ -246,7 +266,7 @@ export async function fetchCuratedPortfolioNews(): Promise<CompanyNews[]> {
       })
 
       // Claude curates only this company's geo-filtered articles
-      const curated = await curateForCompany(anthropic, c, allArticles, today)
+      const curated = await curateForCompany(anthropic, c, allArticles, today, lookbackDays)
 
       return {
         name: c.name,
