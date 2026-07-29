@@ -4,11 +4,61 @@ import { createClient } from '@supabase/supabase-js'
 import { dropboxConfigured, dropboxUpload, dropboxMove, expectedDropboxFolder } from '@/lib/dropbox'
 import { parseAiJson, extractText } from '@/lib/ai-json'
 import { AI_MODELS } from '@/lib/ai-config'
+import { runAgentToText } from '@/lib/assistant-core'
 
 export const maxDuration = 120
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 const STORAGE_BUCKET = 'intake-temp'
+
+// ── "Ask:" email assistant ─────────────────────────────────────────────────────
+// Emails to intake@ whose subject starts with "Ask:" / "Q:" are routed to the
+// Nexus assistant (full CRM + Dropbox access) and answered by email. Restricted
+// to internal @evolutionstrategy.com senders since email identity is weak and
+// the assistant can read/modify data.
+
+function isAskEmail(subject: string): boolean {
+  return /^\s*(ask|q)\s*[:\-]/i.test(subject || '')
+}
+
+function stripAskPrefix(subject: string): string {
+  return (subject || '').replace(/^\s*(ask|q)\s*[:\-]\s*/i, '').trim()
+}
+
+// Take only the sender's own text (before any forwarded/quoted thread)
+function topOfBody(text: string): string {
+  return (text || '').split(/\n-{3,}|\r?\nFrom:|\r?\nOn .+wrote:|_{5,}/i)[0].trim()
+}
+
+async function sendAssistantReply(opts: {
+  to: string
+  subject: string
+  answer: string
+  inReplyTo?: string
+}): Promise<void> {
+  const serverToken = process.env.POSTMARK_SERVER_TOKEN
+  if (!serverToken) { console.error('[ask-email] POSTMARK_SERVER_TOKEN not set'); return }
+
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const htmlBody = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;line-height:1.55;color:#1a1a2e;white-space:pre-wrap;">${esc(opts.answer)}</div>`
+
+  const payload: any = {
+    From: 'intake@evolutionstrategy.com',
+    To: opts.to,
+    Subject: opts.subject.toLowerCase().startsWith('re:') ? opts.subject : `Re: ${opts.subject}`,
+    TextBody: opts.answer,
+    HtmlBody: htmlBody,
+    MessageStream: 'outbound',
+  }
+  if (opts.inReplyTo) payload.Headers = [{ Name: 'In-Reply-To', Value: opts.inReplyTo }]
+
+  const res = await fetch('https://api.postmarkapp.com/email', {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Postmark-Server-Token': serverToken },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) console.error('[ask-email] reply send failed:', await res.text())
+}
 
 function serviceClient() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -391,6 +441,42 @@ export async function POST(req: NextRequest) {
     // Debug logging — shows up in Vercel Function logs
     console.log(`[email-intake] messageId=${messageId} from=${from} subject="${subject}" attachments=${attachments.length}`,
       attachments.map((a: any) => ({ name: a.Name, type: a.ContentType, size: a.Content?.length ?? 0 })))
+
+    // ── "Ask:" assistant path ─────────────────────────────────────────────────
+    // Subject starts with "Ask:" / "Q:" → answer via the Nexus assistant and reply
+    // by email. Internal senders only (email identity is weak; the agent has write
+    // access). Runs before everything else so it never files a note or creates a deal.
+    if (isAskEmail(subject)) {
+      if (!isInternal(from)) {
+        console.warn(`[ask-email] Ignoring "Ask:" email from external sender ${from}`)
+        return NextResponse.json({ success: true, skipped: 'ask-email from non-internal sender' })
+      }
+      const questionSubject = stripAskPrefix(subject)
+      const questionBody = topOfBody(text)
+      const question = [questionSubject, questionBody].filter(Boolean).join('\n\n').trim()
+      if (!question) {
+        return NextResponse.json({ success: true, skipped: 'empty ask-email' })
+      }
+      console.log(`[ask-email] from=${from} question="${question.slice(0, 160)}"`)
+      try {
+        const { text: answer, toolsUsed } = await runAgentToText(question, {
+          channel: 'email',
+          senderName: fromName || from.split('@')[0],
+        })
+        console.log(`[ask-email] answered (tools: ${toolsUsed.join(', ') || 'none'})`)
+        await sendAssistantReply({ to: from, subject, answer, inReplyTo: messageId || undefined })
+        return NextResponse.json({ success: true, processed: [{ type: 'ask', tools: toolsUsed }] })
+      } catch (e: any) {
+        console.error('[ask-email] assistant failed:', e?.message)
+        await sendAssistantReply({
+          to: from,
+          subject,
+          answer: `Sorry — I hit an error answering that: ${e?.message || 'unknown error'}. Try rephrasing or ask in the Nexus web assistant.\n\n— Nexus Assistant`,
+          inReplyTo: messageId || undefined,
+        })
+        return NextResponse.json({ success: false, error: e?.message }, { status: 200 })
+      }
+    }
 
     // ── Idempotency guard — block duplicate webhook calls ─────────────────────
     // Two-layer check: (1) Postmark MessageID unique constraint if migration ran,
