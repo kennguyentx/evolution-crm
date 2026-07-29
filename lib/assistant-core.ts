@@ -848,7 +848,7 @@ export async function runAgentToText(
   opts?: { channel?: 'web' | 'email'; senderName?: string; maxIterations?: number },
 ): Promise<{ text: string; toolsUsed: string[] }> {
   const system = buildSystemPrompt({ channel: opts?.channel ?? 'email', senderName: opts?.senderName })
-  const maxIter = opts?.maxIterations ?? 8
+  const maxIter = opts?.maxIterations ?? 12
   const toolsUsed: string[] = []
 
   let messages: any[] = [{ role: 'user', content: userMessage }]
@@ -884,5 +884,18 @@ export async function runAgentToText(
     messages = [...messages, { role: 'assistant', content: resp.content }, { role: 'user', content: toolResults }]
   }
 
-  return { text: 'I reached my step limit before finishing. Try narrowing the question.', toolsUsed }
+  // Hit the iteration cap — force a final answer from everything gathered so far,
+  // with tools disabled so the model must synthesize rather than keep digging.
+  try {
+    const finalResp = await anthropic.messages.create({
+      model: AI_MODELS.balanced,
+      max_tokens: 2000,
+      system: system + '\n\nYou have gathered enough information. Do NOT request more data — answer the question now using what you already have. If some detail is still missing, give your best answer and note what was incomplete.',
+      messages: [...messages, { role: 'user', content: 'Please give me your final answer now based on everything above.' }],
+    } as any)
+    const finalText = finalResp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n').trim()
+    return { text: finalText || 'I gathered some information but could not compose a complete answer. Try narrowing the question.', toolsUsed }
+  } catch {
+    return { text: 'I gathered some information but ran out of steps before finishing. Try narrowing the question.', toolsUsed }
+  }
 }
