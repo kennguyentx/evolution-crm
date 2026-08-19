@@ -322,42 +322,6 @@ If no contacts found, return contacts: [].`,
   }
 }
 
-// ── Find or create a deal by company name ────────────────────────────────────
-async function findOrCreateDeal(supabase: any, extracted: any): Promise<string> {
-  // Try to find existing deal
-  if (extracted.company_name) {
-    const { data: existing } = await supabase
-      .from('deals')
-      .select('id')
-      .ilike('company_name', extracted.company_name)
-      .limit(1)
-      .maybeSingle()
-    if (existing) return existing.id
-  }
-
-  // Create new deal
-  const stage = 'Teaser'
-  const { data: newDeal } = await supabase.from('deals').insert({
-    company_name:          extracted.company_name || 'Unknown (email intake)',
-    sector:                extracted.sector       || null,
-    geography:             extracted.geography    || null,
-    deal_type:             extracted.deal_type    || 'platform',
-    stage,
-    status:                'Active',
-    revenue:               extracted.revenue      ?? null,
-    ebitda:                extracted.ebitda       ?? null,
-    description:           extracted.description  || null,
-    financial_summary:     extracted.financial_summary     || null,
-    historical_financials: extracted.historical_financials?.length ? extracted.historical_financials : null,
-    customer_concentration: extracted.customer_concentration || null,
-    employee_count:        extracted.employee_count        ?? null,
-    cim_parsed:            false,
-    expected_close:        new Date().toISOString().split('T')[0],
-  }).select('id').single()
-
-  return newDeal?.id
-}
-
 // ── Upsert contacts and link to deal ─────────────────────────────────────────
 async function upsertContacts(supabase: any, contacts: any[], dealId: string) {
   for (const c of contacts) {
@@ -624,36 +588,45 @@ export async function POST(req: NextRequest) {
       // creating a duplicate. Use the existing deal's stage for Dropbox routing.
       let existingDeal: { id: string; company_name: string; stage: string; status: string; dropbox_path: string | null } | null = null
 
-      // Helper: search deals by name with exact-then-partial fallback
-      async function findDealByName(searchName: string) {
-        const { data: exact } = await supabase
+      // Helper: find an existing deal by name.
+      //   opts.fuzzy    — also try a partial "first 3 words" match (only when the
+      //                   forwarder EXPLICITLY named a deal; too aggressive otherwise).
+      //   opts.activeOnly — only match deals with status 'Active' (so a new
+      //                   opportunity never absorbs into a Passed/Closed/Dead record).
+      async function findDealByName(searchName: string, opts: { fuzzy?: boolean; activeOnly?: boolean } = {}) {
+        let exactQ = supabase
           .from('deals')
           .select('id, company_name, stage, status, dropbox_path')
           .ilike('company_name', searchName)
           .order('created_at', { ascending: false })
           .limit(1)
-          .maybeSingle()
+        if (opts.activeOnly) exactQ = exactQ.eq('status', 'Active')
+        const { data: exact } = await exactQ.maybeSingle()
         if (exact) return exact
 
-        // Partial match on first 3 meaningful words
+        if (!opts.fuzzy) return null
+
+        // Partial match on first 3 meaningful words — explicit references only
         const stripped = searchName.replace(/\b(Inc|LLC|Ltd|Co|Corp|Company|Group|Partners|Holdings|the)\b\.?/gi, '').trim()
         const chunk = stripped.split(/\s+/).slice(0, 3).join(' ')
         if (chunk.length > 3) {
-          const { data: partial } = await supabase
+          let partialQ = supabase
             .from('deals')
             .select('id, company_name, stage, status, dropbox_path')
             .ilike('company_name', `%${chunk}%`)
             .order('created_at', { ascending: false })
             .limit(1)
-            .maybeSingle()
+          if (opts.activeOnly) partialQ = partialQ.eq('status', 'Active')
+          const { data: partial } = await partialQ.maybeSingle()
           if (partial) return partial
         }
         return null
       }
 
-      // Priority 1: deal name the user explicitly stated in their forwarding note
+      // Priority 1: deal the forwarder EXPLICITLY referenced ("for Project Anchor").
+      // Explicit intent → allow fuzzy matching.
       if (instructions.deal_name) {
-        const found = await findDealByName(instructions.deal_name.trim())
+        const found = await findDealByName(instructions.deal_name.trim(), { fuzzy: true })
         if (found) {
           existingDeal = found
           console.log(`[email-intake] Matched by forwarder deal_name "${instructions.deal_name}": deal ${found.id} stage="${found.stage}"`)
@@ -662,16 +635,21 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Priority 2: company name extracted from the document
-      if (!existingDeal && primary.extracted.company_name) {
+      // Priority 2: auto-match by extracted company name — ONLY for CIMs (a
+      // follow-up doc for a deal you already opened). Teasers and other docs are
+      // treated as NEW deals so same-named opportunities stay separate. And only
+      // match an ACTIVE deal (exact name), never a passed/closed one.
+      if (!existingDeal && primary.extracted.doc_type === 'cim' && primary.extracted.company_name) {
         const name = primary.extracted.company_name.trim()
-        const found = await findDealByName(name)
+        const found = await findDealByName(name, { activeOnly: true })
         if (found) {
           existingDeal = found
-          console.log(`[email-intake] Matched by doc company_name "${name}": deal ${found.id} stage="${found.stage}"`)
+          console.log(`[email-intake] CIM auto-matched to active deal "${name}": deal ${found.id} stage="${found.stage}"`)
         } else {
-          console.log(`[email-intake] No existing deal found for "${name}"`)
+          console.log(`[email-intake] No active deal found for CIM "${name}" — creating new deal`)
         }
+      } else if (!existingDeal && primary.extracted.company_name) {
+        console.log(`[email-intake] doc_type=${primary.extracted.doc_type} for "${primary.extracted.company_name}" — creating a NEW deal (no auto-merge)`)
       }
 
       // ── Guard: if the matched "existing deal" IS the parent portco (not the
