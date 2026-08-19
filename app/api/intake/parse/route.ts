@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
-import { dropboxConfigured, dropboxUpload, dropboxFolderExists } from '@/lib/dropbox'
+import { dropboxConfigured, dropboxUpload, dropboxFolderExists, expectedDropboxFolder, uniqueDropboxFolder } from '@/lib/dropbox'
 import { AI_MODELS } from '@/lib/ai-config'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
@@ -139,13 +139,16 @@ export async function POST(req: NextRequest) {
     const dbx_configured = dropboxConfigured()
 
     if (dbx_configured && parsed.company_name) {
-      const safeName = parsed.company_name.replace(/[<>:"/\\|?*]/g, '_')
-      // Append [PortcoName] suffix for add-on deals so the folder is clearly scoped
-      const portcoSuffix = userParentPortco ? ` [${String(userParentPortco).replace(/[<>:"/\\|?*]/g, '_')}]` : ''
-      const folderPath = `/Evolution Strategy Partners/Deals/${safeName}${portcoSuffix}`
+      // Include the [PortcoName] suffix for add-on deals so the folder is clearly scoped
+      const companyForFolder = parsed.company_name + (userParentPortco ? ` [${userParentPortco}]` : '')
+      const baseFolder = expectedDropboxFolder(companyForFolder, 'Teaser')
 
-      // Check whether a folder for this company already exists in Dropbox
-      dropbox_folder_existed = await dropboxFolderExists(folderPath).catch(() => false)
+      // If a same-named folder already exists, this is a SEPARATE deal — give it a
+      // unique folder (" (2)", " (3)"…) so files don't commingle with the other deal.
+      dropbox_folder_existed = await dropboxFolderExists(baseFolder).catch(() => false)
+      const folderPath = dropbox_folder_existed
+        ? await uniqueDropboxFolder(companyForFolder, 'Teaser')
+        : baseFolder
 
       if (buffer) {
         try {
@@ -153,12 +156,11 @@ export async function POST(req: NextRequest) {
           dropbox_folder = uploadedFilePath.substring(0, uploadedFilePath.lastIndexOf('/'))
         } catch (dbxErr: any) {
           dropbox_error = dbxErr.message ?? 'Unknown Dropbox error'
-          // If upload failed but folder existed, still surface the folder path so the UI can link to it
-          if (dropbox_folder_existed) dropbox_folder = folderPath
+          dropbox_folder = folderPath  // surface the intended folder even if upload failed
           console.warn('Dropbox upload failed:', dropbox_error)
         }
-      } else if (dropbox_folder_existed) {
-        // Paste mode — no file to upload, but still surface the existing folder
+      } else {
+        // Paste mode — no file to upload, but still surface the resolved folder
         dropbox_folder = folderPath
       }
     } else if (!dbx_configured) {

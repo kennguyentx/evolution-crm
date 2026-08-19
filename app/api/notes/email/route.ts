@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
-import { dropboxConfigured, dropboxUpload, dropboxMove, expectedDropboxFolder } from '@/lib/dropbox'
+import { dropboxConfigured, dropboxUpload, dropboxMove, expectedDropboxFolder, uniqueDropboxFolder } from '@/lib/dropbox'
 import { parseAiJson, extractText } from '@/lib/ai-json'
 import { AI_MODELS } from '@/lib/ai-config'
 import { runAgentToText } from '@/lib/assistant-core'
@@ -676,10 +676,13 @@ export async function POST(req: NextRequest) {
             : primary.extracted.company_name)
         : null
 
-      // Resolve the target Dropbox folder
+      // Resolve the target Dropbox folder.
+      // - Existing deal: reuse its stored folder (attach files there).
+      // - New deal: use a UNIQUE folder so a separate same-named deal doesn't
+      //   share a folder — appends " (2)", " (3)" if one already exists.
       const targetFolder: string | null = existingDeal
-        ? (toFolder(existingDeal.dropbox_path) ?? (companyForPath ? expectedDropboxFolder(companyForPath, effectiveStage) : null))
-        : (companyForPath ? expectedDropboxFolder(companyForPath, effectiveStage) : null)
+        ? (toFolder(existingDeal.dropbox_path) ?? (companyForPath ? await uniqueDropboxFolder(companyForPath, effectiveStage) : null))
+        : (companyForPath ? await uniqueDropboxFolder(companyForPath, effectiveStage) : null)
 
       // dealFolderPath is what we store on the deal — always the folder, never a file
       let dealFolderPath: string | null = targetFolder

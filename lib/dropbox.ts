@@ -113,6 +113,24 @@ export function expectedDropboxFolder(companyName: string, stage: string): strin
   return `/Evolution Strategy Partners/Deals/${safe}`
 }
 
+/**
+ * Like expectedDropboxFolder, but guarantees a folder that does NOT already
+ * exist — appends " (2)", " (3)", … when a same-named folder is present. Use
+ * ONLY when creating a NEW deal so two separate same-named deals get distinct
+ * document folders. (For attaching to an existing deal, use that deal's stored
+ * dropbox_path instead.)
+ */
+export async function uniqueDropboxFolder(companyName: string, stage: string): Promise<string> {
+  const base = expectedDropboxFolder(companyName, stage)
+  if (!(await dropboxFolderExists(base))) return base
+  for (let n = 2; n <= 50; n++) {
+    const candidate = `${base} (${n})`
+    if (!(await dropboxFolderExists(candidate))) return candidate
+  }
+  // Extreme fallback — effectively never hit
+  return `${base} (${Date.now()})`
+}
+
 /** Canonical Dropbox folder for a portfolio company (no deal stage needed). */
 export function portfolioDropboxFolder(companyName: string): string {
   const safe = companyName.replace(/[<>:"/\\|?*]/g, '_')
