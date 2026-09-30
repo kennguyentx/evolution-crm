@@ -381,11 +381,35 @@ async function upsertContacts(
   return { created, existing: existingNames }
 }
 
-// Detect a "add contact(s)" / "save contact(s)" instruction in the forwarder's
-// own note (top of the body) or the subject — NOT the forwarded thread below it.
+const ADD_NAME_STOPWORDS = new Set([
+  'to','note','deal','this','that','them','it','its','the','a','an','me','my','new',
+  'contact','contacts','him','her','his','their','and','as','in','on','for','all',
+])
+
+// Extract explicitly-named people from an "add <Name>" instruction, e.g.
+// "add John Smith and Jane Doe" → ["John Smith", "Jane Doe"]. Returns [] when the
+// instruction is generic ("add contacts") with no specific name.
+function namesFromAddInstruction(noteAndSubject: string): string[] {
+  const names: string[] = []
+  const re = /\badd\s+([A-Z][a-zA-Z.'’-]+(?:\s+(?:and\s+)?[A-Z][a-zA-Z.'’-]+){0,3})/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(noteAndSubject)) !== null) {
+    // Split on "and" so "add John Smith and Jane Doe" yields two names
+    for (const piece of m[1].split(/\s+and\s+/i)) {
+      const name = piece.trim()
+      const first = name.split(/\s+/)[0].toLowerCase()
+      if (name && !ADD_NAME_STOPWORDS.has(first)) names.push(name)
+    }
+  }
+  return names
+}
+
+// Detect an "add contact(s)" or "add <Name>" instruction in the forwarder's own
+// note (top of the body) or the subject — NOT the forwarded thread below it.
 function hasAddContactTrigger(topNote: string, subject: string): boolean {
-  const hay = `${subject}\n${topNote}`.toLowerCase()
-  return /\b(add|save|file|store)\s+(to\s+)?contacts?\b/.test(hay)
+  const combined = `${subject}\n${topNote}`
+  if (/\b(add|save|file|store)\s+(to\s+)?contacts?\b/i.test(combined)) return true
+  return namesFromAddInstruction(combined).length > 0
 }
 
 export async function POST(req: NextRequest) {
@@ -496,7 +520,28 @@ export async function POST(req: NextRequest) {
           merged.push(c)
         }
 
-        if (merged.length === 0) {
+        // If the forwarder named specific people ("add John Smith"), add only those.
+        // Match named people against the email-extracted contacts; if a named person
+        // isn't found in the email, still create a bare contact from the name.
+        const requestedNames = namesFromAddInstruction(`${subject}\n${topOfBody(text)}`)
+        let toAdd = merged
+        if (requestedNames.length > 0) {
+          const wanted = requestedNames.map(n => n.toLowerCase().trim())
+          const matched = merged.filter(c => {
+            const nm = c.name.toLowerCase().trim()
+            const last = nm.split(/\s+/).pop()
+            return wanted.some(w => nm.includes(w) || w.includes(nm) || (last && w.endsWith(last)))
+          })
+          // For any requested name not matched to an extracted contact, add it bare
+          const matchedLower = matched.map(c => c.name.toLowerCase().trim())
+          const unmatched = requestedNames.filter(n => {
+            const nl = n.toLowerCase().trim()
+            return !matchedLower.some(m => m.includes(nl) || nl.includes(m))
+          }).map(n => ({ name: n, role: 'Other' }))
+          toAdd = [...matched, ...unmatched]
+        }
+
+        if (toAdd.length === 0) {
           await sendAssistantReply({
             to: from, subject,
             answer: `I didn't find any contacts to add in that email (I skip internal @evolutionstrategy.com addresses). Make sure a name and ideally an email are in the forwarded message.\n\n— Nexus`,
@@ -505,7 +550,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ success: true, processed: [{ type: 'add-contact', added: 0 }] })
         }
 
-        const { created, existing } = await upsertContacts(supabase, merged, null)
+        const { created, existing } = await upsertContacts(supabase, toAdd, null)
         const lines = [
           created.length ? `Added ${created.length} new contact${created.length !== 1 ? 's' : ''}:\n- ${created.join('\n- ')}` : '',
           existing.length ? `Already in Nexus (${existing.length}):\n- ${existing.join('\n- ')}` : '',
