@@ -322,13 +322,22 @@ If no contacts found, return contacts: [].`,
   }
 }
 
-// ── Upsert contacts and link to deal ─────────────────────────────────────────
-async function upsertContacts(supabase: any, contacts: any[], dealId: string) {
+// ── Upsert contacts (optionally link to a deal) ──────────────────────────────
+// Returns which contacts were newly created vs. already existed (by display name).
+async function upsertContacts(
+  supabase: any,
+  contacts: any[],
+  dealId?: string | null,
+): Promise<{ created: string[]; existing: string[] }> {
+  const created: string[] = []
+  const existingNames: string[] = []
+
   for (const c of contacts) {
     if (!c.name) continue
     const parts = c.name.trim().split(/\s+/)
     const firstName = parts[0]
     const lastName  = parts.slice(1).join(' ') || ''
+    const display   = c.name.trim()
 
     // Priority 1: match by email (most reliable — avoids merging same-name people)
     let existing: any = null
@@ -355,6 +364,9 @@ async function upsertContacts(supabase: any, contacts: any[], dealId: string) {
         phone:      c.phone || null,
       }).select('id').single()
       contactId = newContact?.id
+      if (contactId) created.push(display)
+    } else {
+      existingNames.push(display)
     }
 
     if (contactId && dealId) {
@@ -365,6 +377,15 @@ async function upsertContacts(supabase: any, contacts: any[], dealId: string) {
       )
     }
   }
+
+  return { created, existing: existingNames }
+}
+
+// Detect a "add contact(s)" / "save contact(s)" instruction in the forwarder's
+// own note (top of the body) or the subject — NOT the forwarded thread below it.
+function hasAddContactTrigger(topNote: string, subject: string): boolean {
+  const hay = `${subject}\n${topNote}`.toLowerCase()
+  return /\b(add|save|file|store)\s+(to\s+)?contacts?\b/.test(hay)
 }
 
 export async function POST(req: NextRequest) {
@@ -436,6 +457,71 @@ export async function POST(req: NextRequest) {
           to: from,
           subject,
           answer: `Sorry — I hit an error answering that: ${e?.message || 'unknown error'}. Try rephrasing or ask in the Nexus web assistant.\n\n— Nexus Assistant`,
+          inReplyTo: messageId || undefined,
+        })
+        return NextResponse.json({ success: false, error: e?.message }, { status: 200 })
+      }
+    }
+
+    // ── "Add contact" path ────────────────────────────────────────────────────
+    // Forward an email and write "add contact" (or "save contacts") in your note →
+    // extract every person in the email and save them as standalone CRM contacts,
+    // no deal required. Internal senders only. Runs before deal/note processing.
+    if (isInternal(from) && hasAddContactTrigger(topOfBody(text), subject)) {
+      console.log(`[email-intake] add-contact request from ${from}`)
+      try {
+        const emailContent = `From: ${from}\nSubject: ${subject}\n\n${text}`.trim()
+        const resp = await anthropic.messages.create({
+          model: AI_MODELS.fast,
+          max_tokens: 1800,
+          system: EMAIL_SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: `Extract CRM data from this email:\n\n${emailContent}` }],
+        })
+        const parsed = parseAiJson<any>(extractText(resp.content as any))
+
+        // Merge body-extracted contacts with CC-header contacts; dedupe by email then name
+        const headerContacts = (ccFull || [])
+          .filter((c: any) => c.Email && !isInternal(c.Email))
+          .map((c: any) => ({ name: c.Name || c.Email.split('@')[0], email: c.Email, firm: null, title: null, role: 'Other', phone: null }))
+        const merged: any[] = []
+        const seenEmails = new Set<string>()
+        const seenNames = new Set<string>()
+        for (const c of [...filterInternalContacts(parsed.contacts ?? []), ...headerContacts]) {
+          if (!c.name?.trim()) continue
+          const ek = c.email?.toLowerCase(); const nk = c.name.toLowerCase().trim()
+          if (ek && seenEmails.has(ek)) continue
+          if (!ek && seenNames.has(nk)) continue
+          if (ek) seenEmails.add(ek)
+          seenNames.add(nk)
+          merged.push(c)
+        }
+
+        if (merged.length === 0) {
+          await sendAssistantReply({
+            to: from, subject,
+            answer: `I didn't find any contacts to add in that email (I skip internal @evolutionstrategy.com addresses). Make sure a name and ideally an email are in the forwarded message.\n\n— Nexus`,
+            inReplyTo: messageId || undefined,
+          })
+          return NextResponse.json({ success: true, processed: [{ type: 'add-contact', added: 0 }] })
+        }
+
+        const { created, existing } = await upsertContacts(supabase, merged, null)
+        const lines = [
+          created.length ? `Added ${created.length} new contact${created.length !== 1 ? 's' : ''}:\n- ${created.join('\n- ')}` : '',
+          existing.length ? `Already in Nexus (${existing.length}):\n- ${existing.join('\n- ')}` : '',
+        ].filter(Boolean).join('\n\n')
+        await sendAssistantReply({
+          to: from, subject,
+          answer: `${lines}\n\nView them in Nexus → Contacts.\n\n— Nexus`,
+          inReplyTo: messageId || undefined,
+        })
+        console.log(`[email-intake] add-contact: ${created.length} new, ${existing.length} existing`)
+        return NextResponse.json({ success: true, processed: [{ type: 'add-contact', created: created.length, existing: existing.length }] })
+      } catch (e: any) {
+        console.error('[email-intake] add-contact failed:', e?.message)
+        await sendAssistantReply({
+          to: from, subject,
+          answer: `Sorry — I hit an error adding those contacts: ${e?.message || 'unknown error'}.\n\n— Nexus`,
           inReplyTo: messageId || undefined,
         })
         return NextResponse.json({ success: false, error: e?.message }, { status: 200 })
