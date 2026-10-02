@@ -384,32 +384,48 @@ async function upsertContacts(
 const ADD_NAME_STOPWORDS = new Set([
   'to','note','deal','this','that','them','it','its','the','a','an','me','my','new',
   'contact','contacts','him','her','his','their','and','as','in','on','for','all',
+  'please','both','these','those','everyone','people','person',
 ])
 
-// Extract explicitly-named people from an "add <Name>" instruction, e.g.
-// "add John Smith and Jane Doe" → ["John Smith", "Jane Doe"]. Returns [] when the
-// instruction is generic ("add contacts") with no specific name.
-function namesFromAddInstruction(noteAndSubject: string): string[] {
+// Parse an "add … contacts" / "add <name>" instruction from the forwarder's own
+// note (top of the body) or the subject — NOT the forwarded thread below it.
+// Handles: "add contacts", "add nick dreps to contacts", "add John Smith",
+// "save Nick Dreps and Jane Doe as contacts", lowercase names, etc.
+function parseAddContactInstruction(topNote: string, subject: string): { trigger: boolean; names: string[] } {
+  const combined = `${subject}\n${topNote}`.trim()
+  if (!/\b(add|save|file|store)\b/i.test(combined)) return { trigger: false, names: [] }
+
+  const contactIntent = /\bcontacts?\b/i.test(combined)
+
   const names: string[] = []
-  const re = /\badd\s+([A-Z][a-zA-Z.'’-]+(?:\s+(?:and\s+)?[A-Z][a-zA-Z.'’-]+){0,3})/g
+  // Grab the text after each add/save/file/store verb, within a line
+  const re = /\b(?:add|save|file|store)\s+(.+)/gi
   let m: RegExpExecArray | null
-  while ((m = re.exec(noteAndSubject)) !== null) {
-    // Split on "and" so "add John Smith and Jane Doe" yields two names
-    for (const piece of m[1].split(/\s+and\s+/i)) {
-      const name = piece.trim()
-      const first = name.split(/\s+/)[0].toLowerCase()
-      if (name && !ADD_NAME_STOPWORDS.has(first)) names.push(name)
+  while ((m = re.exec(combined)) !== null) {
+    let rest = m[1]
+    // Drop a trailing "to / as / into … contacts" clause
+    rest = rest.replace(/\b(to|as|into|in|under|for)\b.*$/i, ' ').trim()
+    // Drop a leading "a/the/new contact(s)" label
+    rest = rest.replace(/^(a\s+|the\s+|new\s+)?contacts?\b[:,\-]?\s*/i, '').trim()
+    // Split multiple names on commas / "and" / "&"
+    for (const piece of rest.split(/\s*(?:,|;|&|\band\b)\s*/i)) {
+      // Keep the leading run of name-like words (letters, ., ', -)
+      const words: string[] = []
+      for (const w of piece.trim().split(/\s+/)) {
+        if (/^[A-Za-z][A-Za-z.'’\-]*$/.test(w)) words.push(w)
+        else break
+      }
+      if (!words.length) continue
+      if (ADD_NAME_STOPWORDS.has(words[0].toLowerCase())) continue
+      names.push(words.slice(0, 4).join(' '))
     }
   }
-  return names
-}
 
-// Detect an "add contact(s)" or "add <Name>" instruction in the forwarder's own
-// note (top of the body) or the subject — NOT the forwarded thread below it.
-function hasAddContactTrigger(topNote: string, subject: string): boolean {
-  const combined = `${subject}\n${topNote}`
-  if (/\b(add|save|file|store)\s+(to\s+)?contacts?\b/i.test(combined)) return true
-  return namesFromAddInstruction(combined).length > 0
+  // A name is "strong" (enough to trigger on its own, no "contact" word needed)
+  // when it's capitalized or has 2+ words — avoids false-firing on "add pricing".
+  const strongName = names.some(n => /^[A-Z]/.test(n) || n.split(/\s+/).length >= 2)
+
+  return { trigger: contactIntent || strongName, names }
 }
 
 export async function POST(req: NextRequest) {
@@ -491,8 +507,9 @@ export async function POST(req: NextRequest) {
     // Forward an email and write "add contact" (or "save contacts") in your note →
     // extract every person in the email and save them as standalone CRM contacts,
     // no deal required. Internal senders only. Runs before deal/note processing.
-    if (isInternal(from) && hasAddContactTrigger(topOfBody(text), subject)) {
-      console.log(`[email-intake] add-contact request from ${from}`)
+    const addParse = parseAddContactInstruction(topOfBody(text), subject)
+    if (isInternal(from) && addParse.trigger) {
+      console.log(`[email-intake] add-contact request from ${from} names=${JSON.stringify(addParse.names)}`)
       try {
         const emailContent = `From: ${from}\nSubject: ${subject}\n\n${text}`.trim()
         const resp = await anthropic.messages.create({
@@ -523,7 +540,7 @@ export async function POST(req: NextRequest) {
         // If the forwarder named specific people ("add John Smith"), add only those.
         // Match named people against the email-extracted contacts; if a named person
         // isn't found in the email, still create a bare contact from the name.
-        const requestedNames = namesFromAddInstruction(`${subject}\n${topOfBody(text)}`)
+        const requestedNames = addParse.names
         let toAdd = merged
         if (requestedNames.length > 0) {
           const wanted = requestedNames.map(n => n.toLowerCase().trim())
