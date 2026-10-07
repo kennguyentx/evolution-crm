@@ -5,6 +5,7 @@ import { dropboxConfigured, dropboxUpload, dropboxMove, expectedDropboxFolder, u
 import { parseAiJson, extractText } from '@/lib/ai-json'
 import { AI_MODELS } from '@/lib/ai-config'
 import { runAgentToText } from '@/lib/assistant-core'
+import { sendDealNotification } from '@/lib/deal-notify'
 
 export const maxDuration = 120
 
@@ -973,6 +974,23 @@ export async function POST(req: NextRequest) {
           await upsertContacts(supabase, allContacts, deal.id)
         }
 
+        // Notify for active-pipeline deals only (skip passes/closed). Must await on serverless.
+        if (status === 'Active') {
+          try {
+            await sendDealNotification({
+              companyName: primary.extracted.company_name || `Unknown — ${subject.slice(0, 60)}`,
+              stage, status,
+              sector:      primary.extracted.sector      || null,
+              geography:   primary.extracted.geography   || null,
+              revenue:     primary.extracted.revenue     ?? null,
+              ebitda:      primary.extracted.ebitda      ?? null,
+              description: primary.extracted.description || null,
+              dealId:      deal?.id || null,
+              isPending:   false,
+            })
+          } catch (e: any) { console.error('[deal-notify] email auto-approve:', e?.message) }
+        }
+
         results.push({ type: primary.extracted.doc_type, status: 'auto-approved', stage, files: allFileNames, company: primary.extracted.company_name, deal_id: deal?.id })
 
       } else {
@@ -1139,6 +1157,17 @@ export async function POST(req: NextRequest) {
           console.log(`[email-intake] Path B linking ${allPathBContacts.length} contacts to deal ${newDeal.id}`)
           try { await upsertContacts(supabase, allPathBContacts, newDeal.id) }
           catch (e: any) { console.warn('[email-intake] contact link failed:', e?.message) }
+        }
+        // Notify for active-pipeline deals only (skip passes/closed). Must await on serverless.
+        if (status === 'Active') {
+          try {
+            await sendDealNotification({
+              companyName: candidateName,
+              stage, status,
+              dealId:      newDeal.id,
+              isPending:   false,
+            })
+          } catch (e: any) { console.error('[deal-notify] email path B:', e?.message) }
         }
       }
     }
