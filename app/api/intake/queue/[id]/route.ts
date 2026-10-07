@@ -95,19 +95,25 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       reviewed_at: new Date().toISOString(),
     }).eq('id', params.id)
 
-    // Send deal notification email (non-blocking)
-    sendDealNotification({
-      companyName: ext.company_name || 'Unknown Company',
-      stage,
-      status,
-      sector:      ext.sector      || null,
-      geography:   ext.geography   || null,
-      revenue:     ext.revenue     ?? null,
-      ebitda:      ext.ebitda      ?? null,
-      description: ext.description || null,
-      dealId:      deal?.id        || null,
-      isPending:   false,
-    }).catch(e => console.error('[deal-notify] intake approve:', e?.message))
+    // Send deal notification email. MUST be awaited — on Vercel serverless an
+    // un-awaited promise is dropped when the function returns, so the email never
+    // actually sends. A failure here shouldn't fail the approval, hence try/catch.
+    try {
+      await sendDealNotification({
+        companyName: ext.company_name || 'Unknown Company',
+        stage,
+        status,
+        sector:      ext.sector      || null,
+        geography:   ext.geography   || null,
+        revenue:     ext.revenue     ?? null,
+        ebitda:      ext.ebitda      ?? null,
+        description: ext.description || null,
+        dealId:      deal?.id        || null,
+        isPending:   false,
+      })
+    } catch (e: any) {
+      console.error('[deal-notify] intake approve:', e?.message)
+    }
 
     // Link any orphaned email-intake notes that were logged before the deal existed
     if (deal?.id && ext.company_name) {
