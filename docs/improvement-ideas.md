@@ -9,6 +9,12 @@ How to use this file: paste the whole thing to Claude Code, or pick items one at
 time. Every item is self-contained: what to change, the file(s), and why.
 Suggested order at the bottom.
 
+**Update Nov 8, 2026:** items 1, 5, 11, and 43 are done (commit `f2f5ac6` on
+`main`, Nov 8, 2026 — see the Status lines on those items). Item 20 is partly
+done: the CI workflow and the `typecheck` script now exist, but there is still
+no ESLint config, so the CI lint step will hang until one is created — do that
+before anything else in item 20.
+
 ## What's already good (don't "fix" these)
 
 - TypeScript compiles clean — `tsc --noEmit` reports 0 errors.
@@ -42,6 +48,9 @@ Suggested order at the bottom.
   or pin the official SheetJS CDN tarball `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`.
   Note: exceljs cannot read legacy `.xls` — either drop `.xls` from the upload
   `accept` lists in those two pages or use the CDN tarball, which keeps `.xls`.
+- **Status (Nov 8, 2026): Done** — pinned the SheetJS CDN tarball 0.20.3 in
+  `package.json` (commit `f2f5ac6` on `main`); no code changes, same API,
+  `.xls` still works. Skip this item.
 
 ### 2. The daily portfolio-news email has no schedule — it probably never sends
 
@@ -97,6 +106,9 @@ Suggested order at the bottom.
   Bearer token (`middleware.ts`, `lib/cron-auth.ts`).
 - **Change:** send it as `-H "x-cron-secret: $SECRET"` in the three workflows
   and drop the query param.
+- **Status (Nov 8, 2026): Done** — the three cron workflows now send
+  `CRON_SECRET` as the `x-cron-secret` header instead of a URL query param
+  (commit `f2f5ac6` on `main`). Skip this item.
 
 ### 6. Migrate off deprecated `@supabase/auth-helpers-nextjs` to `@supabase/ssr`
 
@@ -171,6 +183,10 @@ Suggested order at the bottom.
   drift (they already differ slightly in structure).
 - **Change:** have `middleware.ts` import `isAuthorizedCron` from
   `lib/cron-auth.ts` and delete its local copy.
+- **Status (Nov 8, 2026): Done** — `middleware.ts` now imports
+  `isAuthorizedCron` from `lib/cron-auth.ts`; the duplicate
+  `hasValidCronSecret` was removed (commit `f2f5ac6` on `main`). Skip this
+  item.
 
 ### 12. Email relay checks env vars after it starts listening
 
@@ -272,10 +288,28 @@ Suggested order at the bottom.
 - **Files:** `.github/workflows/` (only manual cron backups), `package.json`
 - **Problem:** the only workflows are the three manual cron backups. A broken
   build or a lint failure is discovered at deploy time, not at PR time.
-- **Change:** add a CI workflow that runs `npm ci`, `npm run lint` and
+  Worse, lint has effectively never run: there is **no ESLint config file
+  anywhere in the repo** (no `.eslintrc.*`, no `eslintConfig` in
+  `package.json`; `email-server/` has none either), and `npm run lint` is
+  just `next lint`, which with no config does not lint — it opens an
+  interactive "How would you like to configure ESLint? Strict / Base /
+  Cancel" prompt and waits for input forever. Verified Nov 7–8, 2026: two
+  `npx next lint` runs produced zero output over hours (killed by runtime
+  restarts while still waiting at the prompt); running it with stdin closed
+  shows the prompt and exits without creating a config. A CI job calling
+  `npm run lint` as-is would hang the same way.
+- **Change:** first create the config — run `next lint` once interactively
+  and pick Strict, or add an `.eslintrc.json` extending
+  `eslint-config-next` directly — and commit it. *Then* add a CI workflow
+  that runs `npm ci`, `npm run lint` and
   `tsc --noEmit` on every push/PR, plus the Vitest suite once item 19 exists.
   Also add a `"typecheck": "tsc --noEmit"` script to `package.json` so there
   is a canonical command for it.
+- **Status (Nov 8, 2026): Partly done** — `.github/workflows/ci.yml` now
+  exists (typecheck + lint on push/PR) and the `typecheck` script was added
+  (commit `f2f5ac6`). Still missing: the ESLint config. There is still no
+  `.eslintrc.*` on `main`, so the CI lint step will hang at the interactive
+  prompt. Create the config first — that is the remaining work in this item.
 
 ### 21. (Nice-to-have) Rate-limit the unauthenticated and AI-cost endpoints
 
@@ -596,6 +630,10 @@ size limit via Supabase Storage.
   `intake-temp` bucket, then a server-side move into Dropbox — or use
   Dropbox upload sessions (chunked) from the browser. Either way, delete the
   misleading 20 MB cap or make it match what the platform actually allows.
+- **Status (Nov 8, 2026): Done** — deal-page uploads over 4 MB now go via
+  signed upload to the `intake-temp` bucket, then a server-side move into
+  Dropbox (commit `f2f5ac6` on `main`); follow-up commit `007858d` fixed the
+  `Uint8Array` body for the Dropbox upload fetch. Skip this item.
 
 ### 44. Folder-move failures are silent — stage and folder can disagree
 
