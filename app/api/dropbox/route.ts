@@ -275,7 +275,7 @@ export async function POST(req: NextRequest) {
           mute: false,
         }),
       },
-      body: fileBuffer,
+      body: new Uint8Array(fileBuffer),
     })
 
     if (!uploadRes.ok) {
