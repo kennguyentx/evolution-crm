@@ -214,14 +214,21 @@ export async function GET(req: NextRequest) {
 
 // ── POST — upload ─────────────────────────────────────────────────────────────
 
+const TEMP_BUCKET = 'intake-temp'
+
 export async function POST(req: NextRequest) {
   const userId = await getSessionUser(req)
 
   try {
-    const { path, name, base64 } = await req.json()
+    // Two upload modes:
+    //  - base64:       small files sent inline (Vercel caps request bodies at ~4.5 MB)
+    //  - storagePath:  larger files the client first PUT to the intake-temp Supabase
+    //                  bucket via a signed URL; we download server-side (no body
+    //                  limit) and push to Dropbox, then delete the temp object.
+    const { path, name, base64, storagePath } = await req.json()
 
-    if (!path || !name || !base64) {
-      return NextResponse.json({ error: 'path, name, and base64 required' }, { status: 400 })
+    if (!path || !name || (!base64 && !storagePath)) {
+      return NextResponse.json({ error: 'path, name, and base64 or storagePath required' }, { status: 400 })
     }
 
     if (!isAllowedPath(path)) {
@@ -229,14 +236,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Path not allowed' }, { status: 403 })
     }
 
-    if (base64.length > MAX_UPLOAD_BASE64) {
-      const mb = (base64.length * 3 / 4 / 1024 / 1024).toFixed(1)
-      audit('upload:denied', path, userId, { name, reason: 'size limit exceeded', sizeMb: mb })
-      return NextResponse.json({ error: `File too large (${mb} MB; limit is 20 MB)` }, { status: 413 })
+    let fileBuffer: Buffer
+    if (storagePath) {
+      const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+      const { data, error } = await supabase.storage.from(TEMP_BUCKET).download(storagePath)
+      if (error || !data) {
+        return NextResponse.json({ error: `Temp file not found: ${error?.message ?? storagePath}` }, { status: 400 })
+      }
+      fileBuffer = Buffer.from(await data.arrayBuffer())
+      if (fileBuffer.byteLength > MAX_UPLOAD_BYTES) {
+        const mb = (fileBuffer.byteLength / 1024 / 1024).toFixed(1)
+        audit('upload:denied', path, userId, { name, reason: 'size limit exceeded', sizeMb: mb })
+        // Clean up the oversized temp object so it doesn't linger
+        supabase.storage.from(TEMP_BUCKET).remove([storagePath]).catch(() => {})
+        return NextResponse.json({ error: `File too large (${mb} MB; limit is 20 MB)` }, { status: 413 })
+      }
+    } else {
+      if (base64.length > MAX_UPLOAD_BASE64) {
+        const mb = (base64.length * 3 / 4 / 1024 / 1024).toFixed(1)
+        audit('upload:denied', path, userId, { name, reason: 'size limit exceeded', sizeMb: mb })
+        return NextResponse.json({ error: `File too large (${mb} MB; limit is 20 MB)` }, { status: 413 })
+      }
+      fileBuffer = Buffer.from(base64, 'base64')
     }
 
     const fullPath   = `${path.replace(/\/$/, '')}/${name}`
-    const fileBuffer = Buffer.from(base64, 'base64')
     const uploadToken = await getDropboxToken()
 
     const uploadRes = await fetch(`${DBX_CONTENT}/files/upload`, {
@@ -261,6 +285,13 @@ export async function POST(req: NextRequest) {
 
     const result = await uploadRes.json()
     audit('upload', path, userId, { name, bytes: fileBuffer.byteLength, dest: result.path_lower })
+
+    // Clean up the temp object now that it's safely in Dropbox
+    if (storagePath) {
+      const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+      supabase.storage.from(TEMP_BUCKET).remove([storagePath]).catch(() => {})
+    }
+
     return NextResponse.json({ success: true, path: result.path_lower, name: result.name })
 
   } catch (err: any) {

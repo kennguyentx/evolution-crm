@@ -125,23 +125,60 @@ export default function DropboxFilesTab({
     if (data.url) window.open(data.url, '_blank')
   }
 
+  // Files larger than this can't be sent inline — Vercel rejects request bodies
+  // over ~4.5 MB. Those go via a signed Supabase upload, then a server-side move
+  // into Dropbox (same pattern as document intake).
+  const INLINE_MAX_BYTES = 4 * 1024 * 1024
+
   const handleUpload = async (files: File[]) => {
     if (!currentPath) return
     setUploading(true)
     setError(null)
     for (const file of files) {
-      const reader = new FileReader()
-      const base64 = await new Promise<string>((resolve) => {
-        reader.onload = () => resolve((reader.result as string).split(',')[1])
-        reader.readAsDataURL(file)
-      })
-      const res = await fetch('/api/dropbox', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: currentPath, name: file.name, base64 }),
-      })
-      const data = await res.json()
-      if (data.error) { setError(`Upload failed: ${data.error}`); break }
+      try {
+        if (file.size <= INLINE_MAX_BYTES) {
+          // Small file — send inline as base64
+          const base64 = await new Promise<string>((resolve) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve((reader.result as string).split(',')[1])
+            reader.readAsDataURL(file)
+          })
+          const res = await fetch('/api/dropbox', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: currentPath, name: file.name, base64 }),
+          })
+          const data = await res.json()
+          if (data.error) { setError(`Upload failed: ${data.error}`); break }
+        } else {
+          // Large file — signed upload to Supabase, then server-side move to Dropbox
+          const urlRes = await fetch('/api/intake/upload-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fileName: file.name }),
+          })
+          const { signedUploadUrl, storagePath, error: urlErr } = await urlRes.json()
+          if (urlErr || !signedUploadUrl) { setError(`Upload failed: ${urlErr ?? 'no signed URL'}`); break }
+
+          const putRes = await fetch(signedUploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': file.type || 'application/octet-stream' },
+            body: file,
+          })
+          if (!putRes.ok) { setError(`Upload failed while transferring ${file.name}`); break }
+
+          const moveRes = await fetch('/api/dropbox', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: currentPath, name: file.name, storagePath }),
+          })
+          const moveData = await moveRes.json()
+          if (moveData.error) { setError(`Upload failed: ${moveData.error}`); break }
+        }
+      } catch (e: any) {
+        setError(`Upload failed: ${e?.message ?? 'unknown error'}`)
+        break
+      }
     }
     setUploading(false)
     setUploadSuccess(true)

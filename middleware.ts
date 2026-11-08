@@ -1,6 +1,7 @@
 import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { isAuthorizedCron } from '@/lib/cron-auth'
 
 // Routes that must remain publicly callable (external webhooks — no browser session)
 const PUBLIC_API_ROUTES = [
@@ -18,15 +19,6 @@ const CRON_API_ROUTES = [
   '/api/deals/loi-alerts',
 ]
 
-function hasValidCronSecret(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET
-  if (!secret) return false
-  const fromQuery  = req.nextUrl.searchParams.get('cron_secret')
-  const fromHeader = req.headers.get('x-cron-secret')
-  const fromAuth   = req.headers.get('authorization')
-  return fromQuery === secret || fromHeader === secret || fromAuth === `Bearer ${secret}`
-}
-
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
   const supabase = createMiddlewareClient({ req, res })
@@ -40,7 +32,7 @@ export async function middleware(req: NextRequest) {
     if (isPublic) return res
 
     const isCron = CRON_API_ROUTES.some(p => pathname.startsWith(p))
-    if (isCron && hasValidCronSecret(req)) return res
+    if (isCron && isAuthorizedCron(req)) return res
 
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

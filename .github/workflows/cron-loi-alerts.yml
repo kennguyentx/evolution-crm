@@ -14,6 +14,7 @@ jobs:
         run: |
           SECRET=$(printf '%s' "$CRON_SECRET" | tr -d '[:space:]')
           code=$(curl -s -o /tmp/out.txt -w "%{http_code}" \
-            "https://nexus.evolutionstrategy.com/api/deals/loi-alerts?cron_secret=$SECRET")
+            -H "x-cron-secret: $SECRET" \
+            "https://nexus.evolutionstrategy.com/api/deals/loi-alerts")
           echo "deals/loi-alerts -> HTTP $code"; cat /tmp/out.txt; echo
           test "$code" -ge 200 -a "$code" -lt 300

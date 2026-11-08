@@ -17,7 +17,8 @@ jobs:
         run: |
           SECRET=$(printf '%s' "$CRON_SECRET" | tr -d '[:space:]')
           code=$(curl -s -o /tmp/out.txt -w "%{http_code}" \
-            "https://nexus.evolutionstrategy.com/api/pipeline/weekly-email?cron_secret=$SECRET")
+            -H "x-cron-secret: $SECRET" \
+            "https://nexus.evolutionstrategy.com/api/pipeline/weekly-email")
           echo "pipeline/weekly-email -> HTTP $code"; cat /tmp/out.txt; echo
           test "$code" -ge 200 -a "$code" -lt 300
 
@@ -25,6 +26,7 @@ jobs:
         run: |
           SECRET=$(printf '%s' "$CRON_SECRET" | tr -d '[:space:]')
           code=$(curl -s -o /tmp/out.txt -w "%{http_code}" \
-            "https://nexus.evolutionstrategy.com/api/digest?cron_secret=$SECRET")
+            -H "x-cron-secret: $SECRET" \
+            "https://nexus.evolutionstrategy.com/api/digest")
           echo "digest -> HTTP $code"; cat /tmp/out.txt; echo
           test "$code" -ge 200 -a "$code" -lt 300
