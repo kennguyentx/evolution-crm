@@ -16,7 +16,6 @@ const supabase = createClient(
 
 // ─── Tool definitions ─────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const TOOLS: any[] = [
   {
     name: 'count_deals',
