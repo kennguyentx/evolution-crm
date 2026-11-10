@@ -7,6 +7,8 @@ import { AI_MODELS } from '@/lib/ai-config'
 import { runAgentToText } from '@/lib/assistant-core'
 import { sendDealNotification } from '@/lib/deal-notify'
 import { resolveDealStatus, resolveEffectiveStage, resolveIntakeStage } from '@/lib/intake-stage'
+import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
+import { withErrorHandler } from '@/lib/api-response'
 
 export const maxDuration = 120
 
@@ -430,7 +432,7 @@ function parseAddContactInstruction(topNote: string, subject: string): { trigger
   return { trigger: contactIntent || strongName, names }
 }
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandler(async (req: NextRequest) => {
   // ── Auth: accept either a Postmark webhook token or the relay internal secret ──
   // Direct Postmark path: token in query param or X-Webhook-Token header.
   // Relay path: email-server uploads large attachments to Supabase Storage and
@@ -449,6 +451,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
   }
+
+  // Rate-limit the webhook per credential + IP: the token is the only gate,
+  // so a leaked token or a sender loop must not be able to burn AI spend
+  // unchecked. Checked after auth so unauthenticated floods still get the
+  // cheap 403 above.
+  const emailLimit = checkRateLimit(
+    `notes-email:${isRelay ? 'relay' : 'postmark'}:${getClientIp(req)}`,
+    { limit: 60, windowMs: 60_000 },
+  )
+  if (!emailLimit.allowed) return rateLimitResponse(emailLimit.retryAfterSeconds)
 
   try {
     const body     = await req.json()
@@ -1207,4 +1219,4 @@ export async function POST(req: NextRequest) {
     console.error('Email intake error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})
