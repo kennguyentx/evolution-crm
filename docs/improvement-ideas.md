@@ -14,7 +14,9 @@ lines on those items). Item 2 is moot — Ken decided Nov 8, 2026 he does not
 want the portfolio-news email scheduled. Items 44, 45, 46, and 50 are specced
 but not implemented — the spec is `docs/dropbox-folder-moves.md` on `main`
 (commit `7baf518`, Nov 9, 2026). **Scope for this round: address everything
-except items 31–42 (PE lens), which Ken deferred Nov 10, 2026.**
+except items 31–42 (PE lens), which Ken deferred Nov 10, 2026.** Batch A
+(items 3, 7, 12, 17, 18) is implemented in PR #2 (`batch-a-quick-wins`),
+awaiting merge — see the Status lines on those items.
 
 ## What's already good (don't "fix" these)
 
@@ -82,6 +84,9 @@ except items 31–42 (PE lens), which Ken deferred Nov 10, 2026.**
   `CRON_SECRET`, `INTERNAL_WEBHOOK_SECRET`, team email, app URL) with empty
   values. Also document `CRON_SECRET` and `INTERNAL_WEBHOOK_SECRET` in the
   README's env-var table — they exist in the code but aren't listed there.
+- **Status (Nov 10, 2026): Implemented in PR #2** (`batch-a-quick-wins`,
+  commit `0170d3b`) — root `.env.example` added, README env-var table updated.
+  Awaiting merge; not yet on `main`.
 
 ---
 
@@ -139,6 +144,9 @@ except items 31–42 (PE lens), which Ken deferred Nov 10, 2026.**
   all access control lives in `middleware.ts`, that API routes use the
   service-role key by design, and that any new table needs an RLS policy and
   any new public route needs an explicit middleware exemption.
+- **Status (Nov 10, 2026): Implemented in PR #2** (`batch-a-quick-wins`,
+  commit `0170d3b`) — "Security model" section added to the README. Awaiting
+  merge; not yet on `main`.
 
 ---
 
@@ -199,6 +207,9 @@ except items 31–42 (PE lens), which Ken deferred Nov 10, 2026.**
   is missing.
 - **Change:** move the missing-var check above `app.listen` so it fails fast
   before binding the port.
+- **Status (Nov 10, 2026): Implemented in PR #2** (`batch-a-quick-wins`,
+  commit `0170d3b`) — env-var check moved above `app.listen` in
+  `email-server/server.js`. Awaiting merge; not yet on `main`.
 
 ---
 
@@ -261,6 +272,10 @@ except items 31–42 (PE lens), which Ken deferred Nov 10, 2026.**
 - **Change:** verify with a repo-wide grep, then remove both from
   `package.json` and drop `pdf-parse` from `next.config.js`. If PDF parsing is
   needed later, re-add a maintained library then.
+- **Status (Nov 10, 2026): Implemented in PR #2** (`batch-a-quick-wins`,
+  commit `0170d3b`) — `pdf-parse` and `formidable` removed from
+  `package.json`, `pdf-parse` dropped from `next.config.js`. Awaiting merge;
+  not yet on `main`.
 
 ### 18. Clean up `email-server`
 
@@ -271,6 +286,11 @@ except items 31–42 (PE lens), which Ken deferred Nov 10, 2026.**
 - **Change:** remove the two unused deps, consider converting to TypeScript to
   match the main app, and add a lint script. (Also see item 12 for the env-var
   ordering fix in the same file.)
+- **Status (Nov 10, 2026): Implemented in PR #2** (`batch-a-quick-wins`,
+  commit `0170d3b`) — unused `@anthropic-ai/sdk` and `jszip` removed from
+  `email-server/package.json`, `lint` script (`node --check server.js`)
+  added. TypeScript conversion deliberately not done (bigger job). Awaiting
+  merge; not yet on `main`.
 
 ---
 
