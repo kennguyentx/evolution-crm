@@ -99,11 +99,35 @@ npm install
 node server.js
 ```
 
+Tests (Vitest — pure functions only, no database or running app needed):
+```bash
+npm test
+```
+Covers the Zod schemas (`lib/schemas.ts`), the cron-auth three-way check
+(`lib/cron-auth.ts`), the intake stage mapping (`lib/intake-stage.ts`), the
+portfolio-news curation helpers (`lib/portfolio-news.ts`), and the migration
+runner (`scripts/migrate.mjs`). CI runs the suite on every push/PR.
+
 ---
 
 ## Database
 
-Supabase project hosts all tables. Run any new migration files in `supabase/migrations/` through the Supabase SQL Editor.
+Supabase project hosts all tables. Migrations live in `supabase/migrations/`
+and are applied with the migration runner — never by hand in the SQL Editor
+anymore (hand-applying leaves no record of what ran):
+
+```bash
+# DATABASE_URL from Supabase dashboard → Project Settings → Database → Connection string
+DATABASE_URL="postgresql://postgres:<password>@<project-ref>.supabase.co:5432/postgres?sslmode=require" npm run migrate
+```
+
+The runner applies pending files in alphabetical order, each in its own
+transaction, and records them (with a SHA-256 checksum) in the
+`applied_migrations` table, so re-running is a no-op and a silently skipped
+or double-applied migration can't happen. See `supabase/migrations/README.md`
+for the one-time `--baseline` step (first adoption, after verifying the
+database already matches the files), `--dry-run`, and the naming rule for
+new files.
 
 Key tables: `deals`, `contacts`, `investors`, `notes`, `portfolio_companies`, `lp_investments`, `lp_commitments`, `investment_entities`, `intake_queue`, `app_settings`
 

@@ -6,6 +6,7 @@ import { parseAiJson, extractText } from '@/lib/ai-json'
 import { AI_MODELS } from '@/lib/ai-config'
 import { runAgentToText } from '@/lib/assistant-core'
 import { sendDealNotification } from '@/lib/deal-notify'
+import { resolveDealStatus, resolveEffectiveStage, resolveIntakeStage } from '@/lib/intake-stage'
 
 export const maxDuration = 120
 
@@ -818,7 +819,7 @@ export async function POST(req: NextRequest) {
       // ── Step 4: Upload ALL files to Dropbox ───────────────────────────────
       // deals.dropbox_path stores the FOLDER path (not a file path).
       // toFolder() (defined at module scope) strips filenames from legacy records.
-      const effectiveStage = existingDeal?.stage ?? instructions.stage ?? 'Teaser'
+      const effectiveStage = resolveEffectiveStage(existingDeal?.stage, instructions.stage)
       const companyForPath = primary.extracted.company_name
         ? (instructions.parent_portco
             ? `${primary.extracted.company_name} [${instructions.parent_portco}]`
@@ -940,7 +941,7 @@ export async function POST(req: NextRequest) {
       } else if (instructions.auto_approve && instructions.stage) {
         // ── New deal, auto-approved ──────────────────────────────────────────
         const stage  = instructions.stage
-        const status = instructions.status ?? (stage.startsWith('Pass') ? 'Dead' : stage.startsWith('Closed') ? 'Closed' : 'Active')
+        const status = resolveDealStatus(stage, instructions.status)
         const { data: deal } = await supabase.from('deals').insert({
           company_name:           primary.extracted.company_name || `Unknown — ${subject.slice(0, 60)}`,
           sector:                 primary.extracted.sector       || null,
@@ -1132,11 +1133,8 @@ export async function POST(req: NextRequest) {
     let createdDeal: { id: string; company_name: string; stage: string } | null = null
     if (!deal_id && !portfolio_company_id && parsed.deal_names?.length > 0) {
       const candidateName = parsed.deal_names[0].trim()
-      const stage  = pathBInstructions.stage  || 'Teaser'
-      const status = pathBInstructions.status ?? (
-        stage.startsWith('Pass')   ? 'Dead'   :
-        stage.startsWith('Closed') ? 'Closed' : 'Active'
-      )
+      const stage  = resolveIntakeStage(pathBInstructions.stage)
+      const status = resolveDealStatus(stage, pathBInstructions.status)
       console.log(`[email-intake] Path B creating deal: "${candidateName}" stage="${stage}" status="${status}"`)
       const { data: newDeal, error: dealErr } = await supabase.from('deals').insert({
         company_name:   candidateName,

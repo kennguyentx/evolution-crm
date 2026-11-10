@@ -28,12 +28,12 @@ export interface CompanyNews {
 
 // ── RSS helpers ───────────────────────────────────────────────────────────────
 
-function extractCdata(raw: string): string {
+export function extractCdata(raw: string): string {
   const m = raw.match(/<!\[CDATA\[([\s\S]*?)\]\]>/)
   return m ? m[1].trim() : raw.trim()
 }
 
-function parseItems(xml: string): { title: string; link: string; pubDate: string; source: string }[] {
+export function parseItems(xml: string): { title: string; link: string; pubDate: string; source: string }[] {
   const items: { title: string; link: string; pubDate: string; source: string }[] = []
   const itemBlocks = xml.match(/<item>([\s\S]*?)<\/item>/g) || []
   for (const block of itemBlocks) {
@@ -50,7 +50,7 @@ function parseItems(xml: string): { title: string; link: string; pubDate: string
   return items
 }
 
-function isWithinDays(pubDate: string, days: number): boolean {
+export function isWithinDays(pubDate: string, days: number): boolean {
   if (!pubDate) return false
   const parsed = new Date(pubDate)
   if (isNaN(parsed.getTime())) return false
@@ -98,7 +98,7 @@ const REGION_KEYWORDS: [string[], string[]][] = [
   [['chicago', 'ohio', 'indiana', 'illinois'], ['chicago', 'cleveland', 'columbus', 'cincinnati', 'indianapolis', 'milwaukee', 'ohio', 'indiana', 'illinois', 'wisconsin']],
 ]
 
-function isGeographicMismatch(title: string, geography: string | null): boolean {
+export function isGeographicMismatch(title: string, geography: string | null): boolean {
   if (!geography) return false
   const t = ' ' + title.toLowerCase() + ' '
   const geo = geography.toLowerCase()
