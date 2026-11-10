@@ -78,6 +78,10 @@ export default function NotesPage() {
   const [sentimentFilter, setSentimentFilter] = useState(() => initialParam('sentiment') ?? 'all')
   const [dealFilter, setDealFilter] = useState(() => initialParam('deal') ?? '')
   const [deals, setDeals] = useState<{ id: string; company_name: string }[]>([])
+  const [contactFilter, setContactFilter] = useState('')
+  const [contactFilterLabel, setContactFilterLabel] = useState('')
+  const [contactFilterSearch, setContactFilterSearch] = useState('')
+  const [contactFilterResults, setContactFilterResults] = useState<any[]>([])
   const [showAddForm, setShowAddForm] = useState(false)
   const [addForm, setAddForm] = useState({ note_date: new Date().toISOString().split('T')[0], raw_text: '', logged_by: 'Ken', deal_id: '', contact_id: '', contact_label: '', capital_contact_id: '', capital_contact_label: '' })
   const [addContactSearch, setAddContactSearch] = useState('')
@@ -131,7 +135,7 @@ export default function NotesPage() {
       .then(({ data }) => { if (data) setDeals(data) })
   }, [])
 
-  const load = useCallback(async (q = search, src = sourceFilter, sent = sentimentFilter, deal = dealFilter, off = 0, append = false) => {
+  const load = useCallback(async (q = search, src = sourceFilter, sent = sentimentFilter, deal = dealFilter, contact = contactFilter, off = 0, append = false) => {
     if (append) setLoadingMore(true)
     else setLoading(true)
 
@@ -153,6 +157,7 @@ export default function NotesPage() {
     if (src !== 'all') query = query.eq('source', src)
     if (sent !== 'all') query = query.eq('sentiment', sent)
     if (deal) query = query.eq('deal_id', deal)
+    if (contact) query = query.eq('contact_id', contact)
 
     const { data, count } = await query
     if (append) setNotes(prev => [...prev, ...(data ?? [])])
@@ -161,7 +166,7 @@ export default function NotesPage() {
     setOffset(off + (data?.length ?? 0))
     setLoading(false)
     setLoadingMore(false)
-  }, [supabase, search, sourceFilter, sentimentFilter, dealFilter])
+  }, [supabase, search, sourceFilter, sentimentFilter, dealFilter, contactFilter])
 
   useEffect(() => { load() }, [])
 
@@ -189,12 +194,21 @@ export default function NotesPage() {
   const handleSearch = (v: string) => {
     setSearch(v)
     clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(() => load(v, sourceFilter, sentimentFilter, dealFilter, 0, false), 300)
+    searchTimer.current = setTimeout(() => load(v, sourceFilter, sentimentFilter, dealFilter, contactFilter, 0, false), 300)
   }
 
-  const applyFilter = (src: string, sent: string, deal: string) => {
-    setSourceFilter(src); setSentimentFilter(sent); setDealFilter(deal)
-    load(search, src, sent, deal, 0, false)
+  const applyFilter = (src: string, sent: string, deal: string, contact: string) => {
+    setSourceFilter(src); setSentimentFilter(sent); setDealFilter(deal); setContactFilter(contact)
+    load(search, src, sent, deal, contact, 0, false)
+    setOffset(0)
+  }
+
+  const applyContactFilter = (c: { id: string; first_name: string; last_name: string; firm: string | null } | null) => {
+    setContactFilter(c?.id ?? '')
+    setContactFilterLabel(c ? `${c.first_name} ${c.last_name}${c.firm ? ` · ${c.firm}` : ''}` : '')
+    setContactFilterSearch('')
+    setContactFilterResults([])
+    load(search, sourceFilter, sentimentFilter, dealFilter, c?.id ?? '', 0, false)
     setOffset(0)
   }
 
@@ -654,7 +668,7 @@ export default function NotesPage() {
 
         {/* Source */}
         {(['all','discord','email','manual'] as const).map(s => (
-          <button key={s} onClick={() => applyFilter(s, sentimentFilter, dealFilter)}
+          <button key={s} onClick={() => applyFilter(s, sentimentFilter, dealFilter, contactFilter)}
             className={sourceFilter === s ? 'btn btn-primary' : 'btn btn-ghost'}
             style={{ fontSize: '11px', padding: '4px 10px', textTransform: 'capitalize' }}>
             {s === 'all' ? 'All sources' : s}
@@ -665,21 +679,45 @@ export default function NotesPage() {
 
         {/* Sentiment */}
         <select className="select" style={{ fontSize: '11px', width: '130px' }} value={sentimentFilter}
-          onChange={e => applyFilter(sourceFilter, e.target.value, dealFilter)}>
+          onChange={e => applyFilter(sourceFilter, e.target.value, dealFilter, contactFilter)}>
           <option value="all">All sentiment</option>
           {Object.entries(SENTIMENT_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
 
         {/* Deal filter */}
         <select className="select" style={{ fontSize: '11px', width: '180px' }} value={dealFilter}
-          onChange={e => applyFilter(sourceFilter, sentimentFilter, e.target.value)}>
+          onChange={e => applyFilter(sourceFilter, sentimentFilter, e.target.value, contactFilter)}>
           <option value="">All deals</option>
           {deals.map(d => <option key={d.id} value={d.id}>{d.company_name}</option>)}
         </select>
 
-        {(search || sourceFilter !== 'all' || sentimentFilter !== 'all' || dealFilter) && (
+        {/* Contact filter — typeahead pick, same pattern as the add-form contact search */}
+        <div style={{ position: 'relative' }}>
+          {contactFilter ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 6px 4px 10px', border: '1px solid var(--border)', borderRadius: '6px', background: 'var(--surface-2)', maxWidth: '220px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{contactFilterLabel}</span>
+              <button onClick={() => applyContactFilter(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px', flexShrink: 0 }} title="Clear contact filter"><X size={11} /></button>
+            </div>
+          ) : (
+            <>
+              <input className="input" style={{ fontSize: '11px', width: '180px' }} placeholder="Filter by contact…" value={contactFilterSearch}
+                onChange={e => { setContactFilterSearch(e.target.value); searchContacts(e.target.value, setContactFilterResults) }} />
+              {contactFilterResults.length > 0 && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '6px', zIndex: 50, boxShadow: '0 4px 12px rgba(0,0,0,0.15)', marginTop: '4px' }}>
+                  {contactFilterResults.map(c => (
+                    <div key={c.id} onClick={() => applyContactFilter(c)} style={{ padding: '8px 12px', fontSize: '12px', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)' }} className="table-row">
+                      <span style={{ fontWeight: 500 }}>{c.first_name} {c.last_name}</span>{c.firm && <span style={{ color: 'var(--text-muted)', marginLeft: '6px' }}>{c.firm}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {(search || sourceFilter !== 'all' || sentimentFilter !== 'all' || dealFilter || contactFilter) && (
           <button className="btn btn-ghost" style={{ fontSize: '11px' }}
-            onClick={() => { setSearch(''); setSentimentFilter('all'); setDealFilter(''); applyFilter('all','all','') }}>
+            onClick={() => { setSearch(''); setSentimentFilter('all'); setDealFilter(''); setContactFilter(''); setContactFilterLabel(''); setContactFilterSearch(''); setContactFilterResults([]); applyFilter('all','all','','') }}>
             <X size={11} /> Clear
           </button>
         )}
@@ -944,7 +982,7 @@ export default function NotesPage() {
             {notes.length < total && (
               <div style={{ padding: '20px 28px', textAlign: 'center' }}>
                 <button className="btn btn-ghost" style={{ fontSize: '12px' }}
-                  onClick={() => load(search, sourceFilter, sentimentFilter, dealFilter, offset, true)}
+                  onClick={() => load(search, sourceFilter, sentimentFilter, dealFilter, contactFilter, offset, true)}
                   disabled={loadingMore}>
                   {loadingMore ? 'Loading…' : `Load more (${notes.length} of ${total.toLocaleString()})`}
                 </button>
