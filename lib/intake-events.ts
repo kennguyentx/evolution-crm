@@ -21,6 +21,8 @@ export type IntakeEventKind =
   | 'ambiguous'        // could not resolve (name / parent portco) — queued with candidates
   | 'failed'           // extraction / processing error — forwarder should resend
   | 'skipped'          // duplicate or empty — nothing done
+  | 'reply-action'     // an instruction from a digest reply was carried out
+  | 'reply-failed'     // an instruction from a digest reply could not be carried out
 
 export interface IntakeEventInput {
   kind: IntakeEventKind
@@ -76,11 +78,39 @@ export async function fetchUnsentEvents(supabase: any): Promise<IntakeEvent[]> {
   return (data ?? []) as IntakeEvent[]
 }
 
-/** Mark events as included in the digest just sent. */
-export async function markEventsSent(supabase: any, ids: string[]): Promise<void> {
+/**
+ * Mark events as included in the digest just sent. All events in one digest
+ * share ONE digest_sent_at value — that timestamp IS the batch key: the
+ * digest body embeds it as a marker ([NEXUS-DIGEST <ts>]) and a reply can be
+ * matched back to exactly these events with fetchDigestBatch.
+ */
+export async function markEventsSent(supabase: any, ids: string[], sentAt: string = new Date().toISOString()): Promise<void> {
   if (!ids.length) return
   const { error } = await supabase.from('intake_events')
-    .update({ digest_sent_at: new Date().toISOString() })
+    .update({ digest_sent_at: sentAt })
     .in('id', ids)
   if (error) log.error('mark-sent failed:', error.message)
+}
+
+/** The events of one sent digest (identified by its shared digest_sent_at), oldest first. */
+export async function fetchDigestBatch(supabase: any, batchTs: string): Promise<IntakeEvent[]> {
+  const { data, error } = await supabase.from('intake_events')
+    .select('*')
+    .eq('digest_sent_at', batchTs)
+    .order('created_at', { ascending: true })
+  if (error) throw new Error(`intake_events batch query failed: ${error.message}`)
+  return (data ?? []) as IntakeEvent[]
+}
+
+/** The events of the most recently sent digest, oldest first ([] if none sent yet). */
+export async function fetchLatestDigestBatch(supabase: any): Promise<IntakeEvent[]> {
+  const { data, error } = await supabase.from('intake_events')
+    .select('digest_sent_at')
+    .not('digest_sent_at', 'is', null)
+    .order('digest_sent_at', { ascending: false })
+    .limit(1)
+  if (error) throw new Error(`intake_events latest-batch query failed: ${error.message}`)
+  const ts = data?.[0]?.digest_sent_at
+  if (!ts) return []
+  return fetchDigestBatch(supabase, ts)
 }
