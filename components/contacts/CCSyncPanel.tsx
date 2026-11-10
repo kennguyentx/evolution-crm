@@ -1,6 +1,9 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { X, RefreshCw, CheckCircle2, AlertCircle, ArrowUpRight, Zap, Link2 } from 'lucide-react'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('cc-sync-panel')
 
 interface NexusContact {
   id: string
@@ -77,7 +80,7 @@ export default function CCSyncPanel({ onClose }: Props) {
       setContacts(next)
       if (removed > 0) setCcAlreadyInCount(removed)
     } catch (err) {
-      console.error('[CC check] error:', err)
+      log.error('[CC check] error:', err)
     } finally {
       setCcCheckStatus('done')
     }

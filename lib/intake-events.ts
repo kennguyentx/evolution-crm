@@ -3,6 +3,10 @@
 // break because this table is missing or slow) so the daily digest cron can
 // summarize the day's activity. See app/api/intake/daily-digest/route.ts.
 //
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('intake-events')
+
 // Table: intake_events (supabase/migrations/add_intake_events.sql).
 // event_date defaults in SQL to the America/Chicago calendar date, matching
 // how note_date is stamped elsewhere in intake.
@@ -56,9 +60,9 @@ export async function recordIntakeEvent(supabase: any, event: IntakeEventInput):
       queue_id: event.queue_id ?? null,
       message_id: event.message_id ?? null,
     })
-    if (error) console.warn('[intake-events] record failed:', error.message)
+    if (error) log.warn('record failed:', error.message)
   } catch (e: any) {
-    console.warn('[intake-events] record failed:', e?.message || e)
+    log.warn('record failed:', e?.message || e)
   }
 }
 
@@ -78,5 +82,5 @@ export async function markEventsSent(supabase: any, ids: string[]): Promise<void
   const { error } = await supabase.from('intake_events')
     .update({ digest_sent_at: new Date().toISOString() })
     .in('id', ids)
-  if (error) console.error('[intake-events] mark-sent failed:', error.message)
+  if (error) log.error('mark-sent failed:', error.message)
 }

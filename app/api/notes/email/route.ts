@@ -14,6 +14,9 @@ import { processAttachment } from '@/lib/email-doc-extract'
 import { sendDealNotification } from '@/lib/deal-notify'
 import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
 import { withErrorHandler } from '@/lib/api-response'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('email-intake')
 
 export const maxDuration = 120
 
@@ -30,7 +33,7 @@ async function resolveAttachmentBuffer(att: any, supabase: ReturnType<typeof ser
   if (att.StoragePath) {
     const { data, error } = await supabase.storage.from(STORAGE_BUCKET).download(att.StoragePath)
     if (error || !data) {
-      console.error(`[email-intake] Storage download failed for ${att.StoragePath}:`, error?.message)
+      log.error(`Storage download failed for ${att.StoragePath}:`, error?.message)
       return null
     }
     const buf = Buffer.from(await data.arrayBuffer())
@@ -254,7 +257,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   if (!isRelay) {
     const webhookToken = process.env.POSTMARK_WEBHOOK_TOKEN
     if (!webhookToken) {
-      console.error('[email-intake] POSTMARK_WEBHOOK_TOKEN is not set — rejecting request')
+      log.error('POSTMARK_WEBHOOK_TOKEN is not set — rejecting request')
       return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
     }
     const provided = req.nextUrl.searchParams.get('token') ?? req.headers.get('x-webhook-token')
@@ -289,8 +292,11 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     const results: any[] = []
 
     // Debug logging — shows up in Vercel Function logs
-    console.log(`[email-intake] messageId=${messageId} from=${from} subject="${subject}" attachments=${attachments.length}`,
-      attachments.map((a: any) => ({ name: a.Name, type: a.ContentType, size: a.Content?.length ?? 0 })))
+    log.info('intake received', {
+      messageId: messageId || null,
+      attachments: attachments.length,
+      attachmentBytes: attachments.reduce((sum: number, a: any) => sum + (a.Content?.length ?? 0), 0),
+    })
 
     // ── "Ask:" assistant path ─────────────────────────────────────────────────
     // Subject starts with "Ask:" / "Q:" → answer via the Nexus assistant and reply
@@ -298,7 +304,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     // access). Runs before everything else so it never files a note or creates a deal.
     if (isAskEmail(subject)) {
       if (!isInternal(from)) {
-        console.warn(`[ask-email] Ignoring "Ask:" email from external sender ${from}`)
+        log.warn('[ask-email] Ignoring "Ask:" email from external sender', { senderDomain: from.split('@')[1] ?? 'unknown' })
         return NextResponse.json({ success: true, skipped: 'ask-email from non-internal sender' })
       }
       const questionSubject = stripAskPrefix(subject)
@@ -307,17 +313,17 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
       if (!question) {
         return NextResponse.json({ success: true, skipped: 'empty ask-email' })
       }
-      console.log(`[ask-email] from=${from} question="${question.slice(0, 160)}"`)
+      log.info('[ask-email] question received', { questionLength: question.length })
       try {
         const { text: answer, toolsUsed } = await runAgentToText(question, {
           channel: 'email',
           senderName: fromName || from.split('@')[0],
         })
-        console.log(`[ask-email] answered (tools: ${toolsUsed.join(', ') || 'none'})`)
+        log.info(`[ask-email] answered (tools: ${toolsUsed.join(', ') || 'none'})`)
         await sendAssistantReply({ to: from, subject, answer, inReplyTo: messageId || undefined })
         return NextResponse.json({ success: true, processed: [{ type: 'ask', tools: toolsUsed }] })
       } catch (e: any) {
-        console.error('[ask-email] assistant failed:', e?.message)
+        log.error('[ask-email] assistant failed:', e?.message)
         await sendAssistantReply({
           to: from,
           subject,
@@ -336,7 +342,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     const topNote = topOfBody(text)
     const command = parseEmailCommand(`${subject}\n${topNote}`)
     if (command.kind !== 'none') {
-      console.log(`[email-intake] command: kind=${command.kind} stage=${command.stage} deal_type=${command.deal_type} parent=${command.parent_portco} contact=${command.contactName ?? command.contactNames.join(', ')}`)
+      log.info('command parsed', { kind: command.kind, stage: command.stage, dealType: command.deal_type, parentPortco: command.parent_portco, contacts: command.contactNames.length, hasContactName: !!command.contactName })
     }
 
     // ── "Note for <name>" command ────────────────────────────────────────────
@@ -420,7 +426,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
       ? command.contactNames
       : addParse.names
     if (isInternal(from) && addTrigger) {
-      console.log(`[email-intake] add-contact request from ${from} names=${JSON.stringify(addParse.names)}`)
+      log.info('add-contact request', { from, requestedNames: addNames.length })
       try {
         const emailContent = `From: ${from}\nSubject: ${subject}\n\n${text}`.trim()
         const resp = await anthropic.messages.create({
@@ -490,10 +496,10 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
           detail: { created, existing, from, subject },
           message_id: messageId || null,
         })
-        console.log(`[email-intake] add-contact: ${created.length} new, ${existing.length} existing`)
+        log.info(`add-contact: ${created.length} new, ${existing.length} existing`)
         return NextResponse.json({ success: true, processed: [{ type: 'add-contact', created: created.length, existing: existing.length }] })
       } catch (e: any) {
-        console.error('[email-intake] add-contact failed:', e?.message)
+        log.error('add-contact failed:', e?.message)
         await recordIntakeEvent(supabase, {
           kind: 'failed',
           summary: 'Add-contact request failed',
@@ -520,15 +526,15 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
             extracted:  {},
           })
         if (lockError?.code === '23505') {
-          console.log(`[email-intake] Idempotency (messageId): duplicate, skipping`)
+          log.info(`Idempotency (messageId): duplicate, skipping`)
           return NextResponse.json({ success: true, skipped: 'duplicate messageId' })
         }
         if (lockError) {
           // Column probably doesn't exist yet — migration not run; fall through to layer 2
-          console.warn(`[email-intake] Sentinel insert failed (run migration?): ${lockError.code} ${lockError.message}`)
+          log.warn(`Sentinel insert failed (run migration?): ${lockError.code} ${lockError.message}`)
         }
       } catch (e: any) {
-        console.warn(`[email-intake] Sentinel error:`, e?.message)
+        log.warn(`Sentinel error:`, e?.message)
       }
     }
 
@@ -549,7 +555,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     if (docAttachments.length > 0) {
       // Parse forwarding note once for all attachments
       const instructions = await parseForwardingNote(text, { from, fromName, cc: ccFull })
-      console.log(`[email-intake] instructions:`, JSON.stringify(instructions))
+      log.info('instructions parsed', { stage: instructions.stage, status: instructions.status, dealType: instructions.deal_type, autoApprove: instructions.auto_approve, hasDealName: !!instructions.deal_name, hasPortco: !!(instructions.portco_name || instructions.parent_portco), hasForwarderNote: !!instructions.forwarder_note, contacts: instructions.contacts?.length ?? 0 })
 
       // ── Portco fallback: if add-on but parent_portco wasn't extracted by LLM,
       // scan known portfolio company names against the full email text.
@@ -562,11 +568,11 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
             const match = portcos.find((p: any) => haystack.includes(p.name.toLowerCase()))
             if (match) {
               instructions.parent_portco = match.name
-              console.log(`[email-intake] Inferred parent_portco="${match.name}" from email text (portco fallback)`)
+              log.info(`Inferred parent_portco="${match.name}" from email text (portco fallback)`)
             }
           }
         } catch (e: any) {
-          console.warn(`[email-intake] Portco fallback failed:`, e?.message)
+          log.warn(`Portco fallback failed:`, e?.message)
         }
       }
 
@@ -600,7 +606,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
             instructions.auto_approve = false // force the queue branch below
           }
         } catch (e: any) {
-          console.warn(`[email-intake] Parent portco validation failed:`, e?.message)
+          log.warn('Parent portco validation failed:', e?.message)
         }
       }
 
@@ -611,7 +617,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
       const ndaAttachments  = docAttachments.filter((a: any) => isNdaFile(a.Name ?? ''))
       const dealAttachments = docAttachments.filter((a: any) => !isNdaFile(a.Name ?? ''))
 
-      console.log(`[email-intake] deal docs: ${dealAttachments.length}, NDAs: ${ndaAttachments.length}`)
+      log.info(`deal docs: ${dealAttachments.length}, NDAs: ${ndaAttachments.length}`)
 
       // ── Step 2: Extract deal docs sequentially (avoids parallel timeout) ───
       const extracted_docs: Array<{ fileName: string; buffer: Buffer; extracted: any }> = []
@@ -620,7 +626,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
       for (const att of ndaAttachments) {
         const fileName = att.Name ?? 'nda'
         const buffer   = await resolveAttachmentBuffer(att, supabase)
-        if (!buffer) { console.warn(`[email-intake] Could not resolve buffer for NDA ${fileName}`); continue }
+        if (!buffer) { log.warn(`Could not resolve buffer for NDA ${fileName}`); continue }
         extracted_docs.push({ fileName, buffer, extracted: { doc_type: 'nda', company_name: null, contacts: [] } })
       }
 
@@ -628,16 +634,16 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
         const fileName    = att.Name ?? 'document'
         const buffer      = await resolveAttachmentBuffer(att, supabase)
         const contentType = att.ContentType ?? ''
-        if (!buffer) { console.warn(`[email-intake] Could not resolve buffer for ${fileName}`); continue }
-        console.log(`[email-intake] Extracting ${fileName} (${(buffer!.length / 1024 / 1024).toFixed(1)} MB)…`)
+        if (!buffer) { log.warn(`Could not resolve buffer for ${fileName}`); continue }
+        log.info(`Extracting ${fileName} (${(buffer!.length / 1024 / 1024).toFixed(1)} MB)…`)
         try {
           const extracted = await processAttachment(fileName, buffer!, contentType)
           if (extracted) {
             extracted_docs.push({ fileName, buffer, extracted })
-            console.log(`[email-intake] Extracted ${fileName}: doc_type=${extracted.doc_type} company="${extracted.company_name}"`)
+            log.info(`Extracted ${fileName}: doc_type=${extracted.doc_type} company="${extracted.company_name}"`)
           }
         } catch (e: any) {
-          console.error(`[email-intake] Extract error (${fileName}):`, e?.message)
+          log.error(`Extract error (${fileName}):`, e?.message)
           results.push({ type: 'error', file: fileName, error: e?.message })
           await recordIntakeEvent(supabase, {
             kind: 'failed',
@@ -681,7 +687,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
       // company name should NOT create "Unknown — FW: ..." garbage deals.
       // Save as a plain note and stop processing.
       if (primary.extracted.doc_type === 'other' && !primary.extracted.company_name) {
-        console.log(`[email-intake] Skipping deal creation: doc_type=other, no company_name. Saving as note.`)
+        log.info(`Skipping deal creation: doc_type=other, no company_name. Saving as note.`)
         await supabase.from('notes').insert({
           note_date:  noteDate,
           raw_text:   `Forwarded via email by ${from}\nSubject: ${subject}\nFiles: ${allFileNames}`,
@@ -747,9 +753,9 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
         const found = await findDealByName(instructions.deal_name.trim(), { fuzzy: true })
         if (found) {
           existingDeal = found
-          console.log(`[email-intake] Matched by forwarder deal_name "${instructions.deal_name}": deal ${found.id} stage="${found.stage}"`)
+          log.info(`Matched by forwarder deal_name "${instructions.deal_name}": deal ${found.id} stage="${found.stage}"`)
         } else {
-          console.log(`[email-intake] Forwarder said deal_name="${instructions.deal_name}" but no match found`)
+          log.info(`Forwarder said deal_name="${instructions.deal_name}" but no match found`)
         }
       }
 
@@ -762,12 +768,12 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
         const found = await findDealByName(name, { activeOnly: true })
         if (found) {
           existingDeal = found
-          console.log(`[email-intake] CIM auto-matched to active deal "${name}": deal ${found.id} stage="${found.stage}"`)
+          log.info(`CIM auto-matched to active deal "${name}": deal ${found.id} stage="${found.stage}"`)
         } else {
-          console.log(`[email-intake] No active deal found for CIM "${name}" — creating new deal`)
+          log.info(`No active deal found for CIM "${name}" — creating new deal`)
         }
       } else if (!existingDeal && primary.extracted.company_name) {
-        console.log(`[email-intake] doc_type=${primary.extracted.doc_type} for "${primary.extracted.company_name}" — creating a NEW deal (no auto-merge)`)
+        log.info(`doc_type=${primary.extracted.doc_type} for "${primary.extracted.company_name}" — creating a NEW deal (no auto-merge)`)
       }
 
       // ── Guard: if the matched "existing deal" IS the parent portco (not the
@@ -780,7 +786,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
         instructions.parent_portco &&
         existingDeal.company_name.toLowerCase().includes(instructions.parent_portco.toLowerCase().trim())
       ) {
-        console.log(`[email-intake] Matched deal "${existingDeal.company_name}" appears to be the parent portco "${instructions.parent_portco}" — clearing to create new add-on deal`)
+        log.info(`Matched deal "${existingDeal.company_name}" appears to be the parent portco "${instructions.parent_portco}" — clearing to create new add-on deal`)
         existingDeal = null
       }
 
@@ -825,37 +831,37 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
         if (dropboxConfigured() && targetFolder) {
           try {
-            console.log(`[email-intake] Renaming Dropbox folder: "${targetFolder}" → "${newFolder}"`)
+            log.info(`Renaming Dropbox folder: "${targetFolder}" → "${newFolder}"`)
             const movedPath = await dropboxMove(targetFolder, newFolder)
             dealFolderPath = toFolder(movedPath) ?? newFolder
-            console.log(`[email-intake] Folder renamed ✓ → "${dealFolderPath}"`)
+            log.info(`Folder renamed ✓ → "${dealFolderPath}"`)
           } catch (renameErr: any) {
-            console.error(`[email-intake] Folder rename failed (non-fatal):`, renameErr?.message)
+            log.error(`Folder rename failed (non-fatal):`, renameErr?.message)
             // Keep original folder path, still rename the deal in DB
           }
         }
 
         renamedCompany = newCompanyName
-        console.log(`[email-intake] Deal will be renamed: "${existingDeal.company_name}" → "${newCompanyName}"`)
+        log.info(`Deal will be renamed: "${existingDeal.company_name}" → "${newCompanyName}"`)
       }
 
       // Use the (possibly renamed) folder for uploads.
       // Fall back to a shared inbox folder so files are never silently dropped.
       const DROPBOX_INBOX = '/evolution strategy partners/Deals/Inbox'
       const uploadFolder = dealFolderPath ?? targetFolder ?? DROPBOX_INBOX
-      console.log(`[email-intake] Step 4: Dropbox upload target="${uploadFolder}" existing=${!!existingDeal}`)
+      log.info(`Step 4: Dropbox upload target="${uploadFolder}" existing=${!!existingDeal}`)
       if (dropboxConfigured() && uploadFolder) {
         for (const doc of extracted_docs) {
           try {
-            console.log(`[email-intake] Uploading ${doc.fileName}…`)
+            log.info(`Uploading ${doc.fileName}…`)
             await dropboxUpload(uploadFolder, doc.fileName, doc.buffer)
-            console.log(`[email-intake] Uploaded ${doc.fileName} ✓`)
+            log.info(`Uploaded ${doc.fileName} ✓`)
           } catch (dbxErr: any) {
-            console.error(`[email-intake] Dropbox upload failed (${doc.fileName}):`, dbxErr?.message)
+            log.error(`Dropbox upload failed (${doc.fileName}):`, dbxErr?.message)
           }
         }
       }
-      console.log(`[email-intake] Step 5: writing deal/note. existingDeal=${existingDeal?.id ?? 'none'} rename=${renamedCompany ?? 'none'}`)
+      log.info(`Step 5: writing deal/note. existingDeal=${existingDeal?.id ?? 'none'} rename=${renamedCompany ?? 'none'}`)
 
       // Merge contacts from all docs + forwarding note
       const allContacts = filterInternalContacts([
@@ -969,7 +975,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
               dealId:      deal?.id || null,
               isPending:   false,
             })
-          } catch (e: any) { console.error('[deal-notify] email auto-approve:', e?.message) }
+          } catch (e: any) { log.error('[deal-notify] email auto-approve:', e?.message) }
         }
 
         results.push({ type: primary.extracted.doc_type, status: 'auto-approved', stage, files: allFileNames, company: primary.extracted.company_name, deal_id: deal?.id })
@@ -1045,7 +1051,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
       .limit(1)
       .maybeSingle()
     if (existingBodyNote) {
-      console.log(`[email-intake] Dedup: note already exists for subject "${subject}", skipping Path B`)
+      log.info('Dedup: note already exists for this subject, skipping Path B')
       await recordIntakeEvent(supabase, {
         kind: 'skipped',
         summary: `Duplicate email body skipped: "${subject.slice(0, 60)}"`,
@@ -1059,7 +1065,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     // In a no-attachment context "for Amped" or "parent_portco: Amped" both mean
     // "file this under the Amped portfolio company", not an add-on acquisition.
     const pathBInstructions = await parseForwardingNote(text, { from, fromName, cc: ccFull })
-    console.log(`[email-intake] Path B instructions:`, JSON.stringify(pathBInstructions))
+    log.info('Path B instructions parsed', { stage: pathBInstructions.stage, status: pathBInstructions.status, dealType: pathBInstructions.deal_type, autoApprove: pathBInstructions.auto_approve, hasDealName: !!pathBInstructions.deal_name, hasPortco: !!(pathBInstructions.portco_name || pathBInstructions.parent_portco), hasForwarderNote: !!pathBInstructions.forwarder_note, contacts: pathBInstructions.contacts?.length ?? 0 })
 
     // Deterministic command slots win (also holds when the LLM failed).
     if (command.kind === 'log-deal') {
@@ -1151,7 +1157,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
       const candidateName = parsed.deal_names[0].trim()
       const stage  = resolveIntakeStage(pathBInstructions.stage)
       const status = resolveDealStatus(stage, pathBInstructions.status)
-      console.log(`[email-intake] Path B creating deal: "${candidateName}" stage="${stage}" status="${status}"`)
+      log.info('Path B creating deal', { company: candidateName, stage, status })
       const { data: newDeal, error: dealErr } = await supabase.from('deals').insert({
         company_name:   candidateName,
         deal_type:      pathBInstructions.deal_type || 'platform',
@@ -1162,15 +1168,15 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
         expected_close: new Date().toISOString().split('T')[0],
       }).select('id, company_name, stage').single()
       if (dealErr) {
-        console.error('[email-intake] Path B deal create failed:', dealErr.message)
+        log.error('Path B deal create failed:', dealErr.message)
       } else if (newDeal) {
         createdDeal = newDeal
         deal_id = newDeal.id
         // Link ALL contacts (body + forwarding note + CC) to the new deal
         if (allPathBContacts.length) {
-          console.log(`[email-intake] Path B linking ${allPathBContacts.length} contacts to deal ${newDeal.id}`)
+          log.info(`Path B linking ${allPathBContacts.length} contacts to deal ${newDeal.id}`)
           try { await upsertContacts(supabase, allPathBContacts, newDeal.id) }
-          catch (e: any) { console.warn('[email-intake] contact link failed:', e?.message) }
+          catch (e: any) { log.warn('contact link failed:', e?.message) }
         }
         // Notify for active-pipeline deals only (skip passes/closed). Must await on serverless.
         if (status === 'Active') {
@@ -1181,7 +1187,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
               dealId:      newDeal.id,
               isPending:   false,
             })
-          } catch (e: any) { console.error('[deal-notify] email path B:', e?.message) }
+          } catch (e: any) { log.error('[deal-notify] email path B:', e?.message) }
         }
       }
     }
@@ -1232,7 +1238,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     })
 
   } catch (err: any) {
-    console.error('Email intake error:', err)
+    log.error('Email intake error:', err)
     // Best-effort: a top-level failure is invisible otherwise — the digest
     // surfaces it so a broken webhook doesn't silently drop intake.
     try {

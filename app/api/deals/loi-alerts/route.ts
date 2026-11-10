@@ -4,6 +4,9 @@ import { generateLoiIcs, icsAttachment } from '@/lib/ics'
 import { getRecipients } from '@/lib/notify-config'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { withErrorHandler } from '@/lib/api-response'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('loi-alerts')
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrategy.com'
 
@@ -160,7 +163,7 @@ async function sendAlerts() {
   })
 
   const result = await res.json().catch(() => ({}))
-  if (!res.ok) console.error('[loi-alerts] Postmark error:', result)
+  if (!res.ok) log.error('Postmark error', { status: res.status, errorCode: result?.ErrorCode ?? null, message: result?.Message ?? null })
 
   return NextResponse.json({ sent: deals.length, deals: deals.map(d => d.company_name) })
 }

@@ -4,6 +4,9 @@ import { sendDealNotification } from '@/lib/deal-notify'
 import { upsertContacts } from '@/lib/contacts'
 import { IntakeQueueActionSchema } from '@/lib/schemas'
 import { apiError, withErrorHandler } from '@/lib/api-response'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('intake/queue')
 
 function serviceClient() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -124,7 +127,7 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
         await upsertContacts(supabase, ext.contacts, deal.id)
       } catch (e: any) {
         // Non-fatal: the deal exists; contacts can be added from the deal page.
-        console.error('[intake-approve] contact linking failed:', e?.message)
+        log.error('[intake-approve] contact linking failed:', e?.message)
       }
     }
 
@@ -152,7 +155,7 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
         isPending:   false,
       })
     } catch (e: any) {
-      console.error('[deal-notify] intake approve:', e?.message)
+      log.error('[deal-notify] intake approve:', e?.message)
     }
 
     // Link any orphaned email-intake notes that were logged before the deal existed

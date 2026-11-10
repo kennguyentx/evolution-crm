@@ -9,6 +9,9 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { expectedDropboxFolder } from '@/lib/dropbox'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('dropbox-stage-move')
 
 export interface DropboxMoveResult {
   path: string | null
@@ -68,7 +71,7 @@ async function attemptMove(
     if (!res.ok) {
       const msg = data?.error ?? `Move failed (${res.status})`
       const code = (data?.code as string) ?? 'unknown'
-      console.error('[Dropbox] Move failed:', msg, { from: fromPath, to: toPath, code })
+      log.error('[Dropbox] Move failed:', msg, { from: fromPath, to: toPath, code })
       await finishJob('failed', { error: msg, code })
       return { path: fromPath, error: msg, code }
     }
@@ -78,7 +81,7 @@ async function attemptMove(
     return { path: data.path, error: null, code: null }
   } catch (err: any) {
     const msg = err?.message ?? 'Unknown error'
-    console.error('[Dropbox] Move exception:', msg)
+    log.error('[Dropbox] Move exception:', msg)
     await finishJob('failed', { error: msg, code: 'unknown' })
     return { path: fromPath, error: msg, code: 'unknown' }
   }

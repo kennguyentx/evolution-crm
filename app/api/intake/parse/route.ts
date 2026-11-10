@@ -5,6 +5,9 @@ import { dropboxConfigured, dropboxUpload, dropboxFolderExists, expectedDropboxF
 import { AI_MODELS } from '@/lib/ai-config'
 import { apiError, withErrorHandler } from '@/lib/api-response'
 import { IntakeParseSchema } from '@/lib/schemas'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('intake/parse')
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 const BUCKET = 'intake-temp'
@@ -162,7 +165,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
           : baseFolder
       } catch (existsErr: any) {
         dropbox_error = `Could not verify Dropbox folder: ${existsErr.message ?? 'unknown error'}`
-        console.warn('Dropbox folder check failed:', dropbox_error)
+        log.warn('Dropbox folder check failed:', dropbox_error)
       }
 
       if (buffer) {
@@ -172,7 +175,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
         } catch (dbxErr: any) {
           dropbox_error = dbxErr.message ?? 'Unknown Dropbox error'
           dropbox_folder = folderPath  // surface the intended folder even if upload failed
-          console.warn('Dropbox upload failed:', dropbox_error)
+          log.warn('Dropbox upload failed:', dropbox_error)
         }
       } else {
         // Paste mode — no file to upload, but still surface the resolved folder
@@ -190,7 +193,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
         serviceClient().storage.from(BUCKET).remove([storagePath])
       } catch { /* ignore */ }
     }
-    console.error('CIM parse error:', err)
+    log.error('CIM parse error:', err)
     return NextResponse.json({ error: err.message || 'Parse failed' }, { status: 500 })
   }
 })

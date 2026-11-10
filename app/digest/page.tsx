@@ -10,6 +10,9 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell
 } from 'recharts'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('digest-page')
 
 const STAGE_COLORS: Record<string, string> = {
   Sourced: '#64748b', Reviewing: '#3b82f6', IOI: '#8b5cf6',
@@ -61,7 +64,7 @@ export default function DigestPage() {
       const data = await res.json()
       setDigestText(data.digest)
     } catch (err) {
-      console.error(err)
+      log.error(err)
     }
     setGenerating(false)
   }
@@ -77,7 +80,7 @@ export default function DigestPage() {
       })
       setDiscordSent(true)
     } catch (err) {
-      console.error(err)
+      log.error(err)
     }
     setSendingToDiscord(false)
   }

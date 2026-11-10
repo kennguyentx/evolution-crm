@@ -7,6 +7,9 @@ import { getDropboxToken } from '@/lib/dropbox'
 import { AI_MODELS } from '@/lib/ai-config'
 import { apiError, withErrorHandler } from '@/lib/api-response'
 import { ShareCimSchema } from '@/lib/schemas'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('share-cim')
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 const DBX_CONTENT = 'https://content.dropboxapi.com/2'
@@ -24,7 +27,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     if (action === 'send')    return await sendEmail(body)
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
   } catch (err: any) {
-    console.error('[share-cim] Error:', err)
+    log.error('Error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 })
@@ -166,7 +169,7 @@ async function sendEmail(body: any) {
           files.find((f: any) => f['.tag'] === 'file' && f.name.toLowerCase().endsWith('.pdf'))
 
         if (cimFile) {
-          console.log(`[share-cim] Attaching CIM: ${cimFile.name}`)
+          log.info(`Attaching CIM: ${cimFile.name}`)
           const dlRes = await fetch(`${DBX_CONTENT}/files/download`, {
             method: 'POST',
             headers: {
@@ -182,14 +185,14 @@ async function sendEmail(body: any) {
               ContentType: 'application/pdf',
             })
           } else {
-            console.warn('[share-cim] Dropbox download failed:', await dlRes.text())
+            log.warn('Dropbox download failed', { status: dlRes.status })
           }
         } else {
-          console.warn('[share-cim] No PDF found in Dropbox folder:', dropbox_folder)
+          log.warn('No PDF found in Dropbox folder:', dropbox_folder)
         }
       }
     } catch (e: any) {
-      console.warn('[share-cim] Dropbox attachment failed:', e?.message)
+      log.warn('Dropbox attachment failed:', e?.message)
       // Don't block the send — just send without attachment
     }
   }
@@ -217,7 +220,7 @@ async function sendEmail(body: any) {
 
   const result = await res.json()
   if (!res.ok) {
-    console.error('[share-cim] Postmark error:', result)
+    log.error('Postmark error', { status: res.status, errorCode: result?.ErrorCode ?? null, message: result?.Message ?? null })
     return NextResponse.json({ error: result.Message || 'Postmark send failed' }, { status: 500 })
   }
 
