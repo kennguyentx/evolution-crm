@@ -5,61 +5,14 @@ import { dropboxConfigured, dropboxUpload, dropboxMove, expectedDropboxFolder, u
 import { parseAiJson, extractText } from '@/lib/ai-json'
 import { AI_MODELS } from '@/lib/ai-config'
 import { runAgentToText } from '@/lib/assistant-core'
+import { isAskEmail, stripAskPrefix, topOfBody, sendAssistantReply } from '@/lib/email-ask'
+import { processAttachment } from '@/lib/email-doc-extract'
 import { sendDealNotification } from '@/lib/deal-notify'
 
 export const maxDuration = 120
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 const STORAGE_BUCKET = 'intake-temp'
-
-// ── "Ask:" email assistant ─────────────────────────────────────────────────────
-// Emails to intake@ whose subject starts with "Ask:" / "Q:" are routed to the
-// Nexus assistant (full CRM + Dropbox access) and answered by email. Restricted
-// to internal @evolutionstrategy.com senders since email identity is weak and
-// the assistant can read/modify data.
-
-function isAskEmail(subject: string): boolean {
-  return /^\s*(ask|q)\s*[:\-]/i.test(subject || '')
-}
-
-function stripAskPrefix(subject: string): string {
-  return (subject || '').replace(/^\s*(ask|q)\s*[:\-]\s*/i, '').trim()
-}
-
-// Take only the sender's own text (before any forwarded/quoted thread)
-function topOfBody(text: string): string {
-  return (text || '').split(/\n-{3,}|\r?\nFrom:|\r?\nOn .+wrote:|_{5,}/i)[0].trim()
-}
-
-async function sendAssistantReply(opts: {
-  to: string
-  subject: string
-  answer: string
-  inReplyTo?: string
-}): Promise<void> {
-  const serverToken = process.env.POSTMARK_SERVER_TOKEN
-  if (!serverToken) { console.error('[ask-email] POSTMARK_SERVER_TOKEN not set'); return }
-
-  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  const htmlBody = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;line-height:1.55;color:#1a1a2e;white-space:pre-wrap;">${esc(opts.answer)}</div>`
-
-  const payload: any = {
-    From: 'intake@evolutionstrategy.com',
-    To: opts.to,
-    Subject: opts.subject.toLowerCase().startsWith('re:') ? opts.subject : `Re: ${opts.subject}`,
-    TextBody: opts.answer,
-    HtmlBody: htmlBody,
-    MessageStream: 'outbound',
-  }
-  if (opts.inReplyTo) payload.Headers = [{ Name: 'In-Reply-To', Value: opts.inReplyTo }]
-
-  const res = await fetch('https://api.postmarkapp.com/email', {
-    method: 'POST',
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Postmark-Server-Token': serverToken },
-    body: JSON.stringify(payload),
-  })
-  if (!res.ok) console.error('[ask-email] reply send failed:', await res.text())
-}
 
 function serviceClient() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -84,72 +37,6 @@ async function resolveAttachmentBuffer(att: any, supabase: ReturnType<typeof ser
   }
   return null
 }
-
-// ── DOCX text extraction ─────────────────────────────────────────────────────
-async function extractDocxText(buffer: Buffer): Promise<string> {
-  const JSZip = (await import('jszip')).default
-  const zip = await JSZip.loadAsync(buffer)
-  const xml = await zip.file('word/document.xml')?.async('string')
-  if (!xml) return ''
-  return xml
-    .replace(/<w:br[^/]*/g, '\n')
-    .replace(/<w:p[ >][^>]*>/g, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"')
-    .replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
-}
-
-// ── Document extraction prompt ───────────────────────────────────────────────
-const DOC_SYSTEM_PROMPT = `You extract deal data from teasers and CIMs forwarded via email. Return ONLY valid JSON.
-
-{
-  "doc_type": "teaser | cim | nda | other",
-  "company_name": "string or null",
-  "sector": "string — closest match from: Underground Utilities | Electrical Contracting | Civil / Public Works | Commercial Landscaping | Fiber Optics | HVAC | Plumbing | Industrial Services | Environmental Services | Construction & Engineering. If none fit, short descriptive name.",
-  "geography": "string or null — primary state(s) or region",
-  "deal_type": "platform | add-on | recap | growth",
-  "revenue": "number in raw dollars or null — use the most recent / LTM figure",
-  "ebitda": "number in raw dollars or null — use the most recent / LTM figure",
-  "description": "string — 2-4 factual sentences about the business. No opinions or qualitative assessments.",
-  "financial_summary": "string or null — 2-3 sentence narrative on margins, growth trend, and any notable items (CIM only)",
-  "historical_financials": [
-    {
-      "year": "string — e.g. '2022', '2023', 'LTM', 'TTM', 'Budget 2025', 'Forecast 2026', 'Proj. 2025'",
-      "revenue": "number in raw dollars or null",
-      "ebitda": "number in raw dollars or null",
-      "ebitda_margin": "number as decimal (0.22 for 22%) or null",
-      "is_forecast": "boolean — true if this row is a projection, budget, or forecast; false for actuals and LTM/TTM"
-    }
-  ],
-  "customer_concentration": "string or null — describe top customer %, customer count, or 'no single customer >X%' (CIM only)",
-  "employee_count": "integer or null — total headcount if stated",
-  "key_risks": ["string array — 3-5 risks (CIM only, else [])"],
-  "growth_opportunities": ["string array — 3-5 opportunities (CIM only, else [])"],
-  "management_team": [{"name": "string", "title": "string"}],
-  "banker_name": "string or null",
-  "banker_firm": "string or null",
-  "asking_price": "number or null",
-  "asking_multiple": "number or null",
-  "contacts": [
-    {
-      "name": "string",
-      "firm": "string or null",
-      "role": "Source / Banker | Management | Advisor | Lender | Other",
-      "title": "string or null",
-      "email": "string or null",
-      "phone": "string or null"
-    }
-  ]
-}
-
-Rules:
-- doc_type: "teaser" = short marketing summary, "cim" = detailed confidential memo, "nda" = non-disclosure agreement, "other" = anything else
-- Dollar values as raw numbers (4200000 for $4.2M). If a range is given (e.g. "$4–6M revenue"), use the midpoint (5000000). If described as "approximately $5M" use 5000000.
-- historical_financials: extract EVERY row shown in a financial table or summary — historical years, LTM/TTM, AND any projections, budgets, or forecasts. Order chronologically (actuals first, then LTM/TTM, then forecasts). Use [] if only one year is available or this is a teaser. Mark is_forecast=true for any projected/budget/forecast row.
-- revenue/ebitda at the top level: always the most recent / LTM figure from historical_financials.
-- Null ONLY if no numeric hint is given anywhere in the document — do not leave null if you can infer from context.
-- description: purely factual, no adjectives expressing quality.`
 
 // ── Email body prompt ─────────────────────────────────────────────────────────
 const EMAIL_SYSTEM_PROMPT = `You extract structured information from forwarded emails for a CRM. Return ONLY valid JSON.
@@ -177,46 +64,6 @@ Rules:
 - For contacts: extract EVERY named person mentioned ANYWHERE in the email — including the original sender, anyone in the email signature, bankers, brokers, sellers, management team members, advisors. Match emails from "From:" lines, "To:" lines, signatures, and inline references. If a name appears without a discoverable email, still include them with email: null.
 - Skip anyone with an @evolutionstrategy.com email.
 - "role": "Source / Banker" for bankers/brokers/M&A advisors; "Management" for target-company executives; "Advisor" for lawyers/accountants; "Lender" for debt providers; "Other" for everyone else.`
-
-// ── Process a single attachment through Claude ────────────────────────────────
-async function processAttachment(
-  fileName: string,
-  buffer: Buffer,
-  contentType: string
-): Promise<any> {
-  const isPDF  = contentType.includes('pdf')  || fileName.toLowerCase().endsWith('.pdf')
-  const isDOCX = contentType.includes('word') || /\.docx?$/i.test(fileName)
-
-  let messageContent: any[]
-
-  if (isPDF) {
-    messageContent = [
-      {
-        type: 'document',
-        source: { type: 'base64', media_type: 'application/pdf', data: buffer.toString('base64') },
-        title: fileName,
-      },
-      { type: 'text', text: `Extract deal data from this document (${fileName}). Return only valid JSON.` },
-    ]
-  } else if (isDOCX) {
-    const text = await extractDocxText(buffer)
-    messageContent = [
-      { type: 'text', text: `DOCUMENT (${fileName}):\n${text}` },
-      { type: 'text', text: 'Extract deal data from the document above. Return only valid JSON.' },
-    ]
-  } else {
-    return null // unsupported type
-  }
-
-  const response = await anthropic.messages.create({
-    model: AI_MODELS.powerful,
-    max_tokens: 3000,
-    system: DOC_SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: messageContent }],
-  })
-
-  return parseAiJson(extractText(response.content as any))
-}
 
 // ── Normalize a Dropbox path to a folder (strip filename if present) ──────────
 function toFolder(p: string | null | undefined): string | null {
