@@ -10,6 +10,8 @@ import { useRouter } from 'next/navigation'
 import { useDropzone } from 'react-dropzone'
 import { format } from 'date-fns'
 import DropboxFilesTab from '@/components/deals/DropboxFilesTab'
+import DiligenceTab from '@/components/deals/DiligenceTab'
+import { InlineFinancial, EditableField, EditableInline } from '@/components/deals/DealFieldEditors'
 import NDATab from '@/components/deals/NDATab'
 import NewContactModal from '@/components/contacts/NewContactModal'
 import UndoToast, { type UndoEntry } from '@/components/layout/UndoToast'
@@ -563,6 +565,19 @@ export default function DealDetailPage() {
     const next = item.status === 'Complete' ? 'Pending' : 'Complete'
     await supabase.from('diligence_items').update({ status: next }).eq('id', item.id)
     setDiligence(prev => prev.map(d => d.id === item.id ? { ...d, status: next } : d))
+  }
+
+  const addDiligenceItem = async () => {
+    const item = prompt('New checklist item:')
+    if (!item) return
+    const { data } = await supabase.from('diligence_items').insert({ deal_id: dealId, item, status: 'Pending' }).select().single()
+    if (data) setDiligence(prev => [...prev, data])
+  }
+
+  const deleteDiligenceItem = async (e: any, itemId: string) => {
+    e.stopPropagation()
+    await supabase.from('diligence_items').delete().eq('id', itemId)
+    setDiligence(prev => prev.filter(d => d.id !== itemId))
   }
 
   // Upload diligence checklist from Excel/CSV
@@ -1161,52 +1176,20 @@ export default function DealDetailPage() {
 
         {/* DILIGENCE */}
         {activeTab === 'diligence' && (
-          <div style={{ maxWidth: '700px' }}>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
-              {diligence.length === 0 && <button className="btn btn-ghost" onClick={seedDiligence} style={{ fontSize: '12px' }}>Load default checklist</button>}
-              {diligence.length > 0 && <button className="btn btn-ghost" onClick={resetDiligence} style={{ fontSize: '12px', color: 'var(--text-muted)' }}>↺ Reset to defaults</button>}
-              <div {...getDiligenceDropProps()} style={{ border: `1.5px dashed ${isDiligenceDrag ? 'var(--accent)' : 'var(--border)'}`, borderRadius: '7px', padding: '6px 14px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', background: isDiligenceDrag ? 'var(--accent-muted)' : 'transparent' }}>
-                <input {...getDiligenceInputProps()} />
-                <Upload size={12} /> Upload Excel/CSV checklist
-              </div>
-              <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={async () => {
-                const item = prompt('New checklist item:')
-                if (!item) return
-                const { data } = await supabase.from('diligence_items').insert({ deal_id: dealId, item, status: 'Pending' }).select().single()
-                if (data) setDiligence(prev => [...prev, data])
-              }}>
-                <Plus size={12} /> Add Item
-              </button>
-              <div style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--text-muted)', alignSelf: 'center' }}>{completedDiligence} of {diligence.length} complete</div>
-            </div>
-            {diligence.length > 0 && (
-              <div style={{ height: '4px', background: 'var(--border)', borderRadius: '2px', marginBottom: '20px' }}>
-                <div style={{ height: '100%', width: `${diligencePct}%`, background: 'var(--accent)', borderRadius: '2px', transition: 'width 0.3s' }} />
-              </div>
-            )}
-            {['financial','legal','operational','management','other',''].map(category => {
-              const items = diligence.filter(d => (d.category || '') === category)
-              if (!items.length) return null
-              return (
-                <div key={category} style={{ marginBottom: '20px' }}>
-                  {category && <div className="label" style={{ marginBottom: '8px', textTransform: 'capitalize' }}>{category}</div>}
-                  {items.map(item => (
-                    <div key={item.id} className="card-2" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', marginBottom: '6px', cursor: 'pointer' }} onClick={() => toggleDiligenceStatus(item)}>
-                      <div style={{ width: '18px', height: '18px', borderRadius: '4px', flexShrink: 0, border: `1.5px solid ${item.status === 'Complete' ? 'var(--green)' : 'var(--border)'}`, background: item.status === 'Complete' ? 'var(--green)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
-                        {item.status === 'Complete' && <Check size={11} color="white" strokeWidth={3} />}
-                      </div>
-                      <div style={{ flex: 1, fontSize: '13px', color: 'var(--text-primary)' }}>{item.item}</div>
-                      <button onClick={async (e) => { e.stopPropagation(); await supabase.from('diligence_items').delete().eq('id', item.id); setDiligence(prev => prev.filter(d => d.id !== item.id)) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '2px', opacity: 0 }} className="delete-btn">
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )
-            })}
-          </div>
+          <DiligenceTab
+            diligence={diligence}
+            completedDiligence={completedDiligence}
+            diligencePct={diligencePct}
+            seedDiligence={seedDiligence}
+            resetDiligence={resetDiligence}
+            getDiligenceDropProps={getDiligenceDropProps}
+            getDiligenceInputProps={getDiligenceInputProps}
+            isDiligenceDrag={isDiligenceDrag}
+            addDiligenceItem={addDiligenceItem}
+            deleteDiligenceItem={deleteDiligenceItem}
+            toggleDiligenceStatus={toggleDiligenceStatus}
+          />
         )}
-
         {/* CONTACTS */}
         {activeTab === 'contacts' && (
           <div style={{ maxWidth: '700px' }}>
@@ -1809,96 +1792,5 @@ export default function DealDetailPage() {
 
       <UndoToast stack={undoStack} onUndo={handleUndo} onDismiss={handleDismiss}/>
     </div>
-  )
-}
-
-function InlineFinancial({ label, value, accent, onSave }: {
-  label: string, value: number | null, accent?: boolean, onSave: (v: number | null) => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const [raw, setRaw] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  const start = () => {
-    setRaw(value ? String((value / 1e6).toFixed(1)) : '')
-    setEditing(true)
-    setTimeout(() => inputRef.current?.select(), 0)
-  }
-  const save = () => {
-    const parsed = parseFloat(raw)
-    onSave(isNaN(parsed) ? null : parsed * 1e6)
-    setEditing(false)
-  }
-
-  if (editing) return (
-    <div>
-      <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '2px' }}>{label} ($M)</div>
-      <input
-        ref={inputRef}
-        value={raw}
-        onChange={e => setRaw(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
-        onBlur={save}
-        placeholder="e.g. 4.2"
-        style={{ width: '80px', fontSize: '15px', fontFamily: 'var(--font-mono)', fontWeight: 600, padding: '2px 6px', border: '1px solid var(--accent)', borderRadius: '5px', background: 'var(--surface)', color: accent ? 'var(--accent)' : 'var(--text-primary)', outline: 'none' }}
-      />
-    </div>
-  )
-
-  return (
-    <div onClick={start} style={{ cursor: 'text' }} title="Click to edit">
-      <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
-      <div style={{ fontSize: '16px', fontFamily: 'var(--font-mono)', color: accent ? 'var(--accent)' : 'var(--text-primary)', marginTop: '2px', borderBottom: '1px dashed var(--border)', paddingBottom: '1px', minWidth: '40px' }}>
-        {value ? formatCurrency(value) : <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>Add</span>}
-      </div>
-    </div>
-  )
-}
-
-function EditableField({ label, value, onSave, type = 'text', multiline = false, placeholder }: {
-  label: string, value: string, onSave: (v: string) => void,
-  type?: string, multiline?: boolean, placeholder?: string
-}) {
-  const [editing, setEditing] = useState(false)
-  const [val, setVal] = useState(value)
-  useEffect(() => { setVal(value) }, [value])
-  const save = () => { onSave(val); setEditing(false) }
-  return (
-    <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: '10px' }}>
-      <div style={{ minWidth: '100px', fontSize: '11px', color: 'var(--text-muted)', paddingTop: '6px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
-      {editing ? (
-        <div style={{ flex: 1, display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
-          {multiline ? <textarea className="input" value={val} onChange={e => setVal(e.target.value)} rows={3} style={{ resize: 'vertical', fontSize: '13px' }} />
-            : <input className="input" value={val} type={type} onChange={e => setVal(e.target.value)} onKeyDown={e => e.key === 'Enter' && save()} placeholder={placeholder} style={{ fontSize: '13px' }} />}
-          <button className="btn btn-ghost" onClick={save} style={{ padding: '6px' }}><Check size={13} /></button>
-          <button className="btn btn-ghost" onClick={() => { setEditing(false); setVal(value) }} style={{ padding: '6px' }}><X size={13} /></button>
-        </div>
-      ) : (
-        <div style={{ flex: 1, fontSize: '13px', color: value ? 'var(--text-primary)' : 'var(--text-muted)', padding: '5px 6px', borderRadius: '5px', cursor: 'text', minHeight: '28px' }} onClick={() => setEditing(true)}>
-          {value || <span style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>Click to edit</span>}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function EditableInline({ value, onSave, style }: { value: string, onSave: (v: string) => void, style?: any }) {
-  const [editing, setEditing] = useState(false)
-  const [val, setVal] = useState(value)
-  useEffect(() => { setVal(value) }, [value])
-  const save = () => { if (val.trim()) { onSave(val); setEditing(false) } }
-  if (editing) return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-      <input autoFocus className="input" value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }} style={{ fontSize: '22px', fontWeight: 700, padding: '4px 8px', width: '320px' }} />
-      <button className="btn btn-primary" onClick={save} style={{ padding: '4px 10px', fontSize: '12px' }}>Save</button>
-      <button className="btn btn-ghost" onClick={() => setEditing(false)} style={{ padding: '4px 10px', fontSize: '12px' }}>Cancel</button>
-    </div>
-  )
-  return (
-    <h1 style={{ ...style, cursor: 'pointer', borderBottom: '1px dashed transparent', display: 'inline-block' }} onClick={() => setEditing(true)} title="Click to edit name"
-      onMouseEnter={e => (e.currentTarget.style.borderBottomColor = 'var(--text-muted)')}
-      onMouseLeave={e => (e.currentTarget.style.borderBottomColor = 'transparent')}>
-      {value}
-    </h1>
   )
 }
