@@ -14,6 +14,10 @@
     },
     {
       "path": "/api/intake/daily-digest",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/intake/daily-digest",
       "schedule": "0 13 * * *"
     },
     {
