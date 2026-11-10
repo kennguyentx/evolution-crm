@@ -40,6 +40,7 @@ export type Stage =
   | 'Pass (Pre-LOI)'
   | 'Pass (Post-LOI)'
   | 'Hold'
+  | 'Dead'
   | 'Closed (Platform)'
   | 'Closed (Add-On)';
 
@@ -86,6 +87,7 @@ export const STAGE_SYNONYMS: Readonly<Record<string, Stage>> = {
   hold: 'Hold',
   park: 'Hold',
   pass: 'Pass (DOA)',
+  dead: 'Dead',
   loi: 'LOI Submitted',
 };
 
