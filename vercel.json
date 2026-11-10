@@ -1,16 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/digest",
-      "schedule": "0 13 * * 1"
-    },
-    {
-      "path": "/api/pipeline/weekly-email",
-      "schedule": "0 13 * * 1"
-    },
-    {
-      "path": "/api/deals/loi-alerts",
-      "schedule": "0 14 * * 1-5"
-    }
-  ]
-}
+{"crons":[{"path":"/api/digest","schedule":"0 13 * * 1"},{"path":"/api/pipeline/weekly-email","schedule":"0 13 * * 1"},{"path":"/api/deals/loi-alerts","schedule":"0 14 * * 1-5"},{"path":"/api/dropbox/reconcile","schedule":"0 3 * * *"},{"path":"/api/intake/cleanup-temp","schedule":"0 4 * * 0"}]}

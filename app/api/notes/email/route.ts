@@ -847,7 +847,12 @@ export async function POST(req: NextRequest) {
         primary.extracted.company_name.toLowerCase().trim() !== existingDeal.company_name.toLowerCase().trim()
       ) {
         const newCompanyName = primary.extracted.company_name.trim()
-        const newFolder = expectedDropboxFolder(newCompanyName, existingDeal.stage)
+        // Folder identity is the deal ID (item 45), so a company rename no
+        // longer derives a new folder name from the new name. For a legacy
+        // name-keyed folder this move re-keys it to the ID path; for an
+        // already-ID-keyed folder newFolder == targetFolder and dropboxMove
+        // no-ops.
+        const newFolder = expectedDropboxFolder(existingDeal.id, existingDeal.stage)
 
         if (dropboxConfigured() && targetFolder) {
           try {

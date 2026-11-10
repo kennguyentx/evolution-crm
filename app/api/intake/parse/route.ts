@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
-import { dropboxConfigured, dropboxUpload, dropboxFolderExists, expectedDropboxFolder, uniqueDropboxFolder } from '@/lib/dropbox'
+import { dropboxConfigured, dropboxUpload, dropboxFolderExists, expectedDropboxFolderByName, uniqueDropboxFolder } from '@/lib/dropbox'
 import { AI_MODELS } from '@/lib/ai-config'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
@@ -141,14 +141,26 @@ export async function POST(req: NextRequest) {
     if (dbx_configured && parsed.company_name) {
       // Include the [PortcoName] suffix for add-on deals so the folder is clearly scoped
       const companyForFolder = parsed.company_name + (userParentPortco ? ` [${userParentPortco}]` : '')
-      const baseFolder = expectedDropboxFolder(companyForFolder, 'Teaser')
+      // The deal doesn't exist yet, so there is no deal ID to key the folder
+      // on — use the legacy name-based path (item 45). Once the deal is
+      // created, the nightly reconciler re-keys the folder to the ID path.
+      const baseFolder = expectedDropboxFolderByName(companyForFolder, 'Teaser')
 
       // If a same-named folder already exists, this is a SEPARATE deal — give it a
       // unique folder (" (2)", " (3)"…) so files don't commingle with the other deal.
-      dropbox_folder_existed = await dropboxFolderExists(baseFolder).catch(() => false)
-      const folderPath = dropbox_folder_existed
-        ? await uniqueDropboxFolder(companyForFolder, 'Teaser')
-        : baseFolder
+      // dropboxFolderExists THROWS on API failures (item 49) — handle that
+      // explicitly here: folder resolution is best-effort for a parse, so a
+      // Dropbox outage degrades to "no folder" instead of failing the parse.
+      let folderPath = baseFolder
+      try {
+        dropbox_folder_existed = await dropboxFolderExists(baseFolder)
+        folderPath = dropbox_folder_existed
+          ? await uniqueDropboxFolder(companyForFolder, 'Teaser')
+          : baseFolder
+      } catch (existsErr: any) {
+        dropbox_error = `Could not verify Dropbox folder: ${existsErr.message ?? 'unknown error'}`
+        console.warn('Dropbox folder check failed:', dropbox_error)
+      }
 
       if (buffer) {
         try {
