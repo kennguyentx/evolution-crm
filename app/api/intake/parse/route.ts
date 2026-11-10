@@ -3,6 +3,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import { dropboxConfigured, dropboxUpload, dropboxFolderExists, expectedDropboxFolder, uniqueDropboxFolder } from '@/lib/dropbox'
 import { AI_MODELS } from '@/lib/ai-config'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { IntakeParseSchema } from '@/lib/schemas'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 const BUCKET = 'intake-temp'
@@ -59,11 +61,12 @@ async function extractDocxText(buffer: ArrayBuffer): Promise<string> {
     .replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
 }
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandler(async (req: NextRequest) => {
   let storagePath: string | null = null
   try {
-    const body = await req.json()
-    const { storagePath: sp, fileName, text: pastedText, deal_type: userDealType, parent_portco: userParentPortco } = body
+    const validated = IntakeParseSchema.safeParse(await req.json())
+    if (!validated.success) return apiError(validated.error.issues[0].message, 400)
+    const { storagePath: sp, fileName, text: pastedText, deal_type: userDealType, parent_portco: userParentPortco } = validated.data
     storagePath = sp || null
 
     let messageContent: any[]
@@ -178,4 +181,4 @@ export async function POST(req: NextRequest) {
     console.error('CIM parse error:', err)
     return NextResponse.json({ error: err.message || 'Parse failed' }, { status: 500 })
   }
-}
+})

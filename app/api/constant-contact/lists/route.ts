@@ -4,6 +4,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getValidCCToken } from '@/lib/constant-contact'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { ConstantContactListSchema } from '@/lib/schemas'
 
 const CC_API = 'https://api.cc.email/v3'
 
@@ -14,7 +16,7 @@ function serviceClient() {
   )
 }
 
-export async function GET() {
+export const GET = withErrorHandler(async () => {
   let token: string
   try {
     token = await getValidCCToken()
@@ -49,10 +51,12 @@ export async function GET() {
     })),
     selected_list_id: setting?.value ?? null,
   })
-}
+})
 
-export async function POST(req: NextRequest) {
-  const { list_id } = await req.json()
+export const POST = withErrorHandler(async (req: NextRequest) => {
+  const parsed = ConstantContactListSchema.safeParse(await req.json())
+  if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+  const { list_id } = parsed.data
   const supabase = serviceClient()
   await supabase.from('app_settings').upsert({
     key: 'cc_sync_list_id',
@@ -60,4 +64,4 @@ export async function POST(req: NextRequest) {
     updated_at: new Date().toISOString(),
   })
   return NextResponse.json({ saved: true })
-}
+})

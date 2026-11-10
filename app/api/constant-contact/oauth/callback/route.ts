@@ -4,10 +4,11 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { saveCCTokens } from '@/lib/constant-contact'
+import { withErrorHandler } from '@/lib/api-response'
 
 const CC_TOKEN_URL = 'https://authz.constantcontact.com/oauth2/default/v1/token'
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandler(async (req: NextRequest) => {
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrategy.com').replace(/\/$/, '')
   const { searchParams } = new URL(req.url)
   const code = searchParams.get('code')
@@ -57,4 +58,4 @@ export async function GET(req: NextRequest) {
   })
 
   return NextResponse.redirect(`${appUrl}/contacts?cc_connected=1`)
-}
+})

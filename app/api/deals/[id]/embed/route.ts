@@ -5,12 +5,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { embed, vectorLiteral, dealTextBlob } from '@/lib/embeddings'
+import { withErrorHandler } from '@/lib/api-response'
 
 function serviceClient() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
 
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export const POST = withErrorHandler(async (_req: NextRequest, { params }: { params: { id: string } }) => {
   const supabase = serviceClient()
 
   const { data: deal, error } = await supabase
@@ -40,4 +41,4 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   }
 
   return NextResponse.json({ success: true, dimensions: vector.length })
-}
+})

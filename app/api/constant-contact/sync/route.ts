@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getValidCCToken } from '@/lib/constant-contact'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { ConstantContactSyncSchema } from '@/lib/schemas'
 
 const CC_API = 'https://api.cc.email/v3'
 
@@ -19,7 +21,7 @@ async function getSyncListId(): Promise<string | null> {
 
 // POST — create or update a single contact in Constant Contact
 // Uses action=create_or_update so edits also propagate (matched by email)
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandler(async (req: NextRequest) => {
   let token: string
   try {
     token = await getValidCCToken()
@@ -27,11 +29,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err.message }, { status: 503 })
   }
 
-  const { id, first_name, last_name, email, phone, firm, title } = await req.json()
-
-  if (!email && !first_name) {
-    return NextResponse.json({ error: 'email or first_name required' }, { status: 400 })
-  }
+  const parsed = ConstantContactSyncSchema.safeParse(await req.json())
+  if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+  const { id, first_name, last_name, email, phone, firm, title } = parsed.data
 
   const listId = await getSyncListId()
 
@@ -90,4 +90,4 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ synced: true, contact_id: data.contact_id, action: data.action ?? 'already_exists' })
-}
+})

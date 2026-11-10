@@ -3,10 +3,11 @@
 // After the user approves, CC redirects to /api/constant-contact/oauth/callback.
 
 import { NextResponse } from 'next/server'
+import { withErrorHandler } from '@/lib/api-response'
 
 const CC_AUTH_URL = 'https://authz.constantcontact.com/oauth2/default/v1/authorize'
 
-export async function GET() {
+export const GET = withErrorHandler(async () => {
   const clientId = process.env.CONSTANT_CONTACT_CLIENT_ID
   if (!clientId) {
     return NextResponse.json(
@@ -27,4 +28,4 @@ export async function GET() {
   })
 
   return NextResponse.redirect(`${CC_AUTH_URL}?${params}`)
-}
+})

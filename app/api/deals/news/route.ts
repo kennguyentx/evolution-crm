@@ -5,15 +5,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { AI_MODELS } from '@/lib/ai-config'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { DealNewsSchema } from '@/lib/schemas'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandler(async (req: NextRequest) => {
   try {
-    const { company_name, sector, geography, deal_type, parent_portco } = await req.json()
-    if (!sector && !company_name) {
-      return NextResponse.json({ error: 'Need at least sector or company name' }, { status: 400 })
-    }
+    const parsed = DealNewsSchema.safeParse(await req.json())
+    if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+    const { company_name, sector, geography, deal_type, parent_portco } = parsed.data
 
     const geoContext  = geography || 'United States'
     const isAddon     = deal_type === 'add-on'
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
     console.error('[news] Error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})
 
 async function fetchNews({ company_name, sector, geoContext, portcoCtx }: {
   company_name?: string

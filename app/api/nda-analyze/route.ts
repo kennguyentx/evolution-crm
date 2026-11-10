@@ -3,6 +3,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import { getDropboxToken, dropboxUpload } from '@/lib/dropbox'
 import { createClient } from '@/lib/supabase'
 import { AI_MODELS } from '@/lib/ai-config'
+import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { NdaAnalyzeSchema, NdaStatusSchema } from '@/lib/schemas'
 
 export const maxDuration = 120
 
@@ -54,7 +57,11 @@ async function findNDATemplate(): Promise<{ base64: string; name: string } | nul
   }
 }
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandler(async (req: NextRequest) => {
+  // AI-cost endpoint: cap requests per IP so a loop can't burn Anthropic spend.
+  const limit = checkRateLimit(`nda-analyze:${getClientIp(req)}`, { limit: 10, windowMs: 60_000 })
+  if (!limit.allowed) return rateLimitResponse(limit.retryAfterSeconds)
+
   try {
     const formData  = await req.formData()
     const file      = formData.get('file') as File | null
@@ -62,6 +69,8 @@ export async function POST(req: NextRequest) {
     const dealId    = formData.get('deal_id') as string | null
     const companyName = formData.get('company_name') as string | null
 
+    const parsed = NdaAnalyzeSchema.safeParse({ deal_id: dealId ?? undefined, company_name: companyName ?? undefined })
+    if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
     if (!file && !pastedText?.trim()) {
       return NextResponse.json({ error: 'File or text required' }, { status: 400 })
     }
@@ -238,10 +247,10 @@ Return ONLY valid JSON — no prose before or after:
     console.error('NDA analyze error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})
 
 // GET: list NDAs for a deal
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandler(async (req: NextRequest) => {
   const { searchParams } = new URL(req.url)
   const dealId = searchParams.get('deal_id')
   if (!dealId) return NextResponse.json({ error: 'deal_id required' }, { status: 400 })
@@ -255,13 +264,14 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ndas: data || [] })
-}
+})
 
 // PATCH: update NDA status
-export async function PATCH(req: NextRequest) {
+export const PATCH = withErrorHandler(async (req: NextRequest) => {
   try {
-    const { id, status } = await req.json()
-    if (!id || !status) return NextResponse.json({ error: 'id and status required' }, { status: 400 })
+    const parsed = NdaStatusSchema.safeParse(await req.json())
+    if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+    const { id, status } = parsed.data
     const supabase = createClient()
     const { error } = await supabase.from('ndas').update({ status }).eq('id', id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -269,4 +279,4 @@ export async function PATCH(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { InteractionUpdateSchema, InteractionDeleteSchema } from '@/lib/schemas'
 
 function serviceClient() {
   return createClient(
@@ -9,10 +11,11 @@ function serviceClient() {
 }
 
 // PATCH /api/interactions  { id, ...fields }
-export async function PATCH(req: NextRequest) {
+export const PATCH = withErrorHandler(async (req: NextRequest) => {
   try {
-    const { id, ...fields } = await req.json()
-    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+    const parsed = InteractionUpdateSchema.safeParse(await req.json())
+    if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+    const { id, ...fields } = parsed.data
 
     const supabase = serviceClient()
     const { data, error } = await supabase
@@ -27,13 +30,14 @@ export async function PATCH(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})
 
 // DELETE /api/interactions  { id }
-export async function DELETE(req: NextRequest) {
+export const DELETE = withErrorHandler(async (req: NextRequest) => {
   try {
-    const { id } = await req.json()
-    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+    const parsed = InteractionDeleteSchema.safeParse(await req.json())
+    if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+    const { id } = parsed.data
 
     const supabase = serviceClient()
     const { error } = await supabase.from('interactions').delete().eq('id', id)
@@ -43,4 +47,4 @@ export async function DELETE(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})

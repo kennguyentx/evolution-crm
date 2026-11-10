@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { DiscordSendSchema } from '@/lib/schemas'
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandler(async (req: NextRequest) => {
   try {
-    const { content } = await req.json()
+    const parsed = DiscordSendSchema.safeParse(await req.json())
+    if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+    const { content } = parsed.data
     const webhookUrl = process.env.DISCORD_WEBHOOK_URL
 
     if (!webhookUrl) {
@@ -24,4 +28,4 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})

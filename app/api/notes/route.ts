@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { NoteUpdateSchema } from '@/lib/schemas'
 
 function serviceClient() {
   return createClient(
@@ -9,10 +11,11 @@ function serviceClient() {
 }
 
 // PATCH /api/notes  { id, ...fields }
-export async function PATCH(req: NextRequest) {
+export const PATCH = withErrorHandler(async (req: NextRequest) => {
   try {
-    const { id, ...fields } = await req.json()
-    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+    const parsed = NoteUpdateSchema.safeParse(await req.json())
+    if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+    const { id, ...fields } = parsed.data
 
     const supabase = serviceClient()
     const { data, error } = await supabase
@@ -33,4 +36,4 @@ export async function PATCH(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})

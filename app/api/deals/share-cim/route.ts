@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getDropboxToken } from '@/lib/dropbox'
 import { AI_MODELS } from '@/lib/ai-config'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { ShareCimSchema } from '@/lib/schemas'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 const DBX_CONTENT = 'https://content.dropboxapi.com/2'
@@ -12,9 +14,11 @@ const DBX_API    = 'https://api.dropboxapi.com/2'
 
 export const maxDuration = 60
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandler(async (req: NextRequest) => {
   try {
-    const body = await req.json()
+    const parsed = ShareCimSchema.safeParse(await req.json())
+    if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+    const body = parsed.data
     const { action } = body
     if (action === 'preview') return await generatePreview(body)
     if (action === 'send')    return await sendEmail(body)
@@ -23,7 +27,7 @@ export async function POST(req: NextRequest) {
     console.error('[share-cim] Error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})
 
 // ── Preview: Claude generates the concise summary ─────────────────────────────
 async function generatePreview(body: any) {

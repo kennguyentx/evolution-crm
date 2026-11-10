@@ -6,6 +6,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getRecipients } from '@/lib/notify-config'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { WeeklyEmailRecipientsSchema } from '@/lib/schemas'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,34 +21,33 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrat
 const STALE_DAYS = 14
 
 // ── GET — scheduled trigger (GitHub Actions) ──────────────────────────────────
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandler(async (req: NextRequest) => {
   if (!process.env.CRON_SECRET) return NextResponse.json({ error: 'Server misconfigured: CRON_SECRET not set' }, { status: 500 })
   if (!isAuthorizedCron(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   return runSend()
-}
+})
 
 // ── POST — manual trigger from UI (requires valid Supabase session) ───────────
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandler(async (req: NextRequest) => {
   const authHeader = req.headers.get('authorization')
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
   if (error || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   return runSend()
-}
+})
 
 // ── PUT — update recipients list ─────────────────────────────────────────────
-export async function PUT(req: NextRequest) {
-  const { recipients } = await req.json()
-  if (!Array.isArray(recipients)) {
-    return NextResponse.json({ error: 'recipients must be an array' }, { status: 400 })
-  }
+export const PUT = withErrorHandler(async (req: NextRequest) => {
+  const parsed = WeeklyEmailRecipientsSchema.safeParse(await req.json())
+  if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+  const { recipients } = parsed.data
   const { error } = await supabaseAdmin
     .from('app_settings')
     .upsert({ key: 'pipeline_email_recipients', value: recipients, updated_at: new Date().toISOString() })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })
-}
+})
 
 // ── Core send logic ───────────────────────────────────────────────────────────
 async function runSend() {
