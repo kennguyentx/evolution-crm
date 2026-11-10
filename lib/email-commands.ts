@@ -13,7 +13,21 @@
  *
  * `deal_name` is always null here: the command grammar has no way to name
  * a deal, so the caller / LLM fills it from the email subject or attachment.
+ *
+ * Contact commands can carry a company per person:
+ *   "log new contact Jane Doe at Acme Corp"                  (one person)
+ *   "log new contact Jane Doe, John Smith at Acme Corp"      (shared company)
+ *   "log new contact Jane Doe at Acme, John Smith at Beta"   (per-person)
+ * The company lands in `contacts[].company`; `contactNames` stays the plain
+ * name list for existing consumers.
  */
+
+/** One person named by a contact command, with their company if given. */
+export interface ParsedContact {
+  name: string;
+  /** Company from "at <Company>", or null when the command didn't give one. */
+  company: string | null;
+}
 
 /** Exact stage enum strings used by the CRM. */
 export type Stage =
@@ -43,8 +57,10 @@ export interface ParsedEmailCommand {
   deal_name: string | null;
   /** For kind 'note'. */
   contactName: string | null;
-  /** For kind 'log-contact'. */
+  /** For kind 'log-contact': plain names (kept for existing consumers). */
   contactNames: string[];
+  /** For kind 'log-contact': names with per-person company, same order. */
+  contacts: ParsedContact[];
   /** The input with the matched command portion removed, trimmed. */
   noteText: string;
 }
@@ -177,6 +193,7 @@ const EMPTY: Omit<ParsedEmailCommand, 'kind' | 'noteText'> = {
   deal_name: null,
   contactName: null,
   contactNames: [],
+  contacts: [],
 };
 
 function noneResult(note: string): ParsedEmailCommand {
@@ -189,12 +206,60 @@ function removeSpan(note: string, start: number, end: number): string {
   return (note.slice(0, start) + note.slice(end)).trim().replace(/^[,;]\s*/, '');
 }
 
-/** Split a names fragment ("Jane Doe and John Smith, Nick Dreps") into names. */
-function splitNames(fragment: string): { names: string[]; end: number } {
-  const names: string[] = [];
+/** Corporate words that may appear lowercase inside a company name. */
+const COMPANY_SUFFIX_WORDS = new Set([
+  'inc', 'inc.', 'llc', 'ltd', 'ltd.', 'co', 'co.', 'corp', 'corp.', 'llp',
+  'lp', 'company', 'group', 'partners', 'holdings', 'capital', 'ventures',
+  'associates', 'advisors', 'consulting',
+]);
+
+const MAX_COMPANY_WORDS = 5;
+
+/**
+ * Capture a company name from the start of `text` (the part after " at ").
+ * Capitalized words and known corporate suffixes are kept; the capture stops
+ * at a lowercase non-suffix word or a ,/;/: separator — that's where trailing
+ * sentence text begins ("at Amped, she runs sourcing" -> "Amped").
+ */
+function captureCompanyWords(text: string): { company: string | null; end: number } {
+  const words: string[] = [];
   let end = 0;
+  let prevWordEnd = -1;
+  WORD_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = WORD_RE.exec(text)) !== null) {
+    if (words.length >= MAX_COMPANY_WORDS) break;
+    if (prevWordEnd >= 0 && /[,;:]/.test(text.slice(prevWordEnd, m.index))) break;
+    const raw = m[0];
+    const lower = raw.toLowerCase();
+    const isCapitalized = raw[0] === raw[0].toUpperCase();
+    if (!isCapitalized && !COMPANY_SUFFIX_WORDS.has(lower)) break;
+    words.push(stripTrailingPeriod(raw));
+    end = m.index + raw.length;
+    prevWordEnd = end;
+  }
+  return { company: words.length > 0 ? words.join(' ') : null, end };
+}
+
+/**
+ * Split a names fragment ("Jane Doe and John Smith, Nick Dreps") into
+ * contacts, picking up an optional "at <Company>" per person.
+ *
+ * Company attachment rules:
+ * - "Jane Doe at Acme, John Smith at Beta" — each person keeps their own.
+ * - "Jane Doe, John Smith at Acme" — a company on the LAST person, when it's
+ *   the only one given, is shared by everyone ("... , both at Acme" and a
+ *   trailing "at Acme" clause behave the same way).
+ * - "Jane Doe at Acme, John Smith" — no sharing: Acme stays Jane's.
+ */
+function splitNamesWithCompanies(
+  fragment: string,
+): { contacts: ParsedContact[]; end: number } {
+  const contacts: ParsedContact[] = [];
+  let end = 0;
+  let sharedCompany: string | null = null;
   // Walk the fragment keeping each segment's offset so `end` lands exactly
-  // after the last kept name (trailing sentence text stays in noteText).
+  // after the last consumed token (trailing sentence text stays in noteText).
   const segments: { text: string; start: number }[] = [];
   let last = 0;
   NAME_SPLIT_RE.lastIndex = 0;
@@ -208,17 +273,57 @@ function splitNames(fragment: string): { names: string[]; end: number } {
   segments.forEach((seg, i) => {
     const text = seg.text.trim();
     if (!text) return;
+    const leadOffset = seg.start + (seg.text.length - seg.text.trimStart().length);
+
+    // A segment that is ONLY a company clause ("both at Amped", "at Amped")
+    // sets the shared company and names nobody new.
+    const clause = /^(?:both\s+|all\s+)?at\s+/i.exec(text);
+    if (clause && contacts.length > 0) {
+      const { company, end: cEnd } = captureCompanyWords(text.slice(clause[0].length));
+      if (company) {
+        sharedCompany = company;
+        end = Math.max(end, leadOffset + clause[0].length + cEnd);
+      }
+      return;
+    }
+
     const isFirst = i === 0;
     // Later segments must look like a person name (capitalized first word);
-    // otherwise they are trailing sentence text ("both at Amped").
+    // otherwise they are trailing sentence text.
     if (!isFirst && !/^[A-Z]/.test(text)) return;
-    const { name, end: nameEnd } = captureNameWords(text);
+
+    // Optional " at <Company>" inside this segment.
+    const atMatch = /\s+at\s+/i.exec(text);
+    const namePart = atMatch ? text.slice(0, atMatch.index) : text;
+    const { name, end: nameEnd } = captureNameWords(namePart);
     if (!name) return;
-    names.push(name);
-    // `end` is relative to the fragment; account for leading trim offset.
-    end = seg.start + (seg.text.length - seg.text.trimStart().length) + nameEnd;
+    let company: string | null = null;
+    let consumed = nameEnd;
+    if (atMatch) {
+      const compText = text.slice(atMatch.index + atMatch[0].length);
+      const cc = captureCompanyWords(compText);
+      if (cc.company) {
+        company = cc.company;
+        consumed = atMatch.index + atMatch[0].length + cc.end;
+      }
+    }
+    contacts.push({ name, company });
+    end = leadOffset + consumed;
   });
-  return { names, end };
+
+  // Trailing-company sharing: "Jane Doe, John Smith at Acme" — the last
+  // person's company is the only one given, so it covers the whole list.
+  if (!sharedCompany && contacts.length > 1) {
+    const withCompany = contacts.filter((c) => c.company);
+    const lastContact = contacts[contacts.length - 1];
+    if (withCompany.length === 1 && lastContact.company) {
+      sharedCompany = lastContact.company;
+    }
+  }
+  if (sharedCompany) {
+    for (const c of contacts) if (!c.company) c.company = sharedCompany;
+  }
+  return { contacts, end };
 }
 
 interface Match {
@@ -276,11 +381,16 @@ function tryLogContact(note: string): Match | null {
     const after = lc.index + lc[0].length;
     const lineEnd = note.indexOf('\n', after);
     const restOfLine = note.slice(after, lineEnd === -1 ? undefined : lineEnd);
-    const { names, end: namesEnd } = splitNames(restOfLine);
+    const { contacts, end: namesEnd } = splitNamesWithCompanies(restOfLine);
     candidates.push({
       start: lc.index,
-      end: names.length > 0 ? after + namesEnd : after,
-      build: () => ({ kind: 'log-contact', ...EMPTY, contactNames: names }),
+      end: contacts.length > 0 ? after + namesEnd : after,
+      build: () => ({
+        kind: 'log-contact',
+        ...EMPTY,
+        contactNames: contacts.map((c) => c.name),
+        contacts,
+      }),
     });
   }
 
@@ -289,13 +399,18 @@ function tryLogContact(note: string): Match | null {
   for (const re of [ADD_TO_CONTACTS_RE, LOG_AS_CONTACTS_RE]) {
     const m = re.exec(note);
     if (!m) continue;
-    const { names } = splitNames(m[1]);
-    if (names.length === 0) continue;
+    const { contacts } = splitNamesWithCompanies(m[1]);
+    if (contacts.length === 0) continue;
     const end = m.index + m[0].length;
     candidates.push({
       start: m.index,
       end,
-      build: () => ({ kind: 'log-contact', ...EMPTY, contactNames: names }),
+      build: () => ({
+        kind: 'log-contact',
+        ...EMPTY,
+        contactNames: contacts.map((c) => c.name),
+        contacts,
+      }),
     });
   }
 
@@ -316,12 +431,17 @@ function tryLogContact(note: string): Match | null {
       !BARE_ADD_GUARD_WORDS.has(firstLower) &&
       !isDealOrStageWord
     ) {
-      const { names, end: namesEnd } = splitNames(restOfLine);
-      if (names.length > 0) {
+      const { contacts, end: namesEnd } = splitNamesWithCompanies(restOfLine);
+      if (contacts.length > 0) {
         candidates.push({
           start: bare.index,
           end: after + namesEnd,
-          build: () => ({ kind: 'log-contact', ...EMPTY, contactNames: names }),
+          build: () => ({
+            kind: 'log-contact',
+            ...EMPTY,
+            contactNames: contacts.map((c) => c.name),
+            contacts,
+          }),
         });
       }
     }
