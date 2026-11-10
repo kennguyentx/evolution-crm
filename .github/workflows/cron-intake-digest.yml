@@ -1,0 +1,19 @@
+name: Daily intake digest
+
+# MANUAL BACKUP ONLY — real scheduler is Vercel native crons (vercel.json).
+on:
+  workflow_dispatch: {}
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    env:
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+    steps:
+      - name: Intake digest
+        run: |
+          code=$(curl -s -o /tmp/out.txt -w "%{http_code}" \
+            -H "x-cron-secret: $CRON_SECRET" \
+            "https://nexus.evolutionstrategy.com/api/intake/daily-digest")
+          echo "intake/daily-digest -> HTTP $code"; cat /tmp/out.txt; echo
+          test "$code" -ge 200 -a "$code" -lt 300
