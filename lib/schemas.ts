@@ -44,7 +44,26 @@ export const IntakeQueueActionSchema = z.object({
     ebitda:            z.number().optional().nullable(),
     description:       z.string().max(5000).optional().nullable(),
     financial_summary: z.string().max(5000).optional().nullable(),
+    // Note-append queue items: the contact the note should be filed under,
+    // picked by the reviewer from the candidates shown in the intake UI.
+    contact_id:        z.string().uuid().optional(),
   }).optional(),
+})
+
+// ── Notes ─────────────────────────────────────────────────────────────────────
+
+export const NoteCreateSchema = z.object({
+  note_date:            z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').optional(),
+  raw_text:             z.string().min(1, 'Note text is required').max(20000),
+  summary:              z.string().max(10000).optional().nullable(),
+  next_steps:           z.string().max(2000).optional().nullable(),
+  logged_by:            z.string().max(200).optional().nullable(),
+  source:               z.string().max(50).optional(),
+  deal_id:              z.string().uuid().optional().nullable(),
+  contact_id:           z.string().uuid().optional().nullable(),
+  portfolio_company_id: z.string().uuid().optional().nullable(),
+  raise_id:             z.string().uuid().optional().nullable(),
+  capital_contact_id:   z.string().uuid().optional().nullable(),
 })
 
 // ── Deals ─────────────────────────────────────────────────────────────────────
