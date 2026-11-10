@@ -12,7 +12,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getRecipients } from '@/lib/notify-config'
 import { isAuthorizedCron } from '@/lib/cron-auth'
-import { fetchUnsentEvents, markEventsSent, type IntakeEvent, type IntakeEventKind } from '@/lib/intake-events'
+import { fetchUnsentEvents, markEventsSent, type IntakeEvent } from '@/lib/intake-events'
+import { DIGEST_SECTIONS, groupEventsByDate, digestItemNumbers } from '@/lib/digest-format'
+import { digestMarker } from '@/lib/digest-reply'
 import { createLogger } from '@/lib/log'
 
 const log = createLogger('intake/daily-digest')
@@ -83,8 +85,13 @@ async function runSend() {
   }
 
   const dateLabel = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' })
-  const html = buildHtml(events, dateLabel)
-  const text = buildText(events, dateLabel)
+  // One timestamp for the whole batch: it goes into the body as the reply
+  // marker AND becomes every event's digest_sent_at, so a reply can be
+  // matched back to exactly this numbered list (lib/digest-reply.ts).
+  const batchTs = new Date().toISOString()
+  const numbers = digestItemNumbers(events)
+  const html = buildHtml(events, dateLabel, numbers, batchTs)
+  const text = buildText(events, dateLabel, numbers, batchTs)
 
   log.info('sending digest', { recipients: recipients.length, events: events.length })
   const res = await fetch('https://api.postmarkapp.com/email', {
@@ -96,7 +103,11 @@ async function runSend() {
     },
     body: JSON.stringify({
       From: 'intake@evolutionstrategy.com',
-      ReplyTo: 'ken@evolutionstrategy.com',
+      // Replies go back to the intake inbox (the same address forwards are
+      // sent to), where the email route recognizes them via the body marker
+      // and executes the instructions. Previously this pointed at Ken's own
+      // inbox and replies never reached Nexus.
+      ReplyTo: 'intake@evolutionstrategy.com',
       To: recipients.join(', '),
       Subject: `Intake digest — ${dateLabel}`,
       HtmlBody: html,
@@ -118,7 +129,7 @@ async function runSend() {
   }
 
   // Only mark sent after a confirmed send — a failed send retries tomorrow.
-  await markEventsSent(supabaseAdmin, events.map(e => e.id))
+  await markEventsSent(supabaseAdmin, events.map(e => e.id), batchTs)
 
   return NextResponse.json({
     success: true,
@@ -134,36 +145,12 @@ async function runSend() {
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-interface Section {
-  kinds: IntakeEventKind[]
-  title: string
-  intro: string
-}
-
-// Order matters: action-needed first, then what happened, then failures.
-const SECTIONS: Section[] = [
-  { kinds: ['ambiguous'],     title: 'Needs your pick',    intro: 'Could not resolve — pick the right one in the intake queue:' },
-  { kinds: ['deal-logged'],   title: 'Deals logged',       intro: '' },
-  { kinds: ['deal-updated'],  title: 'Deals updated',      intro: '' },
-  { kinds: ['deal-queued'],   title: 'Queued for review',  intro: 'Waiting in the intake queue:' },
-  { kinds: ['contact-logged'], title: 'Contacts logged',   intro: '' },
-  { kinds: ['note-appended', 'note-logged'], title: 'Notes filed', intro: '' },
-  { kinds: ['failed'],        title: 'Failed — resend',    intro: 'These did not process. Forward them again:' },
-  { kinds: ['skipped'],       title: 'Skipped',            intro: '' },
-]
+// Section layout, date grouping, and item numbering live in
+// lib/digest-format.ts — shared with the digest-reply handler so printed
+// item numbers always match what a reply can reference.
 
 function fmtEventDate(d: string): string {
   return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/Chicago' })
-}
-
-function groupByDate(events: IntakeEvent[]): { date: string; events: IntakeEvent[] }[] {
-  const map = new Map<string, IntakeEvent[]>()
-  for (const e of events) {
-    const list = map.get(e.event_date) ?? []
-    list.push(e)
-    map.set(e.event_date, list)
-  }
-  return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([date, evts]) => ({ date, events: evts }))
 }
 
 function eventLinks(e: IntakeEvent): { deal?: string; queue?: string } {
@@ -173,8 +160,9 @@ function eventLinks(e: IntakeEvent): { deal?: string; queue?: string } {
   }
 }
 
-// One line per event, with links where they exist.
-function eventLine(e: IntakeEvent): { html: string; text: string } {
+// One line per event, with links where they exist. `n` is the item number
+// a digest reply can reference ("approve 2", "3: log as pre-loi").
+function eventLine(e: IntakeEvent, n: number): { html: string; text: string } {
   const { deal, queue } = eventLinks(e)
   const d = e.detail ?? {}
   const extra: string[] = []
@@ -196,35 +184,45 @@ function eventLine(e: IntakeEvent): { html: string; text: string } {
     summaryText += ` (review: ${queue})`
   }
   return {
-    html: `<div style="font-size:13px;color:#334155;line-height:1.5;padding:6px 0;border-bottom:1px solid #f1f5f9;">• ${summaryHtml}${suffix ? `<span style="color:#64748b;">${esc(suffix)}</span>` : ''}</div>`,
-    text: `  • ${summaryText}${suffix}\n`,
+    html: `<div style="font-size:13px;color:#334155;line-height:1.5;padding:6px 0;border-bottom:1px solid #f1f5f9;"><span style="font-weight:700;color:#0f172a;">${n}.</span> ${summaryHtml}${suffix ? `<span style="color:#64748b;">${esc(suffix)}</span>` : ''}</div>`,
+    text: `  ${n}. ${summaryText}${suffix}\n`,
   }
 }
 
-function buildText(events: IntakeEvent[], dateLabel: string): string {
+// The reply grammar, printed in every digest footer. Keep in sync with
+// lib/digest-reply.ts (parseReplyInstructions) — this is the user-facing
+// contract for what a reply can say.
+const REPLY_FOOTER_LINES = [
+  'REPLY TO THIS EMAIL TO ACT ON IT — one instruction per line:',
+  '  approve 2 / reject 2 — decide a queued item (a name works too: approve Project Anchor)',
+  '  3: log as pre-loi — change item 3\'s deal stage',
+  '  note for <Name>: <text> · log new contact <Name> at <Company> · ask: <question>',
+]
+
+function buildText(events: IntakeEvent[], dateLabel: string, numbers: Map<string, number>, batchTs: string): string {
   const div = '─'.repeat(48)
   let out = `NEXUS — INTAKE DIGEST\n${dateLabel}\n\n`
-  const dates = groupByDate(events)
+  const dates = groupEventsByDate(events)
   for (const { date, events: dayEvents } of dates) {
     if (dates.length > 1) out += `${div}\n${fmtEventDate(date).toUpperCase()}\n${div}\n`
-    for (const section of SECTIONS) {
+    for (const section of DIGEST_SECTIONS) {
       const items = dayEvents.filter(e => section.kinds.includes(e.kind))
       if (!items.length) continue
       out += `\n${section.title.toUpperCase()} (${items.length})\n`
       if (section.intro) out += `${section.intro}\n`
-      for (const e of items) out += eventLine(e).text
+      for (const e of items) out += eventLine(e, numbers.get(e.id) ?? 0).text
     }
     out += '\n'
   }
-  out += `${div}\nReview the intake queue: ${APP_URL}/intake\n`
+  out += `${div}\n${REPLY_FOOTER_LINES.join('\n')}\nReview the intake queue: ${APP_URL}/intake\n${digestMarker(batchTs)}\n`
   return out
 }
 
-function buildHtml(events: IntakeEvent[], dateLabel: string): string {
-  const dates = groupByDate(events)
+function buildHtml(events: IntakeEvent[], dateLabel: string, numbers: Map<string, number>, batchTs: string): string {
+  const dates = groupEventsByDate(events)
 
   const dateBlock = ({ date, events: dayEvents }: { date: string; events: IntakeEvent[] }) => {
-    const sections = SECTIONS.map(section => {
+    const sections = DIGEST_SECTIONS.map(section => {
       const items = dayEvents.filter(e => section.kinds.includes(e.kind))
       if (!items.length) return ''
       return `
@@ -235,7 +233,7 @@ function buildHtml(events: IntakeEvent[], dateLabel: string): string {
           <div style="flex:1;height:1px;background:#f1f5f9;"></div>
         </div>
         ${section.intro ? `<p style="margin:0 0 6px;font-size:12px;color:#64748b;">${esc(section.intro)}</p>` : ''}
-        ${items.map(e => eventLine(e).html).join('')}
+        ${items.map(e => eventLine(e, numbers.get(e.id) ?? 0).html).join('')}
       </div>`
     }).join('')
     return `
@@ -264,7 +262,10 @@ function buildHtml(events: IntakeEvent[], dateLabel: string): string {
             <h1 style="margin:0 0 4px;font-size:20px;font-weight:700;color:#0f172a;">Intake Digest</h1>
             <p style="margin:0 0 20px;font-size:13px;color:#64748b;">${dateLabel} · ${events.length} event${events.length !== 1 ? 's' : ''}</p>
             ${dates.map(dateBlock).join('')}
-            <a href="${APP_URL}/intake" style="display:inline-block;background:#0f172a;color:#ffffff;font-size:13px;font-weight:600;padding:10px 20px;border-radius:7px;text-decoration:none;margin-bottom:28px;">Review Intake Queue →</a>
+            <a href="${APP_URL}/intake" style="display:inline-block;background:#0f172a;color:#ffffff;font-size:13px;font-weight:600;padding:10px 20px;border-radius:7px;text-decoration:none;margin-bottom:16px;">Review Intake Queue →</a>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;padding:12px 16px;margin-bottom:28px;">
+              <p style="margin:0;font-size:12px;line-height:1.6;color:#475569;">${REPLY_FOOTER_LINES.map(esc).join('<br>')}</p>
+            </div>
           </td>
         </tr>
 
@@ -272,6 +273,7 @@ function buildHtml(events: IntakeEvent[], dateLabel: string): string {
         <tr>
           <td style="padding:16px 28px;border-top:1px solid #f1f5f9;">
             <p style="margin:0;font-size:11px;color:#94a3b8;">Nexus · Evolution Strategy Partners · <a href="${APP_URL}" style="color:#94a3b8;">nexus.evolutionstrategy.com</a></p>
+            <p style="margin:4px 0 0;font-size:10px;color:#cbd5e1;">${esc(digestMarker(batchTs))}</p>
           </td>
         </tr>
 
