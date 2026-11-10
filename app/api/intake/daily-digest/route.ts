@@ -1,8 +1,12 @@
 // app/api/intake/daily-digest/route.ts
-// Daily intake digest — fired by Vercel Cron every morning (13:00 UTC) and by
-// the manual-backup GitHub workflow. Batches the previous day's email-intake
-// outcomes (logged, queued, ambiguous, failed) into ONE email. If there was
-// no intake activity since the last digest, NO email is sent at all.
+// Daily intake digest — scheduled by Vercel Cron twice every morning (12:00
+// and 13:00 UTC) and gated inside runSend to 07:00 America/Chicago, so it
+// lands at 7am CT year-round (12:00 UTC during CDT, 13:00 UTC during CST).
+// Also reachable via the manual-backup GitHub workflow (same gated GET) and
+// via POST for manual sends from the UI (ungated — a human pressing send
+// always sends). Batches the previous day's email-intake outcomes (logged,
+// queued, ambiguous, failed) into ONE email. If there was no intake activity
+// since the last digest, NO email is sent at all.
 //
 // Events are recorded by the intake route into intake_events
 // (lib/intake-events.ts) and marked sent here. Also accepts POST for manual
@@ -13,6 +17,7 @@ import { createClient } from '@supabase/supabase-js'
 import { getRecipients } from '@/lib/notify-config'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { fetchUnsentEvents, markEventsSent, type IntakeEvent, type IntakeEventKind } from '@/lib/intake-events'
+import { isDigestHourInChicago } from '@/lib/digest-schedule'
 import { createLogger } from '@/lib/log'
 
 const log = createLogger('intake/daily-digest')
@@ -30,7 +35,7 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrat
 export async function GET(req: NextRequest) {
   if (!process.env.CRON_SECRET) return NextResponse.json({ error: 'Server misconfigured: CRON_SECRET not set' }, { status: 500 })
   if (!isAuthorizedCron(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  return runSend()
+  return runSend({ scheduled: true })
 }
 
 // ── POST — manual trigger from UI (requires valid Supabase session) ───────────
@@ -40,7 +45,7 @@ export async function POST(req: NextRequest) {
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
   if (error || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  return runSend()
+  return runSend({ scheduled: false })
 }
 
 // ── PUT — update recipients list ─────────────────────────────────────────────
@@ -57,7 +62,17 @@ export async function PUT(req: NextRequest) {
 }
 
 // ── Core send logic ───────────────────────────────────────────────────────────
-async function runSend() {
+async function runSend(opts: { scheduled: boolean }) {
+  // Scheduled firings are pinned to 07:00 America/Chicago: vercel.json fires
+  // at both 12:00 and 13:00 UTC, and only the firing that lands inside
+  // Chicago's 7am hour sends. A skipped firing returns success WITHOUT
+  // touching intake_events, so the events stay queued for the real 7am
+  // firing. Manual POST sends (scheduled: false) are never gated.
+  if (opts.scheduled && !isDigestHourInChicago(new Date())) {
+    log.info('scheduled digest skipped — not 07:00 America/Chicago')
+    return NextResponse.json({ success: true, sent: false, reason: 'Not 07:00 America/Chicago — skipped' })
+  }
+
   const recipients = await getRecipients('intake_digest_recipients')
   if (!recipients.length) {
     return NextResponse.json({ error: 'No recipients configured' }, { status: 400 })
