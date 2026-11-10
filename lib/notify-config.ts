@@ -6,6 +6,7 @@
 //   pipeline_email_recipients  — weekly pipeline digest
 //   deal_notify_recipients     — new deal approvals + LOI alerts
 //   portfolio_news_recipients  — daily portfolio news email
+//   intake_digest_recipients   — daily intake digest
 
 import { createClient } from '@supabase/supabase-js'
 
@@ -21,6 +22,7 @@ const FALLBACKS: Record<string, string[]> = {
   deal_notify_recipients:    ['ken@evolutionstrategy.com', 'sean@evolutionstrategy.com'],
   portfolio_news_recipients: ['ken@evolutionstrategy.com', 'sean@evolutionstrategy.com'],
   pipeline_email_recipients: ['ken@evolutionstrategy.com', 'sean@evolutionstrategy.com'],
+  intake_digest_recipients:  ['ken@evolutionstrategy.com', 'sean@evolutionstrategy.com'],
 }
 
 export async function getRecipients(key: string): Promise<string[]> {

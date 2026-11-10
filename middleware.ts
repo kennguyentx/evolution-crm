@@ -17,6 +17,7 @@ const CRON_API_ROUTES = [
   '/api/digest',
   '/api/portfolio-news/daily-email',
   '/api/deals/loi-alerts',
+  '/api/intake/daily-digest',
 ]
 
 export async function middleware(req: NextRequest) {

@@ -2,6 +2,9 @@ import { resolveDealStatus, resolveEffectiveStage, resolveIntakeStage } from '@/
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
+import { upsertContacts, findContactCandidates } from '@/lib/contacts'
+import { parseEmailCommand, type ParsedEmailCommand } from '@/lib/email-commands'
+import { recordIntakeEvent } from '@/lib/intake-events'
 import { dropboxConfigured, dropboxUpload, dropboxMove, expectedDropboxFolder, uniqueDropboxFolder } from '@/lib/dropbox'
 import { parseAiJson, extractText } from '@/lib/ai-json'
 import { AI_MODELS } from '@/lib/ai-config'
@@ -236,6 +239,19 @@ function todayCST(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date())
 }
 
+// ── Rebuild the forwarder's command as a one-line summary for the queue UI ──
+// (the parser returns slots, not the matched text).
+function commandSummary(cmd: ParsedEmailCommand): string | null {
+  if (cmd.kind === 'log-deal') {
+    return `log as ${cmd.stage ?? '?'}${cmd.deal_type ? ` as ${cmd.deal_type}` : ''}${cmd.parent_portco ? ` for ${cmd.parent_portco}` : ''}`
+  }
+  if (cmd.kind === 'log-contact') {
+    return cmd.contactNames.length ? `log new contact ${cmd.contactNames.join(', ')}` : 'log new contact'
+  }
+  if (cmd.kind === 'note' && cmd.contactName) return `note for ${cmd.contactName}`
+  return null
+}
+
 // ── Parse forwarding note for explicit instructions ───────────────────────────
 // ── Filter out internal email addresses ───────────────────────────────────────
 function isInternal(email: string | null | undefined): boolean {
@@ -283,7 +299,7 @@ async function parseForwardingNote(bodyText: string, emailHeaders: { from: strin
   "deal_type": "platform | add-on | null",
   "parent_portco": "string or null — name of our EXISTING PORTFOLIO COMPANY that would acquire this target. Set when sender uses language like 'add-on for Amped', 'under Amped', 'bolt-on for Amped', 'for the Amped platform'. This is NOT the target company — it is the acquirer we already own.",
   "forwarder_note": "any context or commentary the sender added, else null",
-  "auto_approve": true or false — true if the sender made an explicit decision about how to log this deal. Examples that should be TRUE: "pass", "pass on this", "not for us", "no thanks", "skip", "hold", "park this", "closed", "done deal", or any clear stage like "submitted LOI". Default to TRUE for these short decisive phrases even without other context. Default to FALSE only when the email is purely informational (asking a question, sharing news, etc.).
+  "auto_approve": true or false — true if the sender made an explicit decision about how to log this deal. Examples that should be TRUE: "pass", "pass on this", "not for us", "no thanks", "skip", "hold", "park this", "closed", "done deal", "log as teaser", "log as pre-LOI", "log as <stage>" (any "log as <stage>" instruction is an explicit decision to log at that stage), or any clear stage like "submitted LOI". Default to TRUE for these short decisive phrases even without other context. Default to FALSE only when the email is purely informational (asking a question, sharing news, etc.).
 
   When auto_approve is true, ALSO set "stage" to the appropriate value:
   - "pass", "not for us", "no thanks", "skip" → "Pass (DOA)"
@@ -291,6 +307,7 @@ async function parseForwardingNote(bodyText: string, emailHeaders: { from: strin
   - "pass pre-LOI" → "Pass (Pre-LOI)"
   - "hold", "park" → "Hold"
   - "submitted LOI", "LOI out" → "LOI Submitted"
+  - "log as teaser" / "log as pre-LOI" / "log as hold" → the named stage (Teaser / Pre-LOI / Hold, etc.)
   - "closed", "done" → "Closed (Platform)" (or "Closed (Add-On)" if context suggests),
   "contacts": [
     {
@@ -326,84 +343,31 @@ If no contacts found, return contacts: [].`,
   }
 }
 
-// ── Upsert contacts (optionally link to a deal) ──────────────────────────────
-// Returns which contacts were newly created vs. already existed (by display name).
-async function upsertContacts(
-  supabase: any,
-  contacts: any[],
-  dealId?: string | null,
-): Promise<{ created: string[]; existing: string[] }> {
-  const created: string[] = []
-  const existingNames: string[] = []
-
-  for (const c of contacts) {
-    if (!c.name) continue
-    const parts = c.name.trim().split(/\s+/)
-    const firstName = parts[0]
-    const lastName  = parts.slice(1).join(' ') || ''
-    const display   = c.name.trim()
-
-    // Priority 1: match by email (most reliable — avoids merging same-name people)
-    let existing: any = null
-    if (c.email) {
-      const { data } = await supabase.from('contacts').select('id').ilike('email', c.email).limit(1).maybeSingle()
-      existing = data
-    }
-    // Priority 2: match by first + last name
-    if (!existing) {
-      const { data } = await supabase.from('contacts').select('id')
-        .ilike('first_name', firstName).ilike('last_name', lastName).limit(1).maybeSingle()
-      existing = data
-    }
-
-    let contactId = existing?.id
-
-    if (!contactId) {
-      const { data: newContact } = await supabase.from('contacts').insert({
-        first_name: firstName,
-        last_name:  lastName,
-        firm:       c.firm  || null,
-        title:      c.title || null,
-        email:      c.email || null,
-        phone:      c.phone || null,
-      }).select('id').single()
-      contactId = newContact?.id
-      if (contactId) created.push(display)
-    } else {
-      existingNames.push(display)
-    }
-
-    if (contactId && dealId) {
-      // Link contact to deal if not already linked
-      await supabase.from('contact_deal_links').upsert(
-        { contact_id: contactId, deal_id: dealId, role: c.role || 'Other' },
-        { onConflict: 'contact_id,deal_id', ignoreDuplicates: true }
-      )
-    }
-  }
-
-  return { created, existing: existingNames }
-}
-
 const ADD_NAME_STOPWORDS = new Set([
   'to','note','deal','this','that','them','it','its','the','a','an','me','my','new',
   'contact','contacts','him','her','his','their','and','as','in','on','for','all',
   'please','both','these','those','everyone','people','person',
 ])
 
-// Parse an "add … contacts" / "add <name>" instruction from the forwarder's own
-// note (top of the body) or the subject — NOT the forwarded thread below it.
+// Parse an "add … contacts" / "add <name>" / "log new contact" instruction from
+// the forwarder's own note (top of the body) or the subject — NOT the forwarded
+// thread below it.
 // Handles: "add contacts", "add nick dreps to contacts", "add John Smith",
-// "save Nick Dreps and Jane Doe as contacts", lowercase names, etc.
+// "save Nick Dreps and Jane Doe as contacts", "log new contact",
+// "log Jane Doe as contacts", lowercase names, etc.
+// NOTE: "log" is in the verb set, but "log as <stage> …" (a deal command) can
+// never trigger here — its name extraction yields nothing and there is no
+// "contact" word, so trigger stays false. The deterministic parser
+// (parseEmailCommand, kind 'log-contact') is checked first in POST anyway.
 function parseAddContactInstruction(topNote: string, subject: string): { trigger: boolean; names: string[] } {
   const combined = `${subject}\n${topNote}`.trim()
-  if (!/\b(add|save|file|store)\b/i.test(combined)) return { trigger: false, names: [] }
+  if (!/\b(add|save|file|store|log)\b/i.test(combined)) return { trigger: false, names: [] }
 
   const contactIntent = /\bcontacts?\b/i.test(combined)
 
   const names: string[] = []
-  // Grab the text after each add/save/file/store verb, within a line
-  const re = /\b(?:add|save|file|store)\s+(.+)/gi
+  // Grab the text after each add/save/file/store/log verb, within a line
+  const re = /\b(?:add|save|file|store|log)\s+(.+)/gi
   let m: RegExpExecArray | null
   while ((m = re.exec(combined)) !== null) {
     let rest = m[1]
@@ -517,12 +481,98 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
       }
     }
 
+    // ── Deterministic command parse (runs before the LLM) ───────────────────
+    // The forwarder's own note (top of body + subject) may carry an explicit
+    // command: "log as teaser as add-on for DiPonio", "log new contact",
+    // "note for <name>". Slots the parser matches win over anything the LLM
+    // says later; the LLM only fills what's left.
+    const topNote = topOfBody(text)
+    const command = parseEmailCommand(`${subject}\n${topNote}`)
+    if (command.kind !== 'none') {
+      console.log(`[email-intake] command: kind=${command.kind} stage=${command.stage} deal_type=${command.deal_type} parent=${command.parent_portco} contact=${command.contactName ?? command.contactNames.join(', ')}`)
+    }
+
+    // ── "Note for <name>" command ────────────────────────────────────────────
+    // File the forwarder's note under a specific contact. Resolves by exact
+    // name, then fuzzy; ambiguous (0 or 2+ matches) goes to the intake queue
+    // with candidates — the daily digest flags it and Ken picks in the queue.
+    // Never auto-creates a contact from a note command.
+    if (isInternal(from) && command.kind === 'note' && command.contactName) {
+      const name = command.contactName
+      // Re-parse the body alone so the filed note is just the forwarder's text
+      // with the command removed (no subject line in it).
+      let noteBody = parseEmailCommand(topNote).noteText
+      if (!noteBody.trim()) {
+        // The command was the whole note — the note is the forwarded thread.
+        const threadParts = text.split(/\n-{3,}|\r?\nFrom:|\r?\nOn .+wrote:|_{5,}/i)
+        noteBody = threadParts.slice(1).join('\n').trim()
+      }
+      const candidates = await findContactCandidates(supabase, name)
+      const display = (c: any) => `${c.first_name} ${c.last_name}${c.firm ? ` · ${c.firm}` : ''}`
+      if (candidates.length === 1 && noteBody.trim()) {
+        const { data: filedNote } = await supabase.from('notes').insert({
+          note_date: noteDate,
+          raw_text: noteBody.slice(0, 4000),
+          summary: noteBody.slice(0, 300),
+          logged_by: from.split('@')[0] ?? 'email',
+          source: 'email',
+          contact_id: candidates[0].id,
+        }).select('id').single()
+        await recordIntakeEvent(supabase, {
+          kind: 'note-appended',
+          summary: `Note filed under ${display(candidates[0])}`,
+          detail: { contact_name: display(candidates[0]), note_preview: noteBody.slice(0, 200), from },
+          contact_id: candidates[0].id,
+          message_id: messageId || null,
+        })
+        return NextResponse.json({ success: true, processed: [{ type: 'note-appended', contact_id: candidates[0].id, note_id: filedNote?.id }] })
+      }
+      // 0 or 2+ candidates, or an empty note → queue with candidates.
+      const ambiguity = !noteBody.trim()
+        ? `Note for "${name}" had no note text`
+        : candidates.length === 0
+          ? `No contact matched "${name}"`
+          : `${candidates.length} contacts matched "${name}"`
+      const { data: queued } = await supabase.from('intake_queue').insert({
+        source: 'email',
+        doc_type: 'note',
+        file_name: subject.slice(0, 200),
+        from_email: from,
+        extracted: {
+          _kind: 'note-append',
+          _contact_name: name,
+          _note_text: noteBody.slice(0, 4000),
+          _candidates: candidates,
+          _ambiguity: ambiguity,
+          _command: `note for ${name}`,
+          _command_source: 'deterministic',
+        },
+        status: 'pending',
+      }).select('id').single()
+      await recordIntakeEvent(supabase, {
+        kind: 'ambiguous',
+        summary: `Note for "${name}" needs a contact pick`,
+        detail: { reason: ambiguity, candidates: candidates.map(display), note_preview: noteBody.slice(0, 200), from },
+        queue_id: queued?.id ?? null,
+        message_id: messageId || null,
+      })
+      return NextResponse.json({ success: true, processed: [{ type: 'note-append', status: 'queued', queue_id: queued?.id }] })
+    }
+
     // ── "Add contact" path ────────────────────────────────────────────────────
-    // Forward an email and write "add contact" (or "save contacts") in your note →
-    // extract every person in the email and save them as standalone CRM contacts,
-    // no deal required. Internal senders only. Runs before deal/note processing.
-    const addParse = parseAddContactInstruction(topOfBody(text), subject)
-    if (isInternal(from) && addParse.trigger) {
+    // Forward an email and write "add contact" (or "save contacts", or
+    // "log new contact") in your note → extract every person in the email and
+    // save them as standalone CRM contacts, no deal required. Internal senders
+    // only. Runs before deal/note processing.
+    // Outcomes are recorded for the daily digest — no per-event reply email.
+    const addParse = parseAddContactInstruction(topNote, subject)
+    // The deterministic parser's "log new contact" / "log <names> as contacts"
+    // wins over the heuristic parser when it matched.
+    const addTrigger = addParse.trigger || command.kind === 'log-contact'
+    const addNames = command.kind === 'log-contact' && command.contactNames.length > 0
+      ? command.contactNames
+      : addParse.names
+    if (isInternal(from) && addTrigger) {
       console.log(`[email-intake] add-contact request from ${from} names=${JSON.stringify(addParse.names)}`)
       try {
         const emailContent = `From: ${from}\nSubject: ${subject}\n\n${text}`.trim()
@@ -554,7 +604,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
         // If the forwarder named specific people ("add John Smith"), add only those.
         // Match named people against the email-extracted contacts; if a named person
         // isn't found in the email, still create a bare contact from the name.
-        const requestedNames = addParse.names
+        const requestedNames = addNames
         let toAdd = merged
         if (requestedNames.length > 0) {
           const wanted = requestedNames.map(n => n.toLowerCase().trim())
@@ -573,32 +623,35 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
         }
 
         if (toAdd.length === 0) {
-          await sendAssistantReply({
-            to: from, subject,
-            answer: `I didn't find any contacts to add in that email (I skip internal @evolutionstrategy.com addresses). Make sure a name and ideally an email are in the forwarded message.\n\n— Nexus`,
-            inReplyTo: messageId || undefined,
+          await recordIntakeEvent(supabase, {
+            kind: 'skipped',
+            summary: 'Add-contact request: no contacts found in the email',
+            detail: { reason: 'No contacts found (internal addresses are skipped)', from, subject },
+            message_id: messageId || null,
           })
           return NextResponse.json({ success: true, processed: [{ type: 'add-contact', added: 0 }] })
         }
 
         const { created, existing } = await upsertContacts(supabase, toAdd, null)
-        const lines = [
-          created.length ? `Added ${created.length} new contact${created.length !== 1 ? 's' : ''}:\n- ${created.join('\n- ')}` : '',
-          existing.length ? `Already in Nexus (${existing.length}):\n- ${existing.join('\n- ')}` : '',
-        ].filter(Boolean).join('\n\n')
-        await sendAssistantReply({
-          to: from, subject,
-          answer: `${lines}\n\nView them in Nexus → Contacts.\n\n— Nexus`,
-          inReplyTo: messageId || undefined,
+        const summaryParts = [
+          created.length ? `Added ${created.length} new contact${created.length !== 1 ? 's' : ''}: ${created.join(', ')}` : '',
+          existing.length ? `Already in Nexus (${existing.length}): ${existing.join(', ')}` : '',
+        ].filter(Boolean)
+        await recordIntakeEvent(supabase, {
+          kind: 'contact-logged',
+          summary: summaryParts.join(' · ') || 'Add-contact request processed',
+          detail: { created, existing, from, subject },
+          message_id: messageId || null,
         })
         console.log(`[email-intake] add-contact: ${created.length} new, ${existing.length} existing`)
         return NextResponse.json({ success: true, processed: [{ type: 'add-contact', created: created.length, existing: existing.length }] })
       } catch (e: any) {
         console.error('[email-intake] add-contact failed:', e?.message)
-        await sendAssistantReply({
-          to: from, subject,
-          answer: `Sorry — I hit an error adding those contacts: ${e?.message || 'unknown error'}.\n\n— Nexus`,
-          inReplyTo: messageId || undefined,
+        await recordIntakeEvent(supabase, {
+          kind: 'failed',
+          summary: 'Add-contact request failed',
+          detail: { error: e?.message || 'unknown error', from, subject },
+          message_id: messageId || null,
         })
         return NextResponse.json({ success: false, error: e?.message }, { status: 200 })
       }
@@ -670,6 +723,40 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
         }
       }
 
+      // ── Deterministic command slots win over the LLM's guesses ─────────────
+      // An explicit "log as <stage>" is a decision: auto-approve at that stage.
+      // This also holds when the LLM call above failed and returned all-nulls.
+      if (command.kind === 'log-deal') {
+        if (command.stage) instructions.stage = command.stage
+        if (command.deal_type) instructions.deal_type = command.deal_type
+        if (command.parent_portco) instructions.parent_portco = command.parent_portco
+        if (command.stage) instructions.auto_approve = true
+      }
+
+      // ── Validate parent_portco against real portfolio companies ────────────
+      // A "for <name>" that isn't an Active portco queues as ambiguous with
+      // candidates instead of creating a deal with a bogus parent.
+      let parentAmbiguity: { reason: string; candidates: string[] } | null = null
+      if (instructions.parent_portco) {
+        try {
+          const { data: portcos } = await supabase.from('portfolio_companies').select('name').eq('status', 'Active')
+          const names = (portcos ?? []).map((p: any) => p.name as string)
+          const exact = names.find(n => n.toLowerCase() === instructions.parent_portco!.toLowerCase().trim())
+          if (exact) {
+            instructions.parent_portco = exact // normalize casing
+          } else {
+            const needle = instructions.parent_portco.toLowerCase().trim()
+            parentAmbiguity = {
+              reason: `Parent portco "${instructions.parent_portco}" is not in Nexus`,
+              candidates: names.filter(n => n.toLowerCase().includes(needle) || needle.includes(n.toLowerCase())),
+            }
+            instructions.auto_approve = false // force the queue branch below
+          }
+        } catch (e: any) {
+          console.warn(`[email-intake] Parent portco validation failed:`, e?.message)
+        }
+      }
+
       // ── Step 1: Separate NDAs (skip Claude, just upload) from deal docs ─────
       // Detecting NDAs by filename avoids wasting Claude Opus time on them.
       const isNdaFile = (name: string) => /nda|non.?disclosure/i.test(name)
@@ -705,10 +792,26 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
         } catch (e: any) {
           console.error(`[email-intake] Extract error (${fileName}):`, e?.message)
           results.push({ type: 'error', file: fileName, error: e?.message })
+          await recordIntakeEvent(supabase, {
+            kind: 'failed',
+            summary: `Failed to extract ${fileName}`,
+            detail: { error: e?.message, file: fileName, from },
+            message_id: messageId || null,
+          })
         }
       }
 
       if (extracted_docs.filter(d => d.extracted.doc_type !== 'nda').length === 0 && ndaAttachments.length === 0) {
+        // Nothing usable came out of the attachments. If the per-file errors
+        // above already recorded 'failed' events, don't double-report.
+        if (!results.some(r => r.type === 'error')) {
+          await recordIntakeEvent(supabase, {
+            kind: 'failed',
+            summary: `Could not process ${docAttachments.length} attachment(s) from "${subject.slice(0, 60)}"`,
+            detail: { files: docAttachments.map((a: any) => a.Name).join(', '), from },
+            message_id: messageId || null,
+          })
+        }
         return NextResponse.json({ success: true, processed: results })
       }
 
@@ -742,6 +845,12 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
           deal_id:    null,
         })
         results.push({ type: 'other', status: 'saved-as-note', files: allFileNames })
+        await recordIntakeEvent(supabase, {
+          kind: 'skipped',
+          summary: `Skipped deal creation for "${subject.slice(0, 60)}" — no company identified, saved as note`,
+          detail: { reason: 'doc_type=other, no company_name', files: allFileNames, from },
+          message_id: messageId || null,
+        })
         return NextResponse.json({ success: true, processed: results })
       }
 
@@ -949,6 +1058,13 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
         }
 
         results.push({ type: primary.extracted.doc_type, status: 'linked-to-existing', deal_id: existingDeal.id, files: allFileNames, company: primary.extracted.company_name })
+        await recordIntakeEvent(supabase, {
+          kind: 'deal-updated',
+          summary: `${docLabel} linked to existing deal ${primary.extracted.company_name} (${existingDeal.stage})`,
+          detail: { company: primary.extracted.company_name, stage: existingDeal.stage, file: allFileNames, from },
+          deal_id: existingDeal.id,
+          message_id: messageId || null,
+        })
 
       } else if (instructions.auto_approve && instructions.stage) {
         // ── New deal, auto-approved ──────────────────────────────────────────
@@ -1005,10 +1121,17 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
         }
 
         results.push({ type: primary.extracted.doc_type, status: 'auto-approved', stage, files: allFileNames, company: primary.extracted.company_name, deal_id: deal?.id })
+        await recordIntakeEvent(supabase, {
+          kind: 'deal-logged',
+          summary: `Logged ${primary.extracted.company_name ?? 'Unknown'} as ${stage}${primary.extracted.deal_type ? ` (${primary.extracted.deal_type})` : ''}${primary.extracted.parent_portco ? ` for ${primary.extracted.parent_portco}` : ''}`,
+          detail: { company: primary.extracted.company_name ?? null, stage, deal_type: primary.extracted.deal_type ?? null, parent_portco: primary.extracted.parent_portco ?? null, from, file: allFileNames },
+          deal_id: deal?.id ?? null,
+          message_id: messageId || null,
+        })
 
       } else {
         // ── New deal, pending review ─────────────────────────────────────────
-        await supabase.from('intake_queue').insert({
+        const { data: queuedItem } = await supabase.from('intake_queue').insert({
           source:       'email',
           doc_type:     primary.extracted.doc_type ?? 'teaser',
           file_name:    primary.fileName,
@@ -1020,8 +1143,23 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
             _supporting_files: supporting.map(d => d.fileName),
             _stage_suggestion: instructions.stage         || null,
             _forwarder_note:   instructions.forwarder_note || null,
+            // What the forwarder asked for, and how sure we are — shown in the queue UI.
+            _command:          command.kind === 'log-deal' ? commandSummary(command) : null,
+            _command_source:   command.kind === 'log-deal' ? 'deterministic' : 'llm',
+            _ambiguity:        parentAmbiguity?.reason ?? null,
+            _candidates:       parentAmbiguity?.candidates ?? [],
           },
           status: 'pending',
+        }).select('id').single()
+
+        await recordIntakeEvent(supabase, {
+          kind: parentAmbiguity ? 'ambiguous' : 'deal-queued',
+          summary: parentAmbiguity
+            ? `"${primary.extracted.company_name ?? 'Unknown'}" queued — ${parentAmbiguity.reason}`
+            : `Queued for review: ${primary.extracted.company_name ?? 'Unknown'}${instructions.stage ? ` (${instructions.stage})` : ''}`,
+          detail: { company: primary.extracted.company_name ?? null, stage: instructions.stage ?? null, reason: parentAmbiguity?.reason ?? null, candidates: parentAmbiguity?.candidates ?? [], from, file: primary.fileName },
+          queue_id: queuedItem?.id ?? null,
+          message_id: messageId || null,
         })
 
         await supabase.from('notes').insert({
@@ -1056,6 +1194,12 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
       .maybeSingle()
     if (existingBodyNote) {
       console.log(`[email-intake] Dedup: note already exists for subject "${subject}", skipping Path B`)
+      await recordIntakeEvent(supabase, {
+        kind: 'skipped',
+        summary: `Duplicate email body skipped: "${subject.slice(0, 60)}"`,
+        detail: { reason: 'duplicate email body', from },
+        message_id: messageId || null,
+      })
       return NextResponse.json({ success: true, processed: [{ type: 'skipped', reason: 'duplicate email body' }] })
     }
 
@@ -1064,6 +1208,14 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     // "file this under the Amped portfolio company", not an add-on acquisition.
     const pathBInstructions = await parseForwardingNote(text, { from, fromName, cc: ccFull })
     console.log(`[email-intake] Path B instructions:`, JSON.stringify(pathBInstructions))
+
+    // Deterministic command slots win (also holds when the LLM failed).
+    if (command.kind === 'log-deal') {
+      if (command.stage) pathBInstructions.stage = command.stage
+      if (command.deal_type) pathBInstructions.deal_type = command.deal_type
+      if (command.parent_portco) pathBInstructions.parent_portco = command.parent_portco
+      if (command.stage) pathBInstructions.auto_approve = true
+    }
 
     const emailContent = `From: ${from}\nSubject: ${subject}\nDate: ${date}\n\n${text}`.trim()
 
@@ -1205,6 +1357,18 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     }).select().single()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+    await recordIntakeEvent(supabase, {
+      kind: createdDeal ? 'deal-logged' : 'note-logged',
+      summary: createdDeal
+        ? `Logged ${createdDeal.company_name} as ${createdDeal.stage} from email`
+        : `Note saved from email: "${subject.slice(0, 60)}"`,
+      detail: { company: createdDeal?.company_name ?? null, stage: createdDeal?.stage ?? null, deal_name: parsed.deal_names?.[0] ?? null, from },
+      deal_id,
+      contact_id,
+      message_id: messageId || null,
+    })
+
     return NextResponse.json({
       success: true,
       processed: [{
@@ -1217,6 +1381,17 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
   } catch (err: any) {
     console.error('Email intake error:', err)
+    // Best-effort: a top-level failure is invisible otherwise — the digest
+    // surfaces it so a broken webhook doesn't silently drop intake.
+    try {
+      const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+      await recordIntakeEvent(sb, {
+        kind: 'failed',
+        summary: 'Email intake failed',
+        detail: { error: err.message },
+        message_id: null,
+      })
+    } catch { /* ignore — intake is already failing */ }
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 })

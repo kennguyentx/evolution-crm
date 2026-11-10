@@ -1226,6 +1226,73 @@ function TeaserContactRow({ contact, onUpdate, onSearch, onLinkCrm, onAddNew, on
   )
 }
 
+// ── Contact picker for note-append queue items ──────────────────────────────
+// Shows the resolver's candidates as one-tap buttons, plus a search for any
+// other contact. The parent keeps the picked { id, label } per queue item.
+function NoteContactPicker({ candidates, selectedId, onSelect }: {
+  candidates: any[]
+  selectedId: string | null
+  onSelect: (c: { id: string; label: string }) => void
+}) {
+  const supabase = createClient()
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<any[]>([])
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+
+  useEffect(() => {
+    if (!query.trim()) { setResults([]); return }
+    const t = setTimeout(async () => {
+      const { data } = await supabase.from('contacts').select('id, first_name, last_name, firm, email').or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,firm.ilike.%${query}%`).limit(8)
+      setResults(data || [])
+      setOpen(true)
+    }, 200)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const pick = (c: any) => {
+    onSelect({ id: c.id, label: `${c.first_name} ${c.last_name}${c.firm ? ` · ${c.firm}` : ''}` })
+    setQuery('')
+    setOpen(false)
+  }
+
+  return (
+    <div>
+      {candidates?.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+          {candidates.map((c: any) => (
+            <button key={c.id} onClick={() => pick(c)}
+              style={{ padding: '6px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border)', cursor: 'pointer', background: selectedId === c.id ? 'var(--accent)' : 'transparent', color: selectedId === c.id ? '#fff' : 'var(--text-secondary)', fontWeight: selectedId === c.id ? 600 : 400 }}>
+              {c.first_name} {c.last_name}{c.firm ? ` · ${c.firm}` : ''}
+            </button>
+          ))}
+        </div>
+      )}
+      <div ref={ref} style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }}>
+          <Search size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <input className="input" style={{ fontSize: '13px', paddingLeft: '30px' }} value={query} onChange={e => setQuery(e.target.value)} placeholder="Search contacts…" onFocus={() => { if (results.length) setOpen(true) }} />
+        </div>
+        {open && results.length > 0 && (
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '8px', marginTop: '4px', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', maxHeight: '220px', overflowY: 'auto' }}>
+            {results.map((c: any) => (
+              <div key={c.id} onClick={() => pick(c)} style={{ padding: '9px 12px', fontSize: '13px', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}>
+                {c.first_name} {c.last_name}{c.firm ? <span style={{ color: 'var(--text-muted)' }}> · {c.firm}</span> : ''}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── Pending Queue ─────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1239,6 +1306,8 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
   const [portcos, setPortcos] = useState<{id:string;name:string}[]>([])
   const [processing, setProcessing] = useState<string | null>(null)
   const [approveError, setApproveError] = useState<string | null>(null)
+  // Note-append items: the contact the reviewer picked, per queue item id
+  const [notePick, setNotePick] = useState<Record<string, { id: string; label: string }>>({})
 
   useEffect(() => {
     load()
@@ -1287,6 +1356,36 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
   async function handleApprove(item: any) {
     setProcessing(item.id)
     setApproveError(null)
+
+    // Note-append items: no deal — file the note under the picked contact.
+    if (item.extracted?._kind === 'note-append') {
+      const pick = notePick[item.id]
+      if (!pick?.id) {
+        setApproveError('Pick a contact to file this note under')
+        setProcessing(null)
+        return
+      }
+      try {
+        const res = await fetch(`/api/intake/queue/${item.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'approve', edited: { contact_id: pick.id } }),
+        })
+        const data = await res.json()
+        if (data.success) {
+          setItems(prev => prev.filter(i => i.id !== item.id))
+          setReviewing(null)
+          onApproved()
+        } else {
+          setApproveError(data.error || 'Something went wrong — check Supabase logs')
+        }
+      } catch (e: any) {
+        setApproveError(e?.message || 'Network error')
+      }
+      setProcessing(null)
+      return
+    }
+
     const edited = getEdit(item.id, item)
     try {
       const res = await fetch(`/api/intake/queue/${item.id}`, {
@@ -1344,14 +1443,16 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 18px', cursor: 'pointer' }} onClick={() => setReviewing(isOpen ? null : item.id)}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '14px', fontWeight: 600 }}>{ext.company_name ?? '—'}</span>
-                    <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: item.doc_type === 'cim' ? '#7c3aed' : '#2563eb', background: item.doc_type === 'cim' ? 'rgba(124,58,237,0.08)' : 'rgba(37,99,235,0.08)', borderRadius: '4px', padding: '1px 6px' }}>{item.doc_type?.toUpperCase() ?? 'DOC'}</span>
+                    <span style={{ fontSize: '14px', fontWeight: 600 }}>{ext._kind === 'note-append' ? `Note for ${ext._contact_name ?? '?'}` : (ext.company_name ?? '—')}</span>
+                    <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: ext._kind === 'note-append' ? '#059669' : item.doc_type === 'cim' ? '#7c3aed' : '#2563eb', background: ext._kind === 'note-append' ? 'rgba(5,150,105,0.08)' : item.doc_type === 'cim' ? 'rgba(124,58,237,0.08)' : 'rgba(37,99,235,0.08)', borderRadius: '4px', padding: '1px 6px' }}>{ext._kind === 'note-append' ? 'NOTE' : (item.doc_type?.toUpperCase() ?? 'DOC')}</span>
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>via email</span>
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    {ext.sector ?? ''}{ext.geography ? ` · ${ext.geography}` : ''}
+                    {ext._kind === 'note-append'
+                      ? (ext._note_text ? `${ext._note_text.slice(0, 120)}${ext._note_text.length > 120 ? '…' : ''}` : '')
+                      : (<>{ext.sector ?? ''}{ext.geography ? ` · ${ext.geography}` : ''}
                     {ext.revenue ? ` · $${(ext.revenue / 1e6).toFixed(1)}M rev` : ''}
-                    {ext.ebitda  ? ` · $${(ext.ebitda  / 1e6).toFixed(1)}M EBITDA` : ''}
+                    {ext.ebitda  ? ` · $${(ext.ebitda  / 1e6).toFixed(1)}M EBITDA` : ''}</>)}
                   </div>
                 </div>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}>
@@ -1363,8 +1464,69 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
               {/* Expanded review panel */}
               {isOpen && (
                 <div style={{ borderTop: '1px solid var(--border)', padding: '18px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {ext._kind === 'note-append' ? (
+                    <>
+                      <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{ext._note_text}</p>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        Heard as: <strong>{ext._contact_name ?? '?'}</strong>
+                        {ext._ambiguity ? ` — ${ext._ambiguity}` : ' — pick the right contact below'}
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>File under</label>
+                        <NoteContactPicker
+                          candidates={ext._candidates ?? []}
+                          selectedId={notePick[item.id]?.id ?? null}
+                          onSelect={c => setNotePick(prev => ({ ...prev, [item.id]: c }))}
+                        />
+                        {notePick[item.id] && (
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '6px' }}>Selected: <strong>{notePick[item.id].label}</strong></div>
+                        )}
+                      </div>
+                      {item.from_email && (
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                          Forwarded by <strong>{item.from_email}</strong> · {item.file_name}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: '8px', paddingTop: '4px' }}>
+                        <button
+                          onClick={() => handleApprove(item)}
+                          disabled={!!isProcessing || !notePick[item.id]}
+                          className="btn btn-primary"
+                          style={{ fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          {isProcessing ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={13} />}
+                          File Note
+                        </button>
+                        <button
+                          onClick={() => handleReject(item.id)}
+                          disabled={!!isProcessing}
+                          style={{ padding: '8px 14px', fontSize: '13px', borderRadius: '7px', border: '1px solid var(--border)', background: 'white', color: 'var(--text-muted)', cursor: 'pointer' }}
+                        >
+                          Discard
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
                   {ext.description && (
                     <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{ext.description}</p>
+                  )}
+
+                  {/* Parsed command — what the forwarder asked for, and how sure we are */}
+                  {(ext._command || ext._ambiguity) && (
+                    <div style={{ padding: '10px 12px', borderRadius: '7px', background: '#f8fafc', border: '1px solid var(--border)', fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {ext._command && (
+                        <div>Command: <strong style={{ color: 'var(--text-primary)' }}>{ext._command}</strong>{' '}
+                          <span style={{ fontSize: '11px', fontWeight: 600, color: ext._command_source === 'deterministic' ? '#15803d' : '#92400e', background: ext._command_source === 'deterministic' ? '#dcfce7' : '#fef3c7', borderRadius: '4px', padding: '1px 6px' }}>
+                            {ext._command_source === 'deterministic' ? 'from your note' : 'LLM guess'}
+                          </span>
+                        </div>
+                      )}
+                      {ext._ambiguity && (<div>⚠️ {ext._ambiguity}</div>)}
+                      {Array.isArray(ext._candidates) && ext._candidates.length > 0 && (
+                        <div>Candidates: {ext._candidates.map((c: any) => typeof c === 'string' ? c : `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim()).join(', ')}</div>
+                      )}
+                    </div>
                   )}
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -1467,6 +1629,9 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
                       Discard
                     </button>
                   </div>
+
+                    </>
+                  )}
 
                   {/* Approve error */}
                   {approveError && reviewing === item.id && (
