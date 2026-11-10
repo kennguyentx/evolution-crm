@@ -13,13 +13,21 @@ const ROLE_TO_CONTACT_TYPE: Record<string, 'banker' | 'management' | 'advisor' |
 
 // ── Upsert contacts (optionally link to a deal) ──────────────────────────────
 // Returns which contacts were newly created vs. already existed (by display name).
+//
+// opts.fillBlanks (opt-in, used by the email add-contact path): when a contact
+// already exists, fill its EMPTY firm/title/email/phone from the incoming
+// values. Non-empty fields are never overwritten. Default behavior (no opts)
+// is unchanged — existing contacts are left exactly as they are.
 export async function upsertContacts(
   supabase: any,
   contacts: any[],
   dealId?: string | null,
+  opts?: { fillBlanks?: boolean },
 ): Promise<{ created: string[]; existing: string[] }> {
   const created: string[] = []
   const existingNames: string[] = []
+  const fillBlanks = !!opts?.fillBlanks
+  const matchCols = fillBlanks ? 'id, firm, title, email, phone' : 'id'
 
   for (const c of contacts) {
     if (!c.name) continue
@@ -31,17 +39,28 @@ export async function upsertContacts(
     // Priority 1: match by email (most reliable — avoids merging same-name people)
     let existing: any = null
     if (c.email) {
-      const { data } = await supabase.from('contacts').select('id').ilike('email', c.email).limit(1).maybeSingle()
+      const { data } = await supabase.from('contacts').select(matchCols).ilike('email', c.email).limit(1).maybeSingle()
       existing = data
     }
     // Priority 2: match by first + last name
     if (!existing) {
-      const { data } = await supabase.from('contacts').select('id')
+      const { data } = await supabase.from('contacts').select(matchCols)
         .ilike('first_name', firstName).ilike('last_name', lastName).limit(1).maybeSingle()
       existing = data
     }
 
     let contactId = existing?.id
+
+    if (contactId && fillBlanks) {
+      // Fill only the blanks — never overwrite what's already on the record.
+      const patch: Record<string, any> = {}
+      for (const field of ['firm', 'title', 'email', 'phone'] as const) {
+        if (!existing[field] && c[field]) patch[field] = c[field]
+      }
+      if (Object.keys(patch).length > 0) {
+        await supabase.from('contacts').update(patch).eq('id', contactId)
+      }
+    }
 
     if (!contactId) {
       // Bare creates get a contact_type so the row is complete even when the
