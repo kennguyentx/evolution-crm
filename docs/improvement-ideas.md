@@ -9,11 +9,12 @@ How to use this file: paste the whole thing to Claude Code, or pick items one at
 time. Every item is self-contained: what to change, the file(s), and why.
 Suggested order at the bottom.
 
-**Update Nov 8, 2026:** items 1, 5, 11, and 43 are done (commit `f2f5ac6` on
-`main`, Nov 8, 2026 — see the Status lines on those items). Item 20 is partly
-done: the CI workflow and the `typecheck` script now exist, but there is still
-no ESLint config, so the CI lint step will hang until one is created — do that
-before anything else in item 20.
+**Update Nov 10, 2026:** items 1, 5, 11, 20, and 43 are done (see the Status
+lines on those items). Item 2 is moot — Ken decided Nov 8, 2026 he does not
+want the portfolio-news email scheduled. Items 44, 45, 46, and 50 are specced
+but not implemented — the spec is `docs/dropbox-folder-moves.md` on `main`
+(commit `7baf518`, Nov 9, 2026). **Scope for this round: address everything
+except items 31–42 (PE lens), which Ken deferred Nov 10, 2026.**
 
 ## What's already good (don't "fix" these)
 
@@ -67,6 +68,8 @@ before anything else in item 20.
 - **Change:** add a `vercel.json` cron for `/api/portfolio-news/daily-email`
   (e.g. weekday mornings), fix the workflow comment, and keep exactly one
   scheduler. Verify the next morning that the email actually arrives.
+- **Status (Nov 10, 2026): Moot** — Ken decided Nov 8, 2026 he does not want
+  the portfolio-news email scheduled. Skip this item; do not add the cron.
 
 ### 3. README setup is broken — `.env.example` doesn't exist at the repo root
 
@@ -305,11 +308,16 @@ before anything else in item 20.
   `tsc --noEmit` on every push/PR, plus the Vitest suite once item 19 exists.
   Also add a `"typecheck": "tsc --noEmit"` script to `package.json` so there
   is a canonical command for it.
-- **Status (Nov 8, 2026): Partly done** — `.github/workflows/ci.yml` now
-  exists (typecheck + lint on push/PR) and the `typecheck` script was added
-  (commit `f2f5ac6`). Still missing: the ESLint config. There is still no
-  `.eslintrc.*` on `main`, so the CI lint step will hang at the interactive
-  prompt. Create the config first — that is the remaining work in this item.
+- **Status (Nov 10, 2026): Done** — `.eslintrc.json` (extends
+  `next/core-web-vitals`) added in commit `4b18492` (Nov 8, 2026); lint now
+  runs for real in CI. The first run found 25 errors, fixed in commit
+  `1722dbf` (Nov 9, 2026): the dangling `@typescript-eslint/no-explicit-any`
+  disable in `lib/assistant-core.ts:19` was removed,
+  `react/no-unescaped-entities` was turned off in `.eslintrc.json` (cosmetic
+  rule), and `next.config.js` got `eslint.ignoreDuringBuilds: true` so lint
+  lives in CI, not the deploy. CI run #5 green (typecheck + lint both pass).
+  Optional follow-up: run `npx eslint . --fix` locally and flip
+  `react/no-unescaped-entities` back to error. Skip this item otherwise.
 
 ### 21. (Nice-to-have) Rate-limit the unauthenticated and AI-cost endpoints
 
@@ -651,6 +659,9 @@ size limit via Supabase Storage.
   conflict case explicitly (merge or rename with ` (2)`); and add a nightly
   reconcile job that checks each deal's `dropbox_path` against its expected
   folder and reports drift.
+- **Status (Nov 10, 2026): Specced, not implemented** — implementation spec
+  is `docs/dropbox-folder-moves.md` on `main` (commit `7baf518`, Nov 9, 2026).
+  Implement per that spec; do not re-spec.
 
 ### 45. Renaming a company leaves a stale folder name
 
@@ -665,6 +676,9 @@ size limit via Supabase Storage.
   helper). The durable fix is to stop deriving folder names from mutable
   data: name folders by deal ID (or a slug fixed at creation) and keep the
   company name as a display label only.
+- **Status (Nov 10, 2026): Specced, not implemented** — implementation spec
+  is `docs/dropbox-folder-moves.md` on `main` (commit `7baf518`, Nov 9, 2026).
+  Implement per that spec; do not re-spec.
 
 ### 46. The manual folder-linking flow suggests invalid paths
 
@@ -677,6 +691,9 @@ size limit via Supabase Storage.
 - **Change:** default the input to `expectedDropboxFolder(companyName, stage)`
   and validate client-side against the allow-list before saving; fix the
   example to a path under the root.
+- **Status (Nov 10, 2026): Specced, not implemented** — implementation spec
+  is `docs/dropbox-folder-moves.md` on `main` (commit `7baf518`, Nov 9, 2026).
+  Implement per that spec; do not re-spec.
 
 ### 47. The `read` action has no size cap
 
@@ -719,6 +736,9 @@ size limit via Supabase Storage.
 - **Change:** retry with backoff on 429/5xx, honoring the `Retry-After`
   header. While here, add an in-flight lock to the token refresh in
   `getDropboxToken` so concurrent requests after expiry don't each refresh.
+- **Status (Nov 10, 2026): Specced, not implemented** — implementation spec
+  is `docs/dropbox-folder-moves.md` on `main` (commit `7baf518`, Nov 9, 2026).
+  Implement per that spec; do not re-spec.
 
 ### 51. No delete
 
