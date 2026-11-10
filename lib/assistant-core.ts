@@ -14,9 +14,179 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// ─── Tool-call payload types ──────────────────────────────────
+// The model supplies tool inputs as untyped JSON (the SDK types
+// ToolUseBlock.input as `unknown`). parseToolInput narrows that into the
+// flat, fully-typed ToolInput bag below — every field any tool accepts,
+// each with its real type — so executeTool never touches `any`.
+
+export interface ToolInput {
+  // count_deals / search_deals
+  sector?: string
+  geography?: string
+  stage?: string
+  status?: string
+  year?: number
+  sourced_year?: number
+  banker_firm?: string
+  company_name?: string
+  // get_deal_detail / list_deal_files / create_calendar_event
+  deal_id?: string
+  // search_contacts
+  query?: string
+  contact_type?: string
+  // search_capital_contacts
+  source?: string
+  // get_capital_raises
+  deal_name?: string
+  // search_notes
+  logged_by?: string
+  // create_deal
+  deal_type?: string
+  revenue?: number
+  ebitda?: number
+  description?: string
+  source_notes?: string
+  // update_deal_field / update_contact_field / update_raise_participant
+  contact_id?: string
+  contact_name?: string
+  participant_id?: string
+  firm_name?: string
+  raise_name?: string
+  field?: string
+  new_value?: string
+  current_value?: string
+  // log_note
+  summary?: string
+  next_steps?: string
+  raise_id?: string
+  note_date?: string
+  // get_calendar_events / create_calendar_event
+  date_from?: string
+  date_to?: string
+  title?: string
+  event_date?: string
+  start_time?: string
+  end_time?: string
+  event_type?: string
+  portfolio_company_id?: string
+  // Dropbox file tools
+  path?: string
+  subfolder?: string
+  analysis_question?: string
+}
+
+function asToolString(v: unknown): string | undefined {
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  return undefined
+}
+
+function asToolNumber(v: unknown): number | undefined {
+  if (typeof v === 'number') return v
+  if (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) return Number(v)
+  return undefined
+}
+
+function parseToolInput(raw: unknown): ToolInput {
+  if (typeof raw !== 'object' || raw === null) return {}
+  // raw is the model-supplied JSON object; each field is picked and
+  // coerced individually below, so a wrong-typed field degrades to
+  // undefined instead of flowing through as `any`.
+  const r = raw as Record<string, unknown>
+  return {
+    sector: asToolString(r.sector),
+    geography: asToolString(r.geography),
+    stage: asToolString(r.stage),
+    status: asToolString(r.status),
+    year: asToolNumber(r.year),
+    sourced_year: asToolNumber(r.sourced_year),
+    banker_firm: asToolString(r.banker_firm),
+    company_name: asToolString(r.company_name),
+    deal_id: asToolString(r.deal_id),
+    query: asToolString(r.query),
+    contact_type: asToolString(r.contact_type),
+    source: asToolString(r.source),
+    deal_name: asToolString(r.deal_name),
+    logged_by: asToolString(r.logged_by),
+    deal_type: asToolString(r.deal_type),
+    revenue: asToolNumber(r.revenue),
+    ebitda: asToolNumber(r.ebitda),
+    description: asToolString(r.description),
+    source_notes: asToolString(r.source_notes),
+    contact_id: asToolString(r.contact_id),
+    contact_name: asToolString(r.contact_name),
+    participant_id: asToolString(r.participant_id),
+    firm_name: asToolString(r.firm_name),
+    raise_name: asToolString(r.raise_name),
+    field: asToolString(r.field),
+    new_value: asToolString(r.new_value),
+    current_value: asToolString(r.current_value),
+    summary: asToolString(r.summary),
+    next_steps: asToolString(r.next_steps),
+    raise_id: asToolString(r.raise_id),
+    note_date: asToolString(r.note_date),
+    date_from: asToolString(r.date_from),
+    date_to: asToolString(r.date_to),
+    title: asToolString(r.title),
+    event_date: asToolString(r.event_date),
+    start_time: asToolString(r.start_time),
+    end_time: asToolString(r.end_time),
+    event_type: asToolString(r.event_type),
+    portfolio_company_id: asToolString(r.portfolio_company_id),
+    path: asToolString(r.path),
+    subfolder: asToolString(r.subfolder),
+    analysis_question: asToolString(r.analysis_question),
+  }
+}
+
+/** Concatenate the text blocks of an Anthropic response's content. */
+function extractText(content: Anthropic.ContentBlock[]): string {
+  return content
+    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join('\n')
+}
+
+// ─── Supabase row shapes (hand-written; no generated Database type) ───
+
+interface IdRow {
+  id: string
+}
+
+interface DealIdRow {
+  deal_id: string
+}
+
+interface RaiseParticipantSummary {
+  status: string
+  committed_amount: number | null
+  debt_amount: number | null
+}
+
+interface CapitalRaiseRow {
+  participants?: RaiseParticipantSummary[] | null
+  [key: string]: unknown
+}
+
+interface LpInvestmentSummary {
+  invested_amount: number | null
+}
+
+interface LpCommitmentSummary {
+  status: string
+  committed_amount: number | null
+}
+
+interface InvestorRow {
+  investments?: LpInvestmentSummary[] | null
+  commitments?: LpCommitmentSummary[] | null
+  [key: string]: unknown
+}
+
 // ─── Tool definitions ─────────────────────────────────────────
 
-export const TOOLS: any[] = [
+export const TOOLS: Anthropic.Tool[] = [
   {
     name: 'count_deals',
     description: 'Get an exact count of deals matching filters — use this for ANY counting question ("how many deals", "how many in 2025", etc.). Returns the true DB total with no row limit. Always prefer this over search_deals for counting.',
@@ -345,6 +515,26 @@ const ALLOWED_PARTICIPANT_FIELDS = new Set(['status','notes','pass_reason','comm
 
 // ─── Direct Dropbox helpers ───────────────────────────────────
 
+interface DbxTokenResponse {
+  access_token?: string
+  expires_in?: number
+}
+
+interface DbxEntryRaw {
+  '.tag': string
+  name: string
+  path_lower: string
+  size?: number
+}
+
+export interface DbxEntry {
+  name: string
+  path: string
+  type: string
+  size?: number
+  readable: boolean
+}
+
 let _dbxToken: string | null = null
 let _dbxTokenExpiry: number = 0
 
@@ -361,14 +551,14 @@ async function getDbxToken(): Promise<string> {
       client_secret: process.env.DROPBOX_APP_SECRET!,
     }),
   })
-  const data = await res.json()
+  const data: DbxTokenResponse = await res.json()
   if (!data.access_token) throw new Error(`Dropbox auth failed: ${JSON.stringify(data)}`)
   _dbxToken = data.access_token
-  _dbxTokenExpiry = now + (data.expires_in - 1800) * 1000
+  _dbxTokenExpiry = now + ((data.expires_in ?? 3600) - 1800) * 1000
   return _dbxToken!
 }
 
-async function dbxListFolder(path: string): Promise<any[]> {
+async function dbxListFolder(path: string): Promise<DbxEntry[]> {
   const token = await getDbxToken()
   const dbxPath = path === '/' || path === '.' ? '' : path
   const res = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
@@ -377,8 +567,8 @@ async function dbxListFolder(path: string): Promise<any[]> {
     body: JSON.stringify({ path: dbxPath, recursive: false, include_deleted: false }),
   })
   if (!res.ok) throw new Error(`Dropbox list error: ${await res.text()}`)
-  const data = await res.json()
-  return (data.entries || []).map((e: any) => ({
+  const data: { entries?: DbxEntryRaw[] } = await res.json()
+  return (data.entries || []).map((e) => ({
     name: e.name,
     path: e.path_lower,
     type: e['.tag'],
@@ -407,16 +597,17 @@ async function dealIdsByBankerFirm(firm: string): Promise<string[] | null> {
     .select('id')
     .ilike('firm', `%${firm}%`)
   if (!contacts?.length) return []
-  const contactIds = contacts.map((c: any) => c.id)
+  const contactIds = contacts.map((c: IdRow) => c.id)
   const { data: links } = await supabase
     .from('contact_deal_links')
     .select('deal_id')
     .in('contact_id', contactIds)
   if (!links?.length) return []
-  return [...new Set(links.map((l: any) => l.deal_id))]
+  return [...new Set(links.map((l: DealIdRow) => l.deal_id))]
 }
 
-export async function executeTool(name: string, input: any): Promise<any> {
+export async function executeTool(name: string, rawInput: unknown): Promise<unknown> {
+  const input: ToolInput = parseToolInput(rawInput)
   switch (name) {
 
     case 'count_deals': {
@@ -426,20 +617,20 @@ export async function executeTool(name: string, input: any): Promise<any> {
           return { total_count: 0, note: `No contacts found at "${input.banker_firm}" or no deals linked to them.` }
         }
         let q = supabase.from('deals').select('*', { count: 'exact', head: true }).in('id', dealIds)
-        if (input.stage)  q = (q as any).eq('stage', input.stage)
-        if (input.status) q = (q as any).eq('status', input.status)
-        if (input.year)   q = (q as any).gte('created_at', `${input.year}-01-01`).lte('created_at', `${input.year}-12-31`)
+        if (input.stage)  q = q.eq('stage', input.stage)
+        if (input.status) q = q.eq('status', input.status)
+        if (input.year)   q = q.gte('created_at', `${input.year}-01-01`).lte('created_at', `${input.year}-12-31`)
         const { count, error } = await q
         if (error) return { error: error.message }
         return { total_count: count ?? 0, banker_firm: input.banker_firm, deal_ids_found: dealIds.length }
       }
       let q = supabase.from('deals').select('*', { count: 'exact', head: true })
-      if (input.sector)       q = (q as any).ilike('sector', `%${input.sector}%`)
-      if (input.geography)    q = (q as any).ilike('geography', `%${input.geography}%`)
-      if (input.stage)        q = (q as any).eq('stage', input.stage)
-      if (input.status)       q = (q as any).eq('status', input.status)
-      if (input.year)         q = (q as any).gte('created_at', `${input.year}-01-01`).lte('created_at', `${input.year}-12-31`)
-      if (input.sourced_year) q = (q as any).gte('sourced_date', `${input.sourced_year}-01-01`).lte('sourced_date', `${input.sourced_year}-12-31`)
+      if (input.sector)       q = q.ilike('sector', `%${input.sector}%`)
+      if (input.geography)    q = q.ilike('geography', `%${input.geography}%`)
+      if (input.stage)        q = q.eq('stage', input.stage)
+      if (input.status)       q = q.eq('status', input.status)
+      if (input.year)         q = q.gte('created_at', `${input.year}-01-01`).lte('created_at', `${input.year}-12-31`)
+      if (input.sourced_year) q = q.gte('sourced_date', `${input.sourced_year}-01-01`).lte('sourced_date', `${input.sourced_year}-12-31`)
       const { count, error } = await q
       if (error) return { error: error.message }
       return { total_count: count ?? 0 }
@@ -518,9 +709,9 @@ export async function executeTool(name: string, input: any): Promise<any> {
       if (input.deal_name) q = q.ilike('name', `%${input.deal_name}%`)
       if (input.status) q = q.eq('status', input.status)
       const { data } = await q
-      return (data || []).map((r: any) => ({
+      return (data || []).map((r: CapitalRaiseRow) => ({
         ...r,
-        total_committed: (r.participants || []).filter((p: any) => ['invested','confirmed'].includes(p.status)).reduce((s: number, p: any) => s + (p.committed_amount || p.debt_amount || 0), 0),
+        total_committed: (r.participants || []).filter((p: RaiseParticipantSummary) => ['invested','confirmed'].includes(p.status)).reduce((s: number, p: RaiseParticipantSummary) => s + (p.committed_amount || p.debt_amount || 0), 0),
         participant_count: (r.participants || []).length,
       }))
     }
@@ -554,10 +745,10 @@ export async function executeTool(name: string, input: any): Promise<any> {
       `).limit(20)
       if (input.query) q = q.or(`first_name.ilike.%${input.query}%,last_name.ilike.%${input.query}%,firm.ilike.%${input.query}%`)
       const { data } = await q.order('last_name')
-      return (data || []).map((inv: any) => ({
+      return (data || []).map((inv: InvestorRow) => ({
         ...inv,
-        total_invested: (inv.investments || []).reduce((s: number, i: any) => s + (i.invested_amount || 0), 0),
-        total_committed: (inv.commitments || []).filter((c: any) => ['Committed','Funded'].includes(c.status)).reduce((s: number, c: any) => s + (c.committed_amount || 0), 0),
+        total_invested: (inv.investments || []).reduce((s: number, i: LpInvestmentSummary) => s + (i.invested_amount || 0), 0),
+        total_committed: (inv.commitments || []).filter((c: LpCommitmentSummary) => ['Committed','Funded'].includes(c.status)).reduce((s: number, c: LpCommitmentSummary) => s + (c.committed_amount || 0), 0),
       }))
     }
 
@@ -565,10 +756,10 @@ export async function executeTool(name: string, input: any): Promise<any> {
       const resp = await anthropic.messages.create({
         model: AI_MODELS.balanced,
         max_tokens: 1500,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' } as any],
+        tools: [{ type: 'web_search_20250305', name: 'web_search' } satisfies Anthropic.WebSearchTool20250305],
         messages: [{ role: 'user', content: `Search for: ${input.query}. Return a concise factual summary with source names.` }],
       })
-      const text = resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
+      const text = extractText(resp.content)
       return { result: text || 'No results found.' }
     }
 
@@ -634,6 +825,7 @@ export async function executeTool(name: string, input: any): Promise<any> {
 
     case 'read_deal_file':
     case 'read_file': {
+      if (!input.path) return { error: 'path is required' }
       const { base64, name, ext: fileExt } = await dbxDownload(input.path)
       const isText = ['.txt', '.md', '.csv'].includes(fileExt)
       if (isText) {
@@ -650,7 +842,7 @@ export async function executeTool(name: string, input: any): Promise<any> {
           { type: 'text', text: `Extract and summarize the full content of this file "${name}". Include all key facts, figures, dates, parties, terms, and materially important information. Be comprehensive.` },
         ]}],
       })
-      const extracted = extractResp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
+      const extracted = extractText(extractResp.content)
       return { file: name, path: input.path, content: extracted }
     }
 
@@ -662,6 +854,7 @@ export async function executeTool(name: string, input: any): Promise<any> {
     }
 
     case 'read_best_practices_file': {
+      if (!input.path) return { error: 'path is required' }
       const { base64, name, ext: fileExt } = await dbxDownload(input.path)
       const isText = ['.txt', '.md', '.csv'].includes(fileExt)
       if (isText) {
@@ -681,7 +874,7 @@ export async function executeTool(name: string, input: any): Promise<any> {
           { type: 'text', text: `You are analyzing a Best Practices document: "${name}". ${question} Include all key terms, market-standard benchmarks, acceptable ranges, red flags, and negotiating points. Be thorough.` },
         ]}],
       })
-      const extracted = extractResp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n')
+      const extracted = extractText(extractResp.content)
       return { file: name, path: input.path, content: extracted }
     }
 
@@ -714,19 +907,20 @@ export async function executeTool(name: string, input: any): Promise<any> {
     }
 
     case 'update_deal_field': {
-      if (!ALLOWED_DEAL_FIELDS.has(input.field)) return { error: `Field "${input.field}" is not editable` }
-      let value: any = input.new_value
-      if (['revenue','ebitda','asking_price'].includes(input.field)) {
+      const field = input.field
+      if (!field || !ALLOWED_DEAL_FIELDS.has(field)) return { error: `Field "${input.field}" is not editable` }
+      let value: string | number = input.new_value ?? ''
+      if (['revenue','ebitda','asking_price'].includes(field)) {
         const n = parseFloat(String(value).replace(/[$,MmBb\s]/g, ''))
         if (isNaN(n)) return { error: 'Invalid number format' }
         value = n * 1_000_000
       }
-      const extraUpdates: Record<string, any> = {}
-      if (input.field === 'stage') {
+      const extraUpdates: Record<string, string> = {}
+      if (field === 'stage') {
         if (value === 'Closed (Platform)' || value === 'Closed (Add-On)') extraUpdates.status = 'Closed'
         else if (String(value).startsWith('Pass')) extraUpdates.status = 'Dead'
         else extraUpdates.status = 'Active'
-      } else if (input.field === 'status') {
+      } else if (field === 'status') {
         if (value === 'Closed') {
           extraUpdates.stage = 'Closed (Platform)'
         } else if (value === 'Dead') {
@@ -738,29 +932,31 @@ export async function executeTool(name: string, input: any): Promise<any> {
           extraUpdates.stage = (s.startsWith('Pass') || s.startsWith('Closed')) ? 'Reviewing' : s
         }
       }
-      const { error } = await supabase.from('deals').update({ [input.field]: value, ...extraUpdates }).eq('id', input.deal_id)
+      const { error } = await supabase.from('deals').update({ [field]: value, ...extraUpdates }).eq('id', input.deal_id)
       if (error) return { error: error.message }
-      return { success: true, message: `Updated ${input.company_name} — ${input.field} set to ${input.new_value}${extraUpdates.status ? `, status set to ${extraUpdates.status}` : ''}` }
+      return { success: true, message: `Updated ${input.company_name} — ${field} set to ${input.new_value}${extraUpdates.status ? `, status set to ${extraUpdates.status}` : ''}` }
     }
 
     case 'update_contact_field': {
-      if (!ALLOWED_CONTACT_FIELDS.has(input.field)) return { error: `Field "${input.field}" is not editable` }
-      const { error } = await supabase.from('contacts').update({ [input.field]: input.new_value }).eq('id', input.contact_id)
+      const field = input.field
+      if (!field || !ALLOWED_CONTACT_FIELDS.has(field)) return { error: `Field "${input.field}" is not editable` }
+      const { error } = await supabase.from('contacts').update({ [field]: input.new_value }).eq('id', input.contact_id)
       if (error) return { error: error.message }
-      return { success: true, message: `Updated ${input.contact_name} — ${input.field} set to ${input.new_value}` }
+      return { success: true, message: `Updated ${input.contact_name} — ${field} set to ${input.new_value}` }
     }
 
     case 'update_raise_participant': {
-      if (!ALLOWED_PARTICIPANT_FIELDS.has(input.field)) return { error: `Field "${input.field}" is not editable` }
-      let value: any = input.new_value
-      if (['committed_amount','debt_amount'].includes(input.field)) {
+      const field = input.field
+      if (!field || !ALLOWED_PARTICIPANT_FIELDS.has(field)) return { error: `Field "${input.field}" is not editable` }
+      let value: string | number = input.new_value ?? ''
+      if (['committed_amount','debt_amount'].includes(field)) {
         const n = parseFloat(String(value).replace(/[$,MmBb\s]/g, ''))
         if (isNaN(n)) return { error: 'Invalid number format' }
         value = n * 1_000_000
       }
-      const { error } = await supabase.from('raise_participants').update({ [input.field]: value }).eq('id', input.participant_id)
+      const { error } = await supabase.from('raise_participants').update({ [field]: value }).eq('id', input.participant_id)
       if (error) return { error: error.message }
-      return { success: true, message: `Updated ${input.firm_name} — ${input.field} set to ${input.new_value}` }
+      return { success: true, message: `Updated ${input.firm_name} — ${field} set to ${input.new_value}` }
     }
 
     case 'log_note': {
@@ -850,7 +1046,7 @@ export async function runAgentToText(
   const maxIter = opts?.maxIterations ?? 12
   const toolsUsed: string[] = []
 
-  let messages: any[] = [{ role: 'user', content: userMessage }]
+  let messages: Anthropic.MessageParam[] = [{ role: 'user', content: userMessage }]
 
   for (let i = 0; i < maxIter; i++) {
     const resp = await anthropic.messages.create({
@@ -859,23 +1055,23 @@ export async function runAgentToText(
       system,
       tools: TOOLS,
       messages,
-    } as any)
+    })
 
-    const textBlocks = resp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n').trim()
-    const toolUses = resp.content.filter((b: any) => b.type === 'tool_use')
+    const textBlocks = extractText(resp.content).trim()
+    const toolUses = resp.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
 
     if (resp.stop_reason === 'end_turn' || toolUses.length === 0) {
       return { text: textBlocks || 'I could not find an answer to that.', toolsUsed }
     }
 
     const toolResults = await Promise.all(
-      toolUses.map(async (t: any) => {
+      toolUses.map(async (t) => {
         toolsUsed.push(t.name)
         try {
           const result = await executeTool(t.name, t.input)
           return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify(result) }
-        } catch (err: any) {
-          return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify({ error: err?.message || String(err) }) }
+        } catch (err: unknown) {
+          return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }) }
         }
       })
     )
@@ -891,8 +1087,8 @@ export async function runAgentToText(
       max_tokens: 2000,
       system: system + '\n\nYou have gathered enough information. Do NOT request more data — answer the question now using what you already have. If some detail is still missing, give your best answer and note what was incomplete.',
       messages: [...messages, { role: 'user', content: 'Please give me your final answer now based on everything above.' }],
-    } as any)
-    const finalText = finalResp.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n').trim()
+    })
+    const finalText = extractText(finalResp.content).trim()
     return { text: finalText || 'I gathered some information but could not compose a complete answer. Try narrowing the question.', toolsUsed }
   } catch {
     return { text: 'I gathered some information but ran out of steps before finishing. Try narrowing the question.', toolsUsed }
