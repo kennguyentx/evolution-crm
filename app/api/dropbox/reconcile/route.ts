@@ -4,7 +4,10 @@
 // The backstop for stage-change folder moves: for every deal with a linked
 // Dropbox folder, compare the stored path against the folder its stage says
 // it should have (deal-ID based) and against reality in Dropbox, then fix
-// any drift. Idempotent — a second run right after a clean run is a no-op.
+// any drift. When neither path resolves, it also searches Dropbox by the
+// deal's UUID folder name to catch folders a human dragged somewhere new
+// (lib/dropbox-move-detection) and repoints the record at the found folder.
+// Idempotent — a second run right after a clean run is a no-op.
 // One bad deal never aborts the run; failures are recorded as failed
 // dropbox_move_jobs rows (source = 'reconcile') so they show on the deal page.
 
@@ -17,6 +20,7 @@ const log = createLogger('dropbox/reconcile')
 import {
   dropboxConfigured, dropboxGetMetadata, dropboxMove, expectedDropboxFolder, DropboxError,
 } from '@/lib/dropbox'
+import { detectMovedFolder } from '@/lib/dropbox-move-detection'
 
 function serviceClient(): SupabaseClient {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -102,7 +106,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 
-  let checked = 0, moved = 0, fixedPath = 0, missing = 0, failed = 0
+  let checked = 0, ok = 0, moved = 0, fixedPath = 0, missing = 0, failed = 0
+  // Detection outcomes within `missing` (neither path resolved):
+  // moved_detected + not_found + ambiguous === missing.
+  let movedDetected = 0, notFound = 0, ambiguous = 0
   const failures: { deal_id: string; error: string }[] = []
 
   // Sequential on purpose: bounded load on the Dropbox API; the retry
@@ -119,6 +126,7 @@ export async function GET(req: NextRequest) {
 
       if (storedMeta && expectedMeta && stored.toLowerCase() === expected.toLowerCase()) {
         // Stored path exists and is the expected path — nothing to do.
+        ok++
         continue
       }
       if (storedMeta && !expectedMeta) {
@@ -148,9 +156,23 @@ export async function GET(req: NextRequest) {
           failures.push({ deal_id: deal.id, error: err?.message ?? 'Unknown error' })
         }
       } else {
-        // Neither exists — do NOT create an empty folder or touch the row.
+        // Neither the stored path nor the expected ID path resolves. The
+        // folder may have been dragged somewhere else entirely (into
+        // !!DiPonio, !Passed Deals, …) — search Dropbox by its UUID name
+        // and repair the record (lib/dropbox-move-detection). Still do NOT
+        // create an empty folder; detection only repoints or reports.
         missing++
-        log.warn('folder missing', { dealId: deal.id, company: deal.company_name, stored, expected })
+        const detection = await detectMovedFolder({ supabase }, deal, expected)
+        if (detection.outcome === 'moved') {
+          movedDetected++
+          log.info('moved folder detected', { dealId: deal.id, company: deal.company_name, stored, found: detection.foundPath })
+        } else if (detection.outcome === 'ambiguous') {
+          ambiguous++
+          log.warn('moved folder ambiguous', { dealId: deal.id, company: deal.company_name, stored, candidates: detection.candidates })
+        } else {
+          notFound++
+          log.warn('folder missing', { dealId: deal.id, company: deal.company_name, stored, expected })
+        }
       }
     } catch (err: any) {
       // Reached only for failures OUTSIDE a move attempt (metadata checks,
@@ -170,7 +192,11 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const summary = { checked, moved, fixed_path: fixedPath, missing, failed, failures }
+  const summary = {
+    checked, ok, moved, fixed_path: fixedPath, missing,
+    moved_detected: movedDetected, not_found: notFound, ambiguous,
+    failed, failures,
+  }
   audit('reconcile', { ...summary })
   return NextResponse.json(summary)
 }

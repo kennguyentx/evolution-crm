@@ -179,6 +179,65 @@ export async function uniqueDropboxPath(path: string): Promise<string> {
   return `${path} (${Date.now()})`
 }
 
+// ── Search by name ───────────────────────────────────────────────────────────
+// Used by the nightly reconciler to find a deal's ID folder after a human
+// dragged it somewhere unexpected in Dropbox (see lib/dropbox-move-detection).
+
+export interface DropboxFolderMatch {
+  /** Folder name exactly as Dropbox reports it. */
+  name: string
+  /** Canonical (lowercase) full path of the folder. */
+  path: string
+}
+
+/**
+ * Pure extractor for /files/search_v2 match lists: keeps only FOLDERS whose
+ * name equals `folderName` (case-insensitive), deduped by path. Files that
+ * happen to carry the name, and folders with merely similar names (e.g. a
+ * "<name> (2)" conflict copy), are excluded — callers decide what the exact
+ * matches mean. Extracted so it is unit-testable without the API.
+ */
+export function extractFolderMatches(matches: any[] | undefined, folderName: string): DropboxFolderMatch[] {
+  const wanted = folderName.toLowerCase()
+  const byPath = new Map<string, DropboxFolderMatch>()
+  for (const match of matches ?? []) {
+    // search_v2 wraps the entry: match.metadata is a Metadata wrapper whose
+    // own `metadata` field is the file/folder entry.
+    const entry = match?.metadata?.metadata ?? match?.metadata
+    if (!entry || entry['.tag'] !== 'folder') continue
+    const name = entry.name as string | undefined
+    if (!name || name.toLowerCase() !== wanted) continue
+    const path = (entry.path_lower ?? entry.path_display) as string | undefined
+    if (!path) continue
+    byPath.set(path.toLowerCase(), { name, path })
+  }
+  return [...byPath.values()]
+}
+
+/**
+ * Account-wide search for folders named exactly `folderName`. Follows
+ * search_v2 pagination (bounded, so a pathological index can't loop the
+ * nightly job forever). Throws a classified DropboxError on API failure —
+ * callers must not read a failed search as "no such folder".
+ */
+export async function dropboxFindFoldersByName(folderName: string): Promise<DropboxFolderMatch[]> {
+  const found = new Map<string, DropboxFolderMatch>()
+  const collect = (matches: any[] | undefined) => {
+    for (const m of extractFolderMatches(matches, folderName)) found.set(m.path.toLowerCase(), m)
+  }
+
+  let page = await dropboxApiPost('/files/search_v2', {
+    query: folderName,
+    options: { filename_only: true, file_status: 'active', max_results: 100 },
+  })
+  collect(page?.matches)
+  for (let i = 0; page?.has_more && page?.cursor && i < 20; i++) {
+    page = await dropboxApiPost('/files/search/continue_v2', { cursor: page.cursor })
+    collect(page?.matches)
+  }
+  return [...found.values()]
+}
+
 // ── Upload ───────────────────────────────────────────────────────────────────
 
 export async function dropboxUpload(folderPath: string, fileName: string, buffer: Buffer | Uint8Array): Promise<string> {
