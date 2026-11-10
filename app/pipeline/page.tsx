@@ -7,6 +7,7 @@ import { Plus, ChevronRight, Mail, X, Send, Check, Search, ArrowRightLeft } from
 import Link from 'next/link'
 import NewDealModal from '@/components/deals/NewDealModal'
 import { moveDropboxOnStageChange } from '@/lib/dropbox-stage-move'
+import { stageToStatus } from '@/lib/intake-stage'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { initialParam, useUrlFilterSync } from '@/hooks/useUrlState'
 import { usePageTitle } from '@/hooks/usePageTitle'
@@ -162,8 +163,12 @@ export default function PipelinePage() {
   })
 
   const updateStage = async (dealId: string, stage: DealStage) => {
-    setDeals(prev => prev.map(d => d.id === dealId ? { ...d, stage } : d))
-    await supabase.from('deals').update({ stage }).eq('id', dealId)
+    // Keep status in step with the stage, like the deal page does
+    // (Pass*/Dead → 'Dead', Closed* → 'Closed', else 'Active') — moving a
+    // card to Dead must mark the deal Dead, not leave it Active.
+    const status = stageToStatus(stage)
+    setDeals(prev => prev.map(d => d.id === dealId ? { ...d, stage, status } : d))
+    await supabase.from('deals').update({ stage, status }).eq('id', dealId)
     const deal = deals.find(d => d.id === dealId)
     // The move is recorded in dropbox_move_jobs by the helper; a failure
     // surfaces as a warning banner (with Retry) on the deal page.
@@ -507,6 +512,20 @@ function DealCard({ deal, contacts, onStageChange, onDragStart, menuOpen, onTogg
                 {label}{name === deal.stage ? ' · current' : ''}
               </button>
             ))}
+            {/* Kill the deal: 'Dead' is a stage but not a board column
+                (same as Pass/Closed), so it lives below the divider —
+                choosing it takes the card off the board and files its
+                Dropbox folder under !Passed Deals. */}
+            <button
+              type="button"
+              role="menuitem"
+              draggable={false}
+              className="menu-sheet-item"
+              style={{ borderTop: '1px solid var(--border)', borderRadius: 0, marginTop: '4px', paddingTop: '9px', color: 'var(--red)' }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onStageChange(deal.id, 'Dead') }}
+            >
+              Dead
+            </button>
           </div>
         )}
       </div>
