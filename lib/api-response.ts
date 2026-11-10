@@ -15,7 +15,18 @@ export function apiOk<T>(data: T, status = 200): NextResponse {
   return NextResponse.json(data, { status })
 }
 
-type RouteHandler = (req: NextRequest, ctx: any) => Promise<NextResponse>
+/**
+ * Second argument Next.js passes to a route handler. In the App Router
+ * (Next 14) dynamic route params arrive as a plain record; in Next 15 the
+ * same shape is delivered as a Promise, so handlers should `await ctx.params`
+ * — awaiting a non-Promise value is a no-op, which keeps this type correct
+ * for both.
+ */
+export interface RouteContext {
+  params: Record<string, string | string[]> | Promise<Record<string, string | string[]>>
+}
+
+type RouteHandler = (req: NextRequest, ctx: RouteContext) => Promise<NextResponse>
 
 /**
  * Wraps a route handler so any unhandled throw becomes a structured JSON 500
@@ -25,9 +36,10 @@ export function withErrorHandler(handler: RouteHandler): RouteHandler {
   return async (req, ctx) => {
     try {
       return await handler(req, ctx)
-    } catch (err: any) {
-      const message = err?.message ?? 'Internal server error'
-      console.error('[api]', req.method, req.nextUrl?.pathname, message, err?.stack)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Internal server error'
+      const stack = err instanceof Error ? err.stack : undefined
+      console.error('[api]', req.method, req.nextUrl?.pathname, message, stack)
       return apiError(message)
     }
   }

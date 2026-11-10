@@ -6,6 +6,7 @@
 export const maxDuration = 120 // seconds — agent loops need more than the 10s default
 
 import { NextRequest, NextResponse } from 'next/server'
+import type Anthropic from '@anthropic-ai/sdk'
 import { AI_MODELS } from '@/lib/ai-config'
 import { anthropic, TOOLS, WRITE_TOOLS, executeTool, buildSystemPrompt } from '@/lib/assistant-core'
 
@@ -13,33 +14,44 @@ import { anthropic, TOOLS, WRITE_TOOLS, executeTool, buildSystemPrompt } from '@
 // Ensures every assistant message with tool_use blocks is immediately followed
 // by a user message with matching tool_result blocks; injects synthetic error
 // results for any orphaned tool_use so the API doesn't 400.
-function sanitizeMessages(msgs: any[]): any[] {
-  const out: any[] = []
+type ContentBlockParam = Anthropic.ContentBlockParam
+type ToolUseBlockParam = Anthropic.ToolUseBlockParam
+type ToolResultBlockParam = Anthropic.ToolResultBlockParam
+
+function isToolUseBlock(b: ContentBlockParam): b is ToolUseBlockParam {
+  return b.type === 'tool_use'
+}
+
+function isToolResultBlock(b: ContentBlockParam): b is ToolResultBlockParam {
+  return b.type === 'tool_result'
+}
+
+function sanitizeMessages(msgs: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  const out: Anthropic.MessageParam[] = []
   for (let i = 0; i < msgs.length; i++) {
     const msg = msgs[i]
     out.push(msg)
     if (msg.role !== 'assistant') continue
-    const toolUses: any[] = Array.isArray(msg.content) ? msg.content.filter((b: any) => b.type === 'tool_use') : []
+    const toolUses: ToolUseBlockParam[] = Array.isArray(msg.content) ? msg.content.filter(isToolUseBlock) : []
     if (toolUses.length === 0) continue
     const next = msgs[i + 1]
-    const allResolved = next?.role === 'user' &&
-      Array.isArray(next.content) &&
-      toolUses.every((tu: any) => next.content.some((b: any) => b.type === 'tool_result' && b.tool_use_id === tu.id))
+    const nextBlocks: ContentBlockParam[] | null =
+      next?.role === 'user' && Array.isArray(next.content) ? next.content : null
+    const allResolved = nextBlocks !== null &&
+      toolUses.every((tu) => nextBlocks.some((b) => isToolResultBlock(b) && b.tool_use_id === tu.id))
     if (!allResolved) {
       const existingResults: Set<string> = new Set(
-        (next?.role === 'user' && Array.isArray(next?.content))
-          ? next.content.filter((b: any) => b.type === 'tool_result').map((b: any) => b.tool_use_id)
-          : []
+        (nextBlocks ?? []).filter(isToolResultBlock).map((b) => b.tool_use_id)
       )
-      const syntheticResults = toolUses
-        .filter((tu: any) => !existingResults.has(tu.id))
-        .map((tu: any) => ({
+      const syntheticResults: ToolResultBlockParam[] = toolUses
+        .filter((tu) => !existingResults.has(tu.id))
+        .map((tu) => ({
           type: 'tool_result' as const,
           tool_use_id: tu.id,
           content: JSON.stringify({ error: 'Tool result unavailable — action was interrupted.' }),
         }))
-      if (next?.role === 'user' && Array.isArray(next.content) && existingResults.size > 0) {
-        msgs[i + 1] = { role: 'user', content: [...next.content, ...syntheticResults] }
+      if (nextBlocks !== null && existingResults.size > 0) {
+        msgs[i + 1] = { role: 'user', content: [...nextBlocks, ...syntheticResults] }
       } else {
         out.push({ role: 'user', content: syntheticResults })
       }
@@ -50,9 +62,20 @@ function sanitizeMessages(msgs: any[]): any[] {
 
 // ─── Main handler ─────────────────────────────────────────────
 
+interface ConfirmingPayload {
+  tool_use_id: string
+  tool_name: string
+  input: unknown
+}
+
+interface AssistantRequestBody {
+  messages?: Anthropic.MessageParam[]
+  confirming?: ConfirmingPayload
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    const body: AssistantRequestBody = await req.json()
     const { messages, confirming } = body
 
     if (!messages || !Array.isArray(messages)) {
@@ -79,7 +102,7 @@ export async function POST(req: NextRequest) {
     const agenticLoop = async (
       send: (event: string, data: object) => void,
       close: () => void,
-      startMessages: any[],
+      startMessages: Anthropic.MessageParam[],
       firstModel = AI_MODELS.balanced,
     ) => {
       let currentMessages = sanitizeMessages(startMessages)
@@ -92,14 +115,14 @@ export async function POST(req: NextRequest) {
           system: systemPrompt,
           tools: TOOLS,
           messages: currentMessages,
-        } as any)
+        })
         let textSoFar = ''
         claudeStream.on('text', (text: string) => { textSoFar += text; send('chunk', { text }) })
         const resp = await claudeStream.finalMessage()
         if (resp.stop_reason === 'end_turn') { send('done', {}); close(); return }
-        const toolUses = resp.content.filter((b: any) => b.type === 'tool_use')
+        const toolUses = resp.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
         if (toolUses.length === 0) { send('done', {}); close(); return }
-        const writeToolUse = toolUses.find((t: any) => WRITE_TOOLS.has(t.name)) as any
+        const writeToolUse = toolUses.find((t) => WRITE_TOOLS.has(t.name))
         if (writeToolUse) {
           send('confirmation', {
             tool_use_id: writeToolUse.id,
@@ -111,14 +134,14 @@ export async function POST(req: NextRequest) {
           close()
           return
         }
-        send('status', { text: toolUses.map((t: any) => t.name).join(', ') })
+        send('status', { text: toolUses.map((t) => t.name).join(', ') })
         const toolResults = await Promise.all(
-          toolUses.map(async (t: any) => {
+          toolUses.map(async (t) => {
             try {
               const result = await executeTool(t.name, t.input)
               return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify(result) }
-            } catch (err: any) {
-              return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify({ error: err.message }) }
+            } catch (err: unknown) {
+              return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }) }
             }
           })
         )
@@ -134,19 +157,19 @@ export async function POST(req: NextRequest) {
       return makeStream(async (send, close) => {
         const result = await executeTool(confirming.tool_name, confirming.input)
         const lastMsg = messages[messages.length - 1]
-        const allToolUses: any[] = Array.isArray(lastMsg?.content)
-          ? lastMsg.content.filter((b: any) => b.type === 'tool_use')
+        const allToolUses: ToolUseBlockParam[] = Array.isArray(lastMsg?.content)
+          ? lastMsg.content.filter(isToolUseBlock)
           : []
         const toolResults = allToolUses.length > 0
-          ? await Promise.all(allToolUses.map(async (t: any) => {
+          ? await Promise.all(allToolUses.map(async (t) => {
               if (t.id === confirming.tool_use_id) {
                 return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify(result) }
               }
               try {
                 const r = await executeTool(t.name, t.input)
                 return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify(r) }
-              } catch (err: any) {
-                return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify({ error: err.message }) }
+              } catch (err: unknown) {
+                return { type: 'tool_result' as const, tool_use_id: t.id, content: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }) }
               }
             }))
           : [{ type: 'tool_result' as const, tool_use_id: confirming.tool_use_id, content: JSON.stringify(result) }]
@@ -159,8 +182,8 @@ export async function POST(req: NextRequest) {
       await agenticLoop(send, close, messages)
     })
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Assistant error:', err)
-    return NextResponse.json({ error: err?.message || String(err) }, { status: 500 })
+    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })
   }
 }
