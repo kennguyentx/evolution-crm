@@ -147,7 +147,7 @@ async function parseForwardingNote(bodyText: string, emailHeaders: { from: strin
     system: `Extract deal instructions AND contact info from a forwarding note. Return ONLY valid JSON.
 
 {
-  "stage": "exact stage or null — one of: Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity | Closed (Platform) | Closed (Add-On) | Pass (DOA) | Pass (Pre-LOI) | Pass (Post-LOI) | Hold",
+  "stage": "exact stage or null — one of: Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity | Closed (Platform) | Closed (Add-On) | Pass (DOA) | Pass (Pre-LOI) | Pass (Post-LOI) | Hold | Dead",
   "deal_name": "string or null — name of a SPECIFIC EXISTING DEAL to link this document to (e.g. 'for Project Anchor', 're: Anchor deal'). Only set if the sender is linking to a previously-created deal by a project codename or company name. Do NOT set this to a portfolio company name when the sender is describing an add-on acquisition.",
   "portco_name": "string or null — name of OUR EXISTING PORTFOLIO COMPANY this email note should be filed under. Set when the sender explicitly wants to attach a note/article/update to a portco they already own (e.g. 'portco: Ethoscapes', 'file under Ethoscapes', 'industry note for Ethoscapes'). Do NOT set for acquisition targets or add-ons.",
   "status": "Active | Dead | Closed | null",
@@ -160,6 +160,7 @@ async function parseForwardingNote(bodyText: string, emailHeaders: { from: strin
   - "pass", "not for us", "no thanks", "skip" → "Pass (DOA)"
   - "pass post-LOI", "passed after LOI" → "Pass (Post-LOI)"
   - "pass pre-LOI" → "Pass (Pre-LOI)"
+  - "dead", "deal is dead", "killed" → "Dead"
   - "hold", "park" → "Hold"
   - "submitted LOI", "LOI out" → "LOI Submitted"
   - "log as teaser" / "log as pre-LOI" / "log as hold" → the named stage (Teaser / Pre-LOI / Hold, etc.)
