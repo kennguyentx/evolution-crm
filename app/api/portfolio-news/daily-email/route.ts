@@ -8,6 +8,9 @@ import { fetchCuratedPortfolioNews, defaultLookbackDays, CompanyNews, NewsArticl
 import { getRecipients } from '@/lib/notify-config'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { withErrorHandler } from '@/lib/api-response'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('portfolio-news-email')
 
 export const maxDuration = 60
 
@@ -205,7 +208,7 @@ async function runSend() {
 
   const result = await res.json()
   if (!res.ok) {
-    console.error('[portfolio-news-email] Postmark error:', result)
+    log.error('Postmark error', { status: res.status, errorCode: result?.ErrorCode ?? null, message: result?.Message ?? null })
     return NextResponse.json({ error: result.Message || 'Send failed' }, { status: 500 })
   }
 

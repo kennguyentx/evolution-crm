@@ -22,13 +22,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { dropboxConfigured, dropboxMove, expectedDropboxFolder, DropboxError } from '@/lib/dropbox'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('dropbox/migrate-folders')
 
 function serviceClient(): SupabaseClient {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
 
 function audit(action: string, extra?: Record<string, unknown>) {
-  console.log('[dropbox-audit]', JSON.stringify({ ts: new Date().toISOString(), action, ...extra }))
+  log.info('audit', { action, ...extra })
 }
 
 export async function POST(req: NextRequest) {

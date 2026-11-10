@@ -4,6 +4,9 @@
 
 import { generateLoiIcs, icsAttachment } from './ics'
 import { getRecipients } from '@/lib/notify-config'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('deal-notify')
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrategy.com'
 
@@ -132,6 +135,6 @@ export async function sendDealNotification(payload: DealNotifyPayload): Promise<
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    console.error('[deal-notify] Postmark error:', err)
+    log.error('Postmark error', { errorCode: err?.ErrorCode ?? null, message: err?.Message ?? null })
   }
 }

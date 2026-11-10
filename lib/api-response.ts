@@ -6,6 +6,9 @@
 //   export const GET = withErrorHandler(async (req) => { ... })
 
 import { NextRequest, NextResponse } from 'next/server'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('api')
 
 export function apiError(message: string, status = 500): NextResponse {
   return NextResponse.json({ error: message }, { status })
@@ -38,8 +41,7 @@ export function withErrorHandler<C = RouteContext>(handler: RouteHandler<C>): Ro
       return await handler(req, ctx)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Internal server error'
-      const stack = err instanceof Error ? err.stack : undefined
-      console.error('[api]', req.method, req.nextUrl?.pathname, message, stack)
+      log.error('request failed', { method: req.method, path: req.nextUrl?.pathname, message, error: err })
       return apiError(message)
     }
   }

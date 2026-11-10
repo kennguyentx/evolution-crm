@@ -12,6 +12,9 @@ import { anthropic, TOOLS, WRITE_TOOLS, executeTool, buildSystemPrompt } from '@
 import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
 import { apiError, withErrorHandler } from '@/lib/api-response'
 import { AssistantRequestSchema } from '@/lib/schemas'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('assistant')
 
 // ─── Message sanitizer ────────────────────────────────────────
 // Ensures every assistant message with tool_use blocks is immediately followed
@@ -181,7 +184,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     })
 
   } catch (err: unknown) {
-    console.error('Assistant error:', err)
+    log.error('Assistant error:', err)
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })
   }
 })

@@ -10,6 +10,10 @@
 // to internal @evolutionstrategy.com senders since email identity is weak and
 // the assistant can read/modify data.
 
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('email-intake')
+
 export function isAskEmail(subject: string): boolean {
   return /^\s*(ask|q)\s*[:\-]/i.test(subject || '')
 }
@@ -30,7 +34,7 @@ export async function sendAssistantReply(opts: {
   inReplyTo?: string
 }): Promise<void> {
   const serverToken = process.env.POSTMARK_SERVER_TOKEN
-  if (!serverToken) { console.error('[ask-email] POSTMARK_SERVER_TOKEN not set'); return }
+  if (!serverToken) { log.error('[ask-email] POSTMARK_SERVER_TOKEN not set'); return }
 
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const htmlBody = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;line-height:1.55;color:#1a1a2e;white-space:pre-wrap;">${esc(opts.answer)}</div>`
@@ -50,5 +54,5 @@ export async function sendAssistantReply(opts: {
     headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Postmark-Server-Token': serverToken },
     body: JSON.stringify(payload),
   })
-  if (!res.ok) console.error('[ask-email] reply send failed:', await res.text())
+  if (!res.ok) { const errBody = await res.text(); log.error('[ask-email] reply send failed', { status: res.status, responseBytes: errBody.length }) }
 }

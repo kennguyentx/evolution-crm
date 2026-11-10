@@ -8,6 +8,9 @@ import { getRecipients } from '@/lib/notify-config'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { apiError, withErrorHandler } from '@/lib/api-response'
 import { WeeklyEmailRecipientsSchema } from '@/lib/schemas'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('pipeline-email')
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -91,7 +94,7 @@ async function runSend() {
         ?? error.message?.match(/column "(\w+)" does not exist/i)
       const bad = match?.[1]
       if (bad && activeCols.includes(bad)) {
-        console.warn(`[pipeline-email] Column "${bad}" missing — retrying without it`)
+        log.warn(`Column "${bad}" missing — retrying without it`)
         activeCols = activeCols.filter(c => c !== bad)
         continue
       }
@@ -101,7 +104,7 @@ async function runSend() {
   }
 
   if (dealsErr || !deals) {
-    console.error('[pipeline-email] deals fetch error:', dealsErr?.message)
+    log.error('deals fetch error:', dealsErr?.message)
     return NextResponse.json({ error: `Failed to fetch deals: ${dealsErr?.message || 'unknown'}` }, { status: 500 })
   }
 
@@ -139,7 +142,7 @@ async function runSend() {
   const text = buildText({ deals, contactsByDeal, loiDeals, staleDeals, weekOf })
 
   // 6. Send via Postmark
-  console.log(`[pipeline-email] Sending to ${recipients.length} recipient(s): ${recipients.join(', ')}, ${deals.length} deals`)
+  log.info('sending weekly email', { recipientCount: recipients.length, dealCount: deals.length })
   const res = await fetch('https://api.postmarkapp.com/email', {
     method: 'POST',
     headers: {
@@ -159,10 +162,10 @@ async function runSend() {
   })
 
   const result = await res.json()
-  console.log(`[pipeline-email] Postmark response status=${res.status}:`, JSON.stringify(result).slice(0, 500))
+  log.info('Postmark response', { status: res.status, messageId: result?.MessageID ?? null, errorCode: result?.ErrorCode ?? null })
 
   if (!res.ok) {
-    console.error('[pipeline-email] Postmark error:', result)
+    log.error('Postmark error', { status: res.status, errorCode: result?.ErrorCode ?? null, message: result?.Message ?? null })
     return NextResponse.json({
       error: result.Message || 'Send failed',
       postmark_code: result.ErrorCode,

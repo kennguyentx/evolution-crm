@@ -11,6 +11,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('dropbox/reconcile')
 import {
   dropboxConfigured, dropboxGetMetadata, dropboxMove, expectedDropboxFolder, DropboxError,
 } from '@/lib/dropbox'
@@ -20,7 +23,7 @@ function serviceClient(): SupabaseClient {
 }
 
 function audit(action: string, extra?: Record<string, unknown>) {
-  console.log('[dropbox-audit]', JSON.stringify({ ts: new Date().toISOString(), action, ...extra }))
+  log.info('audit', { action, ...extra })
 }
 
 /** Move a folder via the job-row machinery; throws (after recording) on failure. */
@@ -147,7 +150,7 @@ export async function GET(req: NextRequest) {
       } else {
         // Neither exists — do NOT create an empty folder or touch the row.
         missing++
-        console.warn(`[dropbox-reconcile] Deal ${deal.id} (${deal.company_name}): folder missing at "${stored}" and expected "${expected}"`)
+        log.warn('folder missing', { dealId: deal.id, company: deal.company_name, stored, expected })
       }
     } catch (err: any) {
       // Reached only for failures OUTSIDE a move attempt (metadata checks,

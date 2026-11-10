@@ -9,6 +9,9 @@
 //   intake_digest_recipients   — daily intake digest
 
 import { createClient } from '@supabase/supabase-js'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('notify-config')
 
 function serviceClient() {
   return createClient(
@@ -37,7 +40,7 @@ export async function getRecipients(key: string): Promise<string[]> {
     const value = data?.value
     if (Array.isArray(value) && value.length > 0) return value as string[]
   } catch (e) {
-    console.error(`[notify-config] Failed to load ${key}:`, e)
+    log.error(`Failed to load ${key}:`, e)
   }
   return FALLBACKS[key] ?? []
 }

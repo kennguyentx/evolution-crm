@@ -6,6 +6,9 @@ import type { DealStage } from '@/types'
 import { formatCurrency } from '@/types'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { usePageTitle } from '@/hooks/usePageTitle'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('dashboard')
 
 // ── Portfolio News types ──────────────────────────────────────────────────────
 
@@ -337,7 +340,7 @@ export default function DashboardPage() {
       const grab = <T,>(i: number, key: 'data' | 'count' = 'data', fallback: T): T => {
         const r = results[i]
         if (r.status === 'fulfilled') return ((r.value as any)?.[key] ?? fallback)
-        console.error(`[dashboard] Query ${i} failed:`, r.reason)
+        log.error(`Query ${i} failed:`, r.reason)
         return fallback
       }
 
@@ -374,7 +377,7 @@ export default function DashboardPage() {
       setLoading(false)
     }
     load().catch(err => {
-      console.error('[dashboard] Load failed:', err)
+      log.error('Load failed:', err)
       setLoading(false) // never leave the dashboard stuck loading
     })
   }, [])

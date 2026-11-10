@@ -13,6 +13,9 @@ import { createClient } from '@supabase/supabase-js'
 import { getRecipients } from '@/lib/notify-config'
 import { isAuthorizedCron } from '@/lib/cron-auth'
 import { fetchUnsentEvents, markEventsSent, type IntakeEvent, type IntakeEventKind } from '@/lib/intake-events'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('intake/daily-digest')
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -70,7 +73,7 @@ async function runSend() {
     events = await fetchUnsentEvents(supabaseAdmin)
   } catch (e: any) {
     // Most likely the intake_events migration hasn't been applied yet.
-    console.error('[intake-digest] events fetch failed:', e?.message)
+    log.error('events fetch failed:', e?.message)
     return NextResponse.json({ success: true, sent: false, reason: 'intake_events unavailable — apply supabase/migrations/add_intake_events.sql' })
   }
 
@@ -83,7 +86,7 @@ async function runSend() {
   const html = buildHtml(events, dateLabel)
   const text = buildText(events, dateLabel)
 
-  console.log(`[intake-digest] Sending to ${recipients.length} recipient(s): ${recipients.join(', ')}, ${events.length} event(s)`)
+  log.info('sending digest', { recipients: recipients.length, events: events.length })
   const res = await fetch('https://api.postmarkapp.com/email', {
     method: 'POST',
     headers: {
@@ -103,10 +106,10 @@ async function runSend() {
   })
 
   const result = await res.json()
-  console.log(`[intake-digest] Postmark response status=${res.status}:`, JSON.stringify(result).slice(0, 500))
+  log.info('Postmark response', { status: res.status })
 
   if (!res.ok) {
-    console.error('[intake-digest] Postmark error:', result)
+    log.error('Postmark error', { status: res.status, errorCode: result?.ErrorCode })
     return NextResponse.json({
       error: result.Message || 'Send failed',
       postmark_code: result.ErrorCode,

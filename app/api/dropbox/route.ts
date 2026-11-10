@@ -20,6 +20,9 @@ import {
 } from '@/lib/dropbox'
 import { apiError, withErrorHandler } from '@/lib/api-response'
 import { DropboxUploadSchema, DropboxMoveSchema } from '@/lib/schemas'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('dropbox')
 
 const DBX_CONTENT = 'https://content.dropboxapi.com/2'
 
@@ -55,10 +58,7 @@ function audit(
   userId: string | undefined,
   extra?: Record<string, unknown>,
 ) {
-  console.log(
-    '[dropbox-audit]',
-    JSON.stringify({ ts: new Date().toISOString(), action, path, userId, ...extra }),
-  )
+  log.info('audit', { action, path, userId, ...extra })
 }
 
 // ── Session extraction ────────────────────────────────────────────────────────
@@ -250,7 +250,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
 
   } catch (err: any) {
-    console.error('Dropbox API error:', err)
+    log.error('Dropbox API error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 })
@@ -340,7 +340,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     return NextResponse.json({ success: true, path: result.path_lower, name: result.name })
 
   } catch (err: any) {
-    console.error('Dropbox upload error:', err)
+    log.error('Dropbox upload error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 })
@@ -382,7 +382,7 @@ export const PATCH = withErrorHandler(async (req: NextRequest) => {
       code === 'conflict' ? 409 :
       code === 'rate_limited' ? 429 :
       code === 'auth' ? 401 : 500
-    console.error('Dropbox move error:', err)
+    log.error('Dropbox move error:', err)
     audit('move:failed', fromPath, userId, { to_path: toPath, code, error: err.message })
     return NextResponse.json({ error: err.message, code }, { status })
   }
@@ -418,7 +418,7 @@ export async function DELETE(req: NextRequest) {
 
   } catch (err: any) {
     const code = err instanceof DropboxError ? err.code : 'unknown'
-    console.error('Dropbox delete error:', err)
+    log.error('Dropbox delete error:', err)
     audit('delete:failed', path, userId, { code, error: err.message })
     return NextResponse.json(
       { error: err.message, code },

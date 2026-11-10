@@ -11,6 +11,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('intake/cleanup-temp')
 
 const BUCKET = 'intake-temp'
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
@@ -62,6 +65,6 @@ export async function GET(req: NextRequest) {
   }
 
   const summary = { bucket: BUCKET, checked, deleted, cutoff: new Date(cutoff).toISOString() }
-  console.log('[intake-temp-cleanup]', JSON.stringify({ ts: new Date().toISOString(), ...summary }))
+  log.info('temp cleanup complete', summary)
   return NextResponse.json(summary)
 }

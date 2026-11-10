@@ -5,6 +5,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { saveCCTokens } from '@/lib/constant-contact'
 import { withErrorHandler } from '@/lib/api-response'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('cc-oauth')
 
 const CC_TOKEN_URL = 'https://authz.constantcontact.com/oauth2/default/v1/token'
 
@@ -44,7 +47,7 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
 
   if (!res.ok) {
     const text = await res.text()
-    console.error('[cc-oauth] token exchange failed:', res.status, text)
+    log.error('token exchange failed', { status: res.status, responseBytes: text.length })
     return NextResponse.redirect(
       `${appUrl}/contacts?cc_error=${encodeURIComponent(`Token exchange failed: ${res.status}`)}`
     )

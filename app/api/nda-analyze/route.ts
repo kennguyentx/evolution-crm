@@ -6,6 +6,9 @@ import { AI_MODELS } from '@/lib/ai-config'
 import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
 import { apiError, withErrorHandler } from '@/lib/api-response'
 import { NdaAnalyzeSchema, NdaStatusSchema } from '@/lib/schemas'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('nda-analyze')
 
 export const maxDuration = 120
 
@@ -236,7 +239,7 @@ Return ONLY valid JSON — no prose before or after:
             const folderPath = `/Evolution Strategy Partners/Deals/${safeName}/NDAs`
             await dropboxUpload(folderPath, fileName, Buffer.from(fileBase64, 'base64'))
           } catch (dbxErr) {
-            console.error('Dropbox upload error (non-fatal):', dbxErr)
+            log.error('Dropbox upload error (non-fatal):', dbxErr)
           }
         }
       }
@@ -244,7 +247,7 @@ Return ONLY valid JSON — no prose before or after:
 
     return NextResponse.json({ success: true, id: ndaId, ...extracted })
   } catch (err: any) {
-    console.error('NDA analyze error:', err)
+    log.error('NDA analyze error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 })

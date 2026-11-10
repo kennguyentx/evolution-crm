@@ -3,6 +3,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import { AI_MODELS } from '@/lib/ai-config'
 import { apiError, withErrorHandler } from '@/lib/api-response'
 import { PortfolioParseSchema } from '@/lib/schemas'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('portfolio/parse')
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -108,7 +111,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     const result = Array.isArray(parsed) ? parsed : [parsed]
     return NextResponse.json({ periods: result, count: result.length })
   } catch (err: any) {
-    console.error('Portfolio parse error:', err)
+    log.error('Portfolio parse error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 })
