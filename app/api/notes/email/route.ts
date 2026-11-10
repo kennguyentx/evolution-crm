@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import { upsertContacts, findContactCandidates } from '@/lib/contacts'
 import { parseEmailCommand, type ParsedEmailCommand } from '@/lib/email-commands'
+import { extractEmailSignature, enrichContactsFromSignature, parseForwardedFrom } from '@/lib/email-signature'
 import { recordIntakeEvent } from '@/lib/intake-events'
 import { dropboxConfigured, dropboxUpload, dropboxMove, expectedDropboxFolder, uniqueDropboxFolder } from '@/lib/dropbox'
 import { parseAiJson, extractText } from '@/lib/ai-json'
@@ -96,7 +97,11 @@ function commandSummary(cmd: ParsedEmailCommand): string | null {
     return `log as ${cmd.stage ?? '?'}${cmd.deal_type ? ` as ${cmd.deal_type}` : ''}${cmd.parent_portco ? ` for ${cmd.parent_portco}` : ''}`
   }
   if (cmd.kind === 'log-contact') {
-    return cmd.contactNames.length ? `log new contact ${cmd.contactNames.join(', ')}` : 'log new contact'
+    if (!cmd.contactNames.length) return 'log new contact'
+    const parts = cmd.contacts.length
+      ? cmd.contacts.map(c => (c.company ? `${c.name} at ${c.company}` : c.name))
+      : cmd.contactNames
+    return `log new contact ${parts.join(', ')}`
   }
   if (cmd.kind === 'note' && cmd.contactName) return `note for ${cmd.contactName}`
   return null
@@ -342,7 +347,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     const topNote = topOfBody(text)
     const command = parseEmailCommand(`${subject}\n${topNote}`)
     if (command.kind !== 'none') {
-      log.info('command parsed', { kind: command.kind, stage: command.stage, dealType: command.deal_type, parentPortco: command.parent_portco, contacts: command.contactNames.length, hasContactName: !!command.contactName })
+      log.info('command parsed', { kind: command.kind, stage: command.stage, dealType: command.deal_type, parentPortco: command.parent_portco, contacts: command.contactNames.length, withCompany: command.contacts.filter(c => c.company).length, hasContactName: !!command.contactName })
     }
 
     // ── "Note for <name>" command ────────────────────────────────────────────
@@ -425,6 +430,16 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     const addNames = command.kind === 'log-contact' && command.contactNames.length > 0
       ? command.contactNames
       : addParse.names
+    // Companies named in a deterministic contact command, keyed by lowercase
+    // name ("log new contact Jane Doe at Acme" → "jane doe" ↦ "Acme"). A
+    // command company wins over signature- and LLM-extracted firms below.
+    const companyByName = new Map<string, string>(
+      command.kind === 'log-contact'
+        ? command.contacts
+            .filter(c => c.company)
+            .map(c => [c.name.toLowerCase().trim(), c.company!] as [string, string])
+        : [],
+    )
     if (isInternal(from) && addTrigger) {
       log.info('add-contact request', { from, requestedNames: addNames.length })
       try {
@@ -475,6 +490,43 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
           toAdd = [...matched, ...unmatched]
         }
 
+        // ── Deterministic signature enrichment ─────────────────────────────
+        // Parse the forwarded email's signature block without the LLM and
+        // merge it into the contacts above: it fills blanks only (a value
+        // already extracted is kept). If the signature belongs to the
+        // forwarded message's sender (From: header match) and no extracted
+        // contact carries them, add a contact built from the signature.
+        const signature = extractEmailSignature(text)
+        if (signature.name || signature.email) {
+          enrichContactsFromSignature(toAdd, signature)
+          const fwdFrom = parseForwardedFrom(text)
+          const senderPresent = toAdd.some(c =>
+            (signature.email && c.email?.toLowerCase() === signature.email) ||
+            (signature.name && c.name?.toLowerCase().trim() === signature.name.toLowerCase().trim()))
+          const isSenderSig =
+            (!!fwdFrom.email && !!signature.email && fwdFrom.email === signature.email) ||
+            (!!fwdFrom.name && !!signature.name && fwdFrom.name.toLowerCase().trim() === signature.name.toLowerCase().trim())
+          if (isSenderSig && !senderPresent && signature.name) {
+            toAdd.push({
+              name: signature.name,
+              email: signature.email,
+              firm: signature.company,
+              title: signature.title,
+              phone: signature.phone ?? signature.mobile,
+              role: 'Other',
+            })
+          }
+        }
+        // Command companies win over signature/LLM firms — applied last.
+        if (companyByName.size > 0) {
+          for (const [reqName, firm] of companyByName) {
+            for (const c of toAdd) {
+              const nm = c.name?.toLowerCase().trim()
+              if (nm && (nm === reqName || nm.includes(reqName) || reqName.includes(nm))) c.firm = firm
+            }
+          }
+        }
+
         if (toAdd.length === 0) {
           await recordIntakeEvent(supabase, {
             kind: 'skipped',
@@ -485,7 +537,9 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
           return NextResponse.json({ success: true, processed: [{ type: 'add-contact', added: 0 }] })
         }
 
-        const { created, existing } = await upsertContacts(supabase, toAdd, null)
+        // fillBlanks: signature/command details also patch EMPTY fields on
+        // contacts that already exist in Nexus — never overwriting anything.
+        const { created, existing } = await upsertContacts(supabase, toAdd, null, { fillBlanks: true })
         const summaryParts = [
           created.length ? `Added ${created.length} new contact${created.length !== 1 ? 's' : ''}: ${created.join(', ')}` : '',
           existing.length ? `Already in Nexus (${existing.length}): ${existing.join(', ')}` : '',
