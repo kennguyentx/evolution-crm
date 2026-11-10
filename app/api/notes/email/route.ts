@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
+import { upsertContacts, findContactCandidates } from '@/lib/contacts'
+import { parseEmailCommand, type ParsedEmailCommand } from '@/lib/email-commands'
+import { recordIntakeEvent } from '@/lib/intake-events'
 import { dropboxConfigured, dropboxUpload, dropboxMove, expectedDropboxFolder, uniqueDropboxFolder } from '@/lib/dropbox'
 import { parseAiJson, extractText } from '@/lib/ai-json'
 import { AI_MODELS } from '@/lib/ai-config'
 import { runAgentToText } from '@/lib/assistant-core'
 import { sendDealNotification } from '@/lib/deal-notify'
-import { upsertContacts, findContactCandidates } from '@/lib/contacts'
-import { parseEmailCommand, type ParsedEmailCommand } from '@/lib/email-commands'
-import { recordIntakeEvent } from '@/lib/intake-events'
 
 export const maxDuration = 120
 
