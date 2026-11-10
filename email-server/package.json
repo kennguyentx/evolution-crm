@@ -5,13 +5,12 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "lint": "node --check server.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.52.0",
     "@supabase/supabase-js": "^2.49.4",
     "dotenv": "^16.4.7",
-    "express": "^4.19.2",
-    "jszip": "^3.10.1"
+    "express": "^4.19.2"
   }
 }

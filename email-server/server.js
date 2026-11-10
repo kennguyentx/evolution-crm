@@ -133,20 +133,22 @@ app.get('/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOStrin
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
+// Fail fast on missing config before binding the port — checking after
+// app.listen would briefly accept traffic and then exit.
+const required = [
+  'POSTMARK_WEBHOOK_TOKEN',
+  'INTERNAL_WEBHOOK_SECRET',
+  'NEXT_PUBLIC_SUPABASE_URL',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'NEXT_PUBLIC_APP_URL',
+]
+const missing = required.filter(k => !process.env[k])
+if (missing.length) {
+  console.error(`FATAL: Missing required env vars: ${missing.join(', ')}`)
+  process.exit(1)
+}
+
 const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
   console.log(`Email relay server running on port ${PORT}`)
-
-  const required = [
-    'POSTMARK_WEBHOOK_TOKEN',
-    'INTERNAL_WEBHOOK_SECRET',
-    'NEXT_PUBLIC_SUPABASE_URL',
-    'SUPABASE_SERVICE_ROLE_KEY',
-    'NEXT_PUBLIC_APP_URL',
-  ]
-  const missing = required.filter(k => !process.env[k])
-  if (missing.length) {
-    console.error(`FATAL: Missing required env vars: ${missing.join(', ')}`)
-    process.exit(1)
-  }
 })
