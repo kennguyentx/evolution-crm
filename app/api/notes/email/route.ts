@@ -1,3 +1,4 @@
+import { resolveDealStatus, resolveEffectiveStage, resolveIntakeStage } from '@/lib/intake-stage'
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
@@ -6,7 +7,6 @@ import { parseAiJson, extractText } from '@/lib/ai-json'
 import { AI_MODELS } from '@/lib/ai-config'
 import { runAgentToText } from '@/lib/assistant-core'
 import { sendDealNotification } from '@/lib/deal-notify'
-import { resolveDealStatus, resolveEffectiveStage, resolveIntakeStage } from '@/lib/intake-stage'
 import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
 import { withErrorHandler } from '@/lib/api-response'
 
