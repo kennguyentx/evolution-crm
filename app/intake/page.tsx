@@ -1048,7 +1048,7 @@ function TeaserFlow() {
               <select className="select" value={edited.stage || 'Teaser'} onChange={e => updateField('stage', e.target.value)}>
                 <optgroup label="Active"><option value="Teaser">Teaser</option><option value="Reviewing">Reviewing</option><option value="Pre-LOI">Pre-LOI</option><option value="LOI Submitted">LOI Submitted</option><option value="Exclusivity">Exclusivity</option></optgroup>
                 <optgroup label="Closed"><option value="Closed (Platform)">Closed (Platform)</option><option value="Closed (Add-On)">Closed (Add-On)</option></optgroup>
-                <optgroup label="Pass"><option value="Pass (DOA)">Pass (DOA)</option><option value="Pass (Pre-LOI)">Pass (Pre-LOI)</option><option value="Pass (Post-LOI)">Pass (Post-LOI)</option></optgroup>
+                <optgroup label="Pass"><option value="Pass (DOA)">Pass (DOA)</option><option value="Pass (Pre-LOI)">Pass (Pre-LOI)</option><option value="Pass (Post-LOI)">Pass (Post-LOI)</option><option value="Dead">Dead</option></optgroup>
                 <optgroup label="Other"><option value="Hold">Hold</option></optgroup>
               </select>
             </IntakeField>
@@ -1599,6 +1599,7 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
                         <option value="Pass (DOA)">Pass (DOA)</option>
                         <option value="Pass (Pre-LOI)">Pass (Pre-LOI)</option>
                         <option value="Pass (Post-LOI)">Pass (Post-LOI)</option>
+                        <option value="Dead">Dead</option>
                       </optgroup>
                     </select>
                   </div>

@@ -7,7 +7,7 @@
 // deterministic mapping *around* it, so it can be unit-tested without
 // a database, an LLM, or a running app:
 //
-//   - which deal `status` a stage implies (Pass* → Dead, Closed* → Closed)
+//   - which deal `status` a stage implies (Pass*/Dead → Dead, Closed* → Closed)
 //   - which stage wins when several sources disagree
 //   - the default stage for a deal with no instruction at all
 //
@@ -23,12 +23,12 @@ export const DEFAULT_INTAKE_STAGE = 'Teaser'
 
 /**
  * The deal status implied by a stage.
- *   - 'Pass (DOA)', 'Pass (Pre-LOI)', 'Pass (Post-LOI)' → 'Dead'
- *   - 'Closed (Platform)', 'Closed (Add-On)'            → 'Closed'
- *   - anything else ('Teaser', 'Reviewing', …)           → 'Active'
+ *   - 'Pass (DOA)', 'Pass (Pre-LOI)', 'Pass (Post-LOI)', 'Dead' → 'Dead'
+ *   - 'Closed (Platform)', 'Closed (Add-On)'                    → 'Closed'
+ *   - anything else ('Teaser', 'Reviewing', …)                   → 'Active'
  */
 export function stageToStatus(stage: string): DealStatus {
-  if (stage.startsWith('Pass')) return 'Dead'
+  if (stage === 'Dead' || stage.startsWith('Pass')) return 'Dead'
   if (stage.startsWith('Closed')) return 'Closed'
   return 'Active'
 }

@@ -212,7 +212,7 @@ export const TOOLS: Anthropic.Tool[] = [
         company_name: { type: 'string', description: 'Partial company name' },
         sector: { type: 'string', description: 'Sector keyword' },
         geography: { type: 'string', description: 'Geography keyword' },
-        stage: { type: 'string', description: 'Exact stage value only: Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity | Closed (Platform) | Closed (Add-On) | Pass (DOA) | Pass (Pre-LOI) | Pass (Post-LOI) | Hold' },
+        stage: { type: 'string', description: 'Exact stage value only: Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity | Closed (Platform) | Closed (Add-On) | Pass (DOA) | Pass (Pre-LOI) | Pass (Post-LOI) | Hold | Dead' },
         status: { type: 'string', description: 'Active | Dead | Closed — omit for all statuses' },
         year: { type: 'number', description: 'Calendar year to filter by created_at (e.g. 2025)' },
         sourced_year: { type: 'number', description: 'Calendar year to filter by sourced_date (Salesforce close date, more accurate than created_at)' },
@@ -327,7 +327,7 @@ export const TOOLS: Anthropic.Tool[] = [
         deal_id: { type: 'string', description: 'UUID from search_deals' },
         company_name: { type: 'string', description: 'Display name for confirmation' },
         field: { type: 'string', description: 'Exact DB column: stage | status | notes | sector | geography | revenue | ebitda | description | loi_date | expected_close | pass_reason | source_notes | deal_type' },
-        new_value: { type: 'string', description: 'New value. For stage: Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity | Closed (Platform) | Closed (Add-On) | Pass (DOA) | Pass (Pre-LOI) | Pass (Post-LOI) | Hold. For status: Active | Dead | Closed.' },
+        new_value: { type: 'string', description: 'New value. For stage: Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity | Closed (Platform) | Closed (Add-On) | Pass (DOA) | Pass (Pre-LOI) | Pass (Post-LOI) | Hold | Dead. For status: Active | Dead | Closed.' },
         current_value: { type: 'string', description: 'Current value for display in confirmation' },
       },
       required: ['deal_id', 'company_name', 'field', 'new_value'],
@@ -887,7 +887,7 @@ export async function executeTool(name: string, rawInput: unknown): Promise<unkn
 
     case 'create_deal': {
       const stage = input.stage || 'Teaser'
-      const status = stage.startsWith('Closed') ? 'Closed' : stage.startsWith('Pass') ? 'Dead' : 'Active'
+      const status = stage.startsWith('Closed') ? 'Closed' : (stage === 'Dead' || stage.startsWith('Pass')) ? 'Dead' : 'Active'
       const { data, error } = await supabase.from('deals').insert({
         company_name:   input.company_name,
         sector:         input.sector        || null,
@@ -918,18 +918,18 @@ export async function executeTool(name: string, rawInput: unknown): Promise<unkn
       const extraUpdates: Record<string, string> = {}
       if (field === 'stage') {
         if (value === 'Closed (Platform)' || value === 'Closed (Add-On)') extraUpdates.status = 'Closed'
-        else if (String(value).startsWith('Pass')) extraUpdates.status = 'Dead'
+        else if (value === 'Dead' || String(value).startsWith('Pass')) extraUpdates.status = 'Dead'
         else extraUpdates.status = 'Active'
       } else if (field === 'status') {
         if (value === 'Closed') {
           extraUpdates.stage = 'Closed (Platform)'
         } else if (value === 'Dead') {
           const { data: current } = await supabase.from('deals').select('stage').eq('id', input.deal_id).single()
-          extraUpdates.stage = current?.stage?.startsWith('Pass') ? current.stage : 'Pass (Pre-LOI)'
+          extraUpdates.stage = (current?.stage?.startsWith('Pass') || current?.stage === 'Dead') ? current.stage : 'Pass (Pre-LOI)'
         } else if (value === 'Active') {
           const { data: current } = await supabase.from('deals').select('stage').eq('id', input.deal_id).single()
           const s = current?.stage || ''
-          extraUpdates.stage = (s.startsWith('Pass') || s.startsWith('Closed')) ? 'Reviewing' : s
+          extraUpdates.stage = (s.startsWith('Pass') || s.startsWith('Closed') || s === 'Dead') ? 'Reviewing' : s
         }
       }
       const { error } = await supabase.from('deals').update({ [field]: value, ...extraUpdates }).eq('id', input.deal_id)
@@ -994,7 +994,7 @@ FIRM CONTEXT:
 - Deal-by-deal structure — raises equity and debt separately per deal
 
 DEAL STAGES — use EXACTLY these strings:
-Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity | Closed (Platform) | Closed (Add-On) | Pass (DOA) | Pass (Pre-LOI) | Pass (Post-LOI) | Hold
+Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity | Closed (Platform) | Closed (Add-On) | Pass (DOA) | Pass (Pre-LOI) | Pass (Post-LOI) | Hold | Dead
 
 DEAL STATUS: Active | Dead | Closed | Passed
 

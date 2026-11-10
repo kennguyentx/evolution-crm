@@ -13,7 +13,7 @@ const SECTORS = [
 const ALL_STAGES = [
   { group: 'Active', stages: ['Teaser', 'Reviewing', 'Pre-LOI', 'LOI Submitted', 'Exclusivity'] },
   { group: 'Closed', stages: ['Closed (Platform)', 'Closed (Add-On)'] },
-  { group: 'Pass', stages: ['Pass (DOA)', 'Pass (Pre-LOI)', 'Pass (Post-LOI)'] },
+  { group: 'Pass', stages: ['Pass (DOA)', 'Pass (Pre-LOI)', 'Pass (Post-LOI)', 'Dead'] },
   { group: 'Other', stages: ['Hold'] },
 ]
 

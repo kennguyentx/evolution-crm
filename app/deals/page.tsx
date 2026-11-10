@@ -11,12 +11,12 @@ import { useIsMobile } from '@/hooks/useIsMobile'
 import { initialParam, useUrlFilterSync } from '@/hooks/useUrlState'
 import { usePageTitle } from '@/hooks/usePageTitle'
 
-const ALL_STAGES: DealStage[] = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
+const ALL_STAGES: DealStage[] = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold','Dead']
 
 const STAGE_GROUPS: Record<string, DealStage[]> = {
   pipeline: ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity'],
   closed:   ['Closed (Platform)','Closed (Add-On)'],
-  passed:   ['Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)'],
+  passed:   ['Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Dead'],
   hold:     ['Hold'],
 }
 

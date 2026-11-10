@@ -6,7 +6,7 @@
 // so the note→stage interpretation is NOT unit-testable here. What is
 // testable — and what this covers — is the deterministic mapping around it
 // that the route used to inline in three places:
-//   - stage → deal status (Pass* → Dead, Closed* → Closed, else Active)
+//   - stage → deal status (Pass*/Dead → Dead, Closed* → Closed, else Active)
 //   - which stage wins when an existing deal, an instruction, or neither
 //     is present
 //   - the default stage for a deal with no instruction
@@ -27,6 +27,12 @@ describe('stageToStatus', () => {
     expect(stageToStatus('Pass (DOA)')).toBe('Dead')
     expect(stageToStatus('Pass (Pre-LOI)')).toBe('Dead')
     expect(stageToStatus('Pass (Post-LOI)')).toBe('Dead')
+  })
+
+  it('maps the Dead stage to Dead', () => {
+    expect(stageToStatus('Dead')).toBe('Dead')
+    expect(resolveDealStatus('Dead', null)).toBe('Dead')
+    expect(resolveDealStatus('Dead', undefined)).toBe('Dead')
   })
 
   it('maps every Closed stage to Closed', () => {

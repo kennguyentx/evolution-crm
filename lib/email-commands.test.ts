@@ -39,6 +39,14 @@ describe('parseEmailCommand — log-deal', () => {
     expect(parseEmailCommand('log as loi').stage).toBe('LOI Submitted');
   });
 
+  it('parses dead as its own stage (not a Pass variant)', () => {
+    const r = parseEmailCommand('log as dead');
+    expect(r.kind).toBe('log-deal');
+    expect(r.stage).toBe('Dead');
+    expect(parseEmailCommand('log dead').stage).toBe('Dead');
+    expect(parseEmailCommand('Log As Dead').stage).toBe('Dead');
+  });
+
   it('closed + add-on is Closed (Add-On); closed alone is Closed (Platform)', () => {
     const r = parseEmailCommand('log as closed as add-on for Fain');
     expect(r.kind).toBe('log-deal');

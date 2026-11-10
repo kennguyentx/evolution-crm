@@ -78,8 +78,8 @@ export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { par
     // Resolve stage and derive status
     const stage  = edited?.stage || 'Teaser'
     const status =
-      stage.startsWith('Pass')   ? 'Dead'   :
-      stage.startsWith('Closed') ? 'Closed' :
+      stage === 'Dead' || stage.startsWith('Pass') ? 'Dead'   :
+      stage.startsWith('Closed')                   ? 'Closed' :
       'Active'
 
     // Create deal
