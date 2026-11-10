@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendDealNotification } from '@/lib/deal-notify'
+import { upsertContacts } from '@/lib/contacts'
 import { IntakeQueueActionSchema } from '@/lib/schemas'
 import { apiError } from '@/lib/api-response'
 
@@ -44,6 +45,33 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
     const ext = { ...item.extracted, ...edited }
 
+    // Note-append queue items: no deal is created. The reviewer picked the
+    // contact (edited.contact_id) in the intake UI; file the note under it.
+    if (ext._kind === 'note-append') {
+      if (!edited?.contact_id) {
+        await supabase.from('intake_queue').update({ status: 'pending', reviewed_at: null }).eq('id', params.id)
+        return NextResponse.json({ error: 'Pick a contact to file this note under' }, { status: 400 })
+      }
+      const noteText = (ext._note_text as string) || ''
+      const { data: note, error: noteErr } = await supabase.from('notes').insert({
+        raw_text: noteText,
+        summary: noteText.slice(0, 300),
+        logged_by: item.from_email ? item.from_email.split('@')[0] : 'Email',
+        source: 'email',
+        note_date: new Date().toISOString().split('T')[0],
+        contact_id: edited.contact_id,
+      }).select('id').single()
+      if (noteErr) {
+        await supabase.from('intake_queue').update({ status: 'pending', reviewed_at: null }).eq('id', params.id)
+        return NextResponse.json({ error: noteErr.message }, { status: 500 })
+      }
+      await supabase.from('intake_queue').update({
+        status: 'approved',
+        reviewed_at: new Date().toISOString(),
+      }).eq('id', params.id)
+      return NextResponse.json({ success: true, note_id: note?.id })
+    }
+
     // Resolve stage and derive status
     const stage  = edited?.stage || 'Teaser'
     const status =
@@ -86,6 +114,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         dropbox_path: item.dropbox_path,
         extracted:    item.extracted,
       })
+    }
+
+    // Link the contacts the email extractor found. Previously they were
+    // captured in extracted.contacts but never created/linked on approve —
+    // approving a deal silently dropped its people.
+    if (deal?.id && Array.isArray(ext.contacts) && ext.contacts.length) {
+      try {
+        await upsertContacts(supabase, ext.contacts, deal.id)
+      } catch (e: any) {
+        // Non-fatal: the deal exists; contacts can be added from the deal page.
+        console.error('[intake-approve] contact linking failed:', e?.message)
+      }
     }
 
     // Mark queue item approved
