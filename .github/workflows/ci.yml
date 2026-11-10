@@ -24,5 +24,13 @@ jobs:
         run: npm run lint
       - name: Test
         run: npm test
+      # The build constructs Supabase clients at module scope, so it fails
+      # with "supabaseUrl is required" unless the env vars merely EXIST.
+      # These placeholders are never connected to — Vercel supplies the real
+      # values when it builds for deployment.
       - name: Build
         run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy
+          SUPABASE_SERVICE_ROLE_KEY: dummy
