@@ -54,15 +54,50 @@ FROM_EMAIL
 DROPBOX_APP_KEY
 DROPBOX_APP_SECRET
 DROPBOX_REFRESH_TOKEN
+CRON_SECRET
+INTERNAL_WEBHOOK_SECRET
 NEXT_PUBLIC_TEAM_EMAIL
 NEXT_PUBLIC_APP_URL
 ```
+
+`CRON_SECRET` authenticates the scheduled cron routes (`/api/digest`,
+`/api/pipeline/weekly-email`, `/api/deals/loi-alerts`,
+`/api/portfolio-news/daily-email`) — accepted as the `x-cron-secret` header
+or a Bearer token. `INTERNAL_WEBHOOK_SECRET` authenticates relay → Next.js
+calls from the email intake server (`email-server/server.js`) to
+`/api/notes/email`, sent as the `X-Internal-Secret` header.
 
 ### Render (email intake server — `email-server/server.js`)
 Same variables above, plus:
 ```
 POSTMARK_WEBHOOK_TOKEN
 ```
+
+---
+
+## Security model
+
+This is an internal-only tool for a small team, and access control is
+deliberately simple:
+
+- **All access control lives in `middleware.ts`.** Every page (except
+  `/login`) and every `/api/*` route requires a Supabase session. The only
+  exceptions are the Postmark inbound webhook (`/api/notes/email`, gated by
+  `POSTMARK_WEBHOOK_TOKEN`) and the cron routes, which require a valid
+  `CRON_SECRET`.
+- **API routes use the service-role key by design.** Server-side code
+  (`lib/*`, API routes) creates Supabase clients with
+  `SUPABASE_SERVICE_ROLE_KEY`, which bypasses Row Level Security entirely.
+  The browser client uses the anon key and is subject to RLS.
+- **RLS is a backstop, not the gate.** Policies in
+  `supabase/migrations/rls_policies.sql` are `authenticated_all` — any
+  authenticated user can read/write every row. Do not rely on RLS to
+  restrict who sees what.
+- **Two rules for future changes:** any new table needs an RLS policy
+  (follow the `authenticated_all` pattern in `rls_policies.sql`), and any
+  new public route needs an explicit exemption in `middleware.ts`
+  (`PUBLIC_API_ROUTES` or `CRON_API_ROUTES`) — otherwise it is
+  session-gated by default.
 
 ---
 
