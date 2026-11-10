@@ -9,16 +9,20 @@ How to use this file: paste the whole thing to Claude Code, or pick items one at
 time. Every item is self-contained: what to change, the file(s), and why.
 Suggested order at the bottom.
 
-**Update Nov 10, 2026:** items 1, 5, 11, 20, and 43 are done (see the Status
-lines on those items). Item 2 is moot — Ken decided Nov 8, 2026 he does not
-want the portfolio-news email scheduled. **Scope for this round: address
+**Update Nov 10, 2026:** items 1, 5, 11, 20, and 43 were already done (see
+the Status lines on those items). Item 2 is moot — Ken decided Nov 8, 2026
+he does not want the portfolio-news email scheduled. **Scope for this round:
 everything except items 31–42 (PE lens), which Ken deferred Nov 10, 2026.**
-All in-scope items are now implemented in PRs awaiting Ken's merge: Batch A
-(items 3, 7, 12, 17, 18) in PR #2, Batch B (4, 8, 9, 21) in PR #3, Batch C
-(19, 10) in PR #4, Batch D (44–52) in PR #5, Batch E (22–30) in PR #7, and
-Batch F one PR per item — item 15 in PR #9, item 6 in PR #10, item 14 in
-PR #11, item 16 in PR #12, item 13 in PR #13. See the Status line on each
-item. Nothing is on `main` until Ken merges.
+All 34 in-scope items are now **Done — merged to `main` Nov 10, 2026** (Ken
+authorized Vesper to merge them): Batch A (items 3, 7, 12, 17, 18) in PR #2,
+Batch B (4, 8, 9, 21) in PR #3, Batch C (19, 10) in PR #4, Batch D (44–52) in
+PR #5 — merged via replacement PR #14, Batch E (22–30) in PR #7, and Batch F
+one PR per item — item 15 in PR #9, item 6 in PR #10 (via replacement
+PR #26), item 14 in PR #11 (via replacement PR #25), item 16 in PR #12,
+item 13 in PR #13 (via replacement PR #15). Final `main` was verified after
+the last merge: typecheck, lint, and 110/110 tests green, plus a clean
+production build. Items 31–42 remain deferred. See the Status line on each
+item.
 
 ## What's already good (don't "fix" these)
 
@@ -88,7 +92,7 @@ item. Nothing is on `main` until Ken merges.
   README's env-var table — they exist in the code but aren't listed there.
 - **Status (Nov 10, 2026): Implemented in PR #2** (`batch-a-quick-wins`,
   commit `0170d3b`) — root `.env.example` added, README env-var table updated.
-  Awaiting merge; not yet on `main`.
+  Done — merged Nov 10, 2026.
 
 ---
 
@@ -106,7 +110,7 @@ item. Nothing is on `main` until Ken merges.
   `getUser()` and treat a missing/error user as unauthenticated.
 - **Status (Nov 10, 2026): Implemented in PR #3** (`batch-b-auth-validation`,
   commit `2098a84`) — Batch B (auth hardening + validation); CI green.
-  Awaiting merge; not yet on `main`.
+  Done — merged Nov 10, 2026.
 
 ### 5. Stop putting `CRON_SECRET` in the URL query string
 
@@ -135,10 +139,8 @@ item. Nothing is on `main` until Ken merges.
   one-liner) with `createBrowserClient`, rewrite `middleware.ts` with the
   `@supabase/ssr` middleware client, and update the call sites. Do this in its
   own branch and verify login + MFA + the cron routes still work.
-- **Status (Nov 10, 2026): Implemented in PR #10** (`batch-f6-ssr`, commit
-  `a355389`) — Batch F; CI green. Before merging: run the live-auth test on
-  the Vercel preview (login, MFA/TOTP, cron route, session past ~1h). Awaiting
-  merge; not yet on `main`.
+- **Status (Nov 10, 2026): Implemented in PR #10** (merged via replacement PR #26) (`batch-f6-ssr`, commit
+  `a355389`) — Batch F; CI green. The live-auth preview test was waived by Ken. Done — merged Nov 10, 2026.
 
 ### 7. Document the trust model: RLS is advisory, the middleware is the real gate
 
@@ -154,8 +156,7 @@ item. Nothing is on `main` until Ken merges.
   service-role key by design, and that any new table needs an RLS policy and
   any new public route needs an explicit middleware exemption.
 - **Status (Nov 10, 2026): Implemented in PR #2** (`batch-a-quick-wins`,
-  commit `0170d3b`) — "Security model" section added to the README. Awaiting
-  merge; not yet on `main`.
+  commit `0170d3b`) — "Security model" section added to the README. Done — merged Nov 10, 2026.
 
 ---
 
@@ -171,7 +172,7 @@ item. Nothing is on `main` until Ken merges.
   helper if the team prefers per-route try/catch — pick one and be consistent).
 - **Status (Nov 10, 2026): Implemented in PR #3** (`batch-b-auth-validation`,
   commit `2098a84`) — Batch B (auth hardening + validation); CI green.
-  Awaiting merge; not yet on `main`.
+  Done — merged Nov 10, 2026.
 
 ### 9. Zod schemas exist but only 1 of 34 routes validates its request body
 
@@ -188,7 +189,7 @@ item. Nothing is on `main` until Ken merges.
   Add schemas for the remaining POST endpoints that lack one.
 - **Status (Nov 10, 2026): Implemented in PR #3** (`batch-b-auth-validation`,
   commit `2098a84`) — Batch B (auth hardening + validation); CI green.
-  Awaiting merge; not yet on `main`.
+  Done — merged Nov 10, 2026.
 
 ### 10. Migrations are applied by hand — add a runner
 
@@ -203,7 +204,7 @@ item. Nothing is on `main` until Ken merges.
 - **Status (Nov 10, 2026): Implemented in PR #4** (`batch-c-guardrails`,
   commit `84cc544`) — Batch C (tests + migration runner); CI green. Before the
   runner's first real use: verify against the production DB and run `npm run
-  migrate -- --baseline`. Awaiting merge; not yet on `main`.
+  migrate -- --baseline`. Done — merged Nov 10, 2026.
 
 ### 11. Deduplicate the cron-secret check
 
@@ -228,7 +229,7 @@ item. Nothing is on `main` until Ken merges.
   before binding the port.
 - **Status (Nov 10, 2026): Implemented in PR #2** (`batch-a-quick-wins`,
   commit `0170d3b`) — env-var check moved above `app.listen` in
-  `email-server/server.js`. Awaiting merge; not yet on `main`.
+  `email-server/server.js`. Done — merged Nov 10, 2026.
 
 ---
 
@@ -244,8 +245,8 @@ item. Nothing is on `main` until Ken merges.
   (`RouteHandler` types `ctx` as `any`), the Supabase row shapes, and
   `lib/assistant-core.ts` tool-call payloads. Consider enabling
   `noImplicitAny` follow-ups per-file rather than a big-bang rewrite.
-- **Status (Nov 10, 2026): Implemented in PR #13** (`batch-f13-types`, commit
-  `3f6578b`) — Batch F; CI green. Awaiting merge; not yet on `main`.
+- **Status (Nov 10, 2026): Implemented in PR #13** (merged via replacement PR #15) (`batch-f13-types`, commit
+  `3f6578b`) — Batch F; CI green. Done — merged Nov 10, 2026.
 
 ### 14. 111 `console.log/warn/error` calls, including logging user content
 
@@ -257,11 +258,11 @@ item. Nothing is on `main` until Ken merges.
 - **Change:** add a tiny structured logger (level + timestamp + tag) and route
   the calls through it; stop logging user content (questions, bodies) and keep
   metadata only (message IDs, counts, sizes).
-- **Status (Nov 10, 2026): Implemented in PR #11** (`batch-f14-logger`, commit
+- **Status (Nov 10, 2026): Implemented in PR #11** (merged via replacement PR #25) (`batch-f14-logger`, commit
   `e4e7699`) — Batch F; CI green — structured logger `lib/log.ts` replaced all
   111 console calls in app/lib/components and stopped logging user content.
   Left: `email-server/server.js` still has 8 console calls (separate JS
-  service; a JS twin is the follow-up). Awaiting merge; not yet on `main`.
+  service; a JS twin is the follow-up). Done — merged Nov 10, 2026.
 
 ### 15. Split the biggest files
 
@@ -274,7 +275,7 @@ item. Nothing is on `main` until Ken merges.
   assistant and the DOCX/spreadsheet extraction into `lib/` modules. Then
   split the deal detail page by tab (documents, NDA, Dropbox) into components.
 - **Status (Nov 10, 2026): Implemented in PR #9** (`batch-f15-splits`, commit
-  `55f3367`) — Batch F; CI green. Awaiting merge; not yet on `main`.
+  `55f3367`) — Batch F; CI green. Done — merged Nov 10, 2026.
 
 ---
 
@@ -290,7 +291,7 @@ item. Nothing is on `main` until Ken merges.
 - **Change:** enable Dependabot for npm and GitHub Actions, then work through
   the resulting PRs — major bumps (Next, ESLint 9) in their own branches.
 - **Status (Nov 10, 2026): Implemented in PR #12** (`batch-f16-dependabot`,
-  commit `07c528b`) — Batch F; CI green. Awaiting merge; not yet on `main`.
+  commit `07c528b`) — Batch F; CI green. Done — merged Nov 10, 2026.
 
 ### 17. Remove unused dependencies from the main app
 
@@ -304,8 +305,7 @@ item. Nothing is on `main` until Ken merges.
   needed later, re-add a maintained library then.
 - **Status (Nov 10, 2026): Implemented in PR #2** (`batch-a-quick-wins`,
   commit `0170d3b`) — `pdf-parse` and `formidable` removed from
-  `package.json`, `pdf-parse` dropped from `next.config.js`. Awaiting merge;
-  not yet on `main`.
+  `package.json`, `pdf-parse` dropped from `next.config.js`. Done — merged Nov 10, 2026.
 
 ### 18. Clean up `email-server`
 
@@ -319,8 +319,7 @@ item. Nothing is on `main` until Ken merges.
 - **Status (Nov 10, 2026): Implemented in PR #2** (`batch-a-quick-wins`,
   commit `0170d3b`) — unused `@anthropic-ai/sdk` and `jszip` removed from
   `email-server/package.json`, `lint` script (`node --check server.js`)
-  added. TypeScript conversion deliberately not done (bigger job). Awaiting
-  merge; not yet on `main`.
+  added. TypeScript conversion deliberately not done (bigger job). Done — merged Nov 10, 2026.
 
 ---
 
@@ -338,8 +337,7 @@ item. Nothing is on `main` until Ken merges.
 - **Status (Nov 10, 2026): Implemented in PR #4** (`batch-c-guardrails`,
   commit `84cc544`) — Batch C (tests + migration runner); CI green. Note: CI
   does not run the test suite until the updated `ci.yml` lands (needs the
-  GitHub App Workflows permission or a hand-push). Awaiting merge; not yet on
-  `main`.
+  GitHub App Workflows permission or a hand-push). Done — merged Nov 10, 2026.
 
 ### 20. No CI — nothing runs lint or typecheck on push/PR
 
@@ -386,7 +384,7 @@ item. Nothing is on `main` until Ken merges.
   after the items above.
 - **Status (Nov 10, 2026): Implemented in PR #3** (`batch-b-auth-validation`,
   commit `2098a84`) — Batch B (auth hardening + validation); CI green.
-  Awaiting merge; not yet on `main`.
+  Done — merged Nov 10, 2026.
 
 ---
 
@@ -418,8 +416,7 @@ item. Nothing is on `main` until Ken merges.
   `?firm=`). Read the param on load, update it with `router.replace` on tab
   change.
 - **Status (Nov 10, 2026): Implemented in PR #7** (`batch-e-ui-linking`,
-  commit `8f66847`) — Batch E (UI & linking); CI green. Awaiting merge; not
-  yet on `main`.
+  commit `8f66847`) — Batch E (UI & linking); CI green. Done — merged Nov 10, 2026.
 
 ### 23. Deep-link list filters too
 
@@ -431,8 +428,7 @@ item. Nothing is on `main` until Ken merges.
 - **Change:** put filter state in the URL (same `router.replace` pattern as
   item 22) on the four pages above, starting with deals and intake.
 - **Status (Nov 10, 2026): Implemented in PR #7** (`batch-e-ui-linking`,
-  commit `8f66847`) — Batch E (UI & linking); CI green. Awaiting merge; not
-  yet on `main`.
+  commit `8f66847`) — Batch E (UI & linking); CI green. Done — merged Nov 10, 2026.
 
 ### 24. Kanban drag-and-drop doesn't work on mobile
 
@@ -446,8 +442,7 @@ item. Nothing is on `main` until Ken merges.
   or switch to a pointer-based library (dnd-kit). Keep the click-vs-drag
   handling explicit and test it on a phone.
 - **Status (Nov 10, 2026): Implemented in PR #7** (`batch-e-ui-linking`,
-  commit `8f66847`) — Batch E (UI & linking); CI green. Awaiting merge; not
-  yet on `main`.
+  commit `8f66847`) — Batch E (UI & linking); CI green. Done — merged Nov 10, 2026.
 
 ### 25. No `loading.tsx` and no per-page titles
 
@@ -460,8 +455,7 @@ item. Nothing is on `main` until Ken merges.
   dashboard, pipeline) and set `document.title` per page (deal company name
   on detail pages, e.g. "Amped — Nexus").
 - **Status (Nov 10, 2026): Implemented in PR #7** (`batch-e-ui-linking`,
-  commit `8f66847`) — Batch E (UI & linking); CI green. Awaiting merge; not
-  yet on `main`.
+  commit `8f66847`) — Batch E (UI & linking); CI green. Done — merged Nov 10, 2026.
 
 ### 26. Styling is 2,070 inline `style={{}}` blocks vs 816 classNames
 
@@ -477,8 +471,7 @@ item. Nothing is on `main` until Ken merges.
   patterns, and migrate the most-used pages to them first (deals/[id],
   intake, raises). No visual redesign — just dedupe.
 - **Status (Nov 10, 2026): Implemented in PR #7** (`batch-e-ui-linking`,
-  commit `8f66847`) — Batch E (UI & linking); CI green. Awaiting merge; not
-  yet on `main`.
+  commit `8f66847`) — Batch E (UI & linking); CI green. Done — merged Nov 10, 2026.
 
 ### 27. Sidebar: 13 flat items, no grouping; duplicated mobile detection
 
@@ -495,8 +488,7 @@ item. Nothing is on `main` until Ken merges.
   Raises/Calendar; Tools: Notes/Best Practices/Assistant/Digest), and use the
   `useIsMobile` hook in Sidebar.
 - **Status (Nov 10, 2026): Implemented in PR #7** (`batch-e-ui-linking`,
-  commit `8f66847`) — Batch E (UI & linking); CI green. Awaiting merge; not
-  yet on `main`.
+  commit `8f66847`) — Batch E (UI & linking); CI green. Done — merged Nov 10, 2026.
 
 ### 28. Command Palette gaps
 
@@ -510,8 +502,7 @@ item. Nothing is on `main` until Ken merges.
   the notes page a `?open=` deep link like contacts has, and link note results
   to it; add the missing shortcuts.
 - **Status (Nov 10, 2026): Implemented in PR #7** (`batch-e-ui-linking`,
-  commit `8f66847`) — Batch E (UI & linking); CI green. Awaiting merge; not
-  yet on `main`.
+  commit `8f66847`) — Batch E (UI & linking); CI green. Done — merged Nov 10, 2026.
 
 ### 29. Small linking & navigation fixes
 
@@ -524,8 +515,7 @@ item. Nothing is on `main` until Ken merges.
   make the root page a server-component redirect; add Escape handling to the
   mobile drawer.
 - **Status (Nov 10, 2026): Implemented in PR #7** (`batch-e-ui-linking`,
-  commit `8f66847`) — Batch E (UI & linking); CI green. Awaiting merge; not
-  yet on `main`.
+  commit `8f66847`) — Batch E (UI & linking); CI green. Done — merged Nov 10, 2026.
 
 ### 30. Make cross-links bidirectional — contacts don't link back to deals
 
@@ -540,8 +530,7 @@ item. Nothing is on `main` until Ken merges.
   Audit the other entities the same way (raise → LPs is covered; calendar
   event → deal is not — link events to deals where one exists).
 - **Status (Nov 10, 2026): Implemented in PR #7** (`batch-e-ui-linking`,
-  commit `8f66847`) — Batch E (UI & linking); CI green. Awaiting merge; not
-  yet on `main`.
+  commit `8f66847`) — Batch E (UI & linking); CI green. Done — merged Nov 10, 2026.
 
 ---
 
@@ -744,11 +733,10 @@ size limit via Supabase Storage.
   conflict case explicitly (merge or rename with ` (2)`); and add a nightly
   reconcile job that checks each deal's `dropbox_path` against its expected
   folder and reports drift.
-- **Status (Nov 10, 2026): Implemented in PR #5** (`batch-d-dropbox`, commit
+- **Status (Nov 10, 2026): Implemented in PR #5** (merged via replacement PR #14) (`batch-d-dropbox`, commit
   `d062b27`) — Batch D (Dropbox robustness); CI green. After merge: apply
   `add_dropbox_move_jobs.sql` in the Supabase SQL editor, then POST once to
-  `/api/dropbox/migrate-folders` with the cron secret. Awaiting merge; not yet
-  on `main`.
+  `/api/dropbox/migrate-folders` with the cron secret. Done — merged Nov 10, 2026.
 
 ### 45. Renaming a company leaves a stale folder name
 
@@ -763,9 +751,8 @@ size limit via Supabase Storage.
   helper). The durable fix is to stop deriving folder names from mutable
   data: name folders by deal ID (or a slug fixed at creation) and keep the
   company name as a display label only.
-- **Status (Nov 10, 2026): Implemented in PR #5** (`batch-d-dropbox`, commit
-  `d062b27`) — Batch D (Dropbox robustness); CI green. Awaiting merge; not yet
-  on `main`.
+- **Status (Nov 10, 2026): Implemented in PR #5** (merged via replacement PR #14) (`batch-d-dropbox`, commit
+  `d062b27`) — Batch D (Dropbox robustness); CI green. Done — merged Nov 10, 2026.
 
 ### 46. The manual folder-linking flow suggests invalid paths
 
@@ -778,9 +765,8 @@ size limit via Supabase Storage.
 - **Change:** default the input to `expectedDropboxFolder(companyName, stage)`
   and validate client-side against the allow-list before saving; fix the
   example to a path under the root.
-- **Status (Nov 10, 2026): Implemented in PR #5** (`batch-d-dropbox`, commit
-  `d062b27`) — Batch D (Dropbox robustness); CI green. Awaiting merge; not yet
-  on `main`.
+- **Status (Nov 10, 2026): Implemented in PR #5** (merged via replacement PR #14) (`batch-d-dropbox`, commit
+  `d062b27`) — Batch D (Dropbox robustness); CI green. Done — merged Nov 10, 2026.
 
 ### 47. The `read` action has no size cap
 
@@ -791,9 +777,8 @@ size limit via Supabase Storage.
   doesn't.
 - **Change:** refuse files over a threshold (e.g. 20 MB) with a clear error,
   or return the first pages / extracted text only.
-- **Status (Nov 10, 2026): Implemented in PR #5** (`batch-d-dropbox`, commit
-  `d062b27`) — Batch D (Dropbox robustness); CI green. Awaiting merge; not yet
-  on `main`.
+- **Status (Nov 10, 2026): Implemented in PR #5** (merged via replacement PR #14) (`batch-d-dropbox`, commit
+  `d062b27`) — Batch D (Dropbox robustness); CI green. Done — merged Nov 10, 2026.
 
 ### 48. List pagination is dropped
 
@@ -804,9 +789,8 @@ size limit via Supabase Storage.
   entries silently truncate.
 - **Change:** follow `list_folder/continue` when `has_more` is true, or cap
   the UI at a page with a "show more" that fetches the next cursor.
-- **Status (Nov 10, 2026): Implemented in PR #5** (`batch-d-dropbox`, commit
-  `d062b27`) — Batch D (Dropbox robustness); CI green. Awaiting merge; not yet
-  on `main`.
+- **Status (Nov 10, 2026): Implemented in PR #5** (merged via replacement PR #14) (`batch-d-dropbox`, commit
+  `d062b27`) — Batch D (Dropbox robustness); CI green. Done — merged Nov 10, 2026.
 
 ### 49. `dropboxFolderExists` swallows all errors
 
@@ -818,9 +802,8 @@ size limit via Supabase Storage.
   get duplicate folders).
 - **Change:** return `false` only on `path/not_found`; throw on anything
   else, and let callers handle the failure explicitly.
-- **Status (Nov 10, 2026): Implemented in PR #5** (`batch-d-dropbox`, commit
-  `d062b27`) — Batch D (Dropbox robustness); CI green. Awaiting merge; not yet
-  on `main`.
+- **Status (Nov 10, 2026): Implemented in PR #5** (merged via replacement PR #14) (`batch-d-dropbox`, commit
+  `d062b27`) — Batch D (Dropbox robustness); CI green. Done — merged Nov 10, 2026.
 
 ### 50. No retry on Dropbox rate limits
 
@@ -832,9 +815,8 @@ size limit via Supabase Storage.
 - **Change:** retry with backoff on 429/5xx, honoring the `Retry-After`
   header. While here, add an in-flight lock to the token refresh in
   `getDropboxToken` so concurrent requests after expiry don't each refresh.
-- **Status (Nov 10, 2026): Implemented in PR #5** (`batch-d-dropbox`, commit
-  `d062b27`) — Batch D (Dropbox robustness); CI green. Awaiting merge; not yet
-  on `main`.
+- **Status (Nov 10, 2026): Implemented in PR #5** (merged via replacement PR #14) (`batch-d-dropbox`, commit
+  `d062b27`) — Batch D (Dropbox robustness); CI green. Done — merged Nov 10, 2026.
 
 ### 51. No delete
 
@@ -845,9 +827,8 @@ size limit via Supabase Storage.
   page.
 - **Change:** add a DELETE action (path allow-list + audit log, which already
   exist) with a confirm dialog in `DropboxFilesTab`.
-- **Status (Nov 10, 2026): Implemented in PR #5** (`batch-d-dropbox`, commit
-  `d062b27`) — Batch D (Dropbox robustness); CI green. Awaiting merge; not yet
-  on `main`.
+- **Status (Nov 10, 2026): Implemented in PR #5** (merged via replacement PR #14) (`batch-d-dropbox`, commit
+  `d062b27`) — Batch D (Dropbox robustness); CI green. Done — merged Nov 10, 2026.
 
 ### 52. Temp files in `intake-temp` can linger forever
 
@@ -858,6 +839,5 @@ size limit via Supabase Storage.
   never submits it — the file stays in Supabase Storage indefinitely.
 - **Change:** add a Supabase storage lifecycle rule, or a weekly cleanup of
   `intake-temp` files older than ~7 days.
-- **Status (Nov 10, 2026): Implemented in PR #5** (`batch-d-dropbox`, commit
-  `d062b27`) — Batch D (Dropbox robustness); CI green. Awaiting merge; not yet
-  on `main`.
+- **Status (Nov 10, 2026): Implemented in PR #5** (merged via replacement PR #14) (`batch-d-dropbox`, commit
+  `d062b27`) — Batch D (Dropbox robustness); CI green. Done — merged Nov 10, 2026.
