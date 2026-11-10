@@ -280,7 +280,9 @@ export function dropboxConfigured(): boolean {
 
 // ── Folder layout ────────────────────────────────────────────────────────────
 
-const PASS_STAGES   = ['Pass (DOA)', 'Pass (Pre-LOI)', 'Pass (Post-LOI)']
+// 'Dead' (the killed-deal stage) files alongside the Pass stages under
+// !Passed Deals — same terminal, not-a-portfolio-company outcome.
+const PASS_STAGES   = ['Pass (DOA)', 'Pass (Pre-LOI)', 'Pass (Post-LOI)', 'Dead']
 const CLOSED_STAGES = ['Closed (Platform)', 'Closed (Add-On)']
 
 function folderForStage(leaf: string, stage: string): string {
