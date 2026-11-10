@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { X, ExternalLink, Trash2 } from 'lucide-react'
 import Link from 'next/link'
@@ -25,6 +25,13 @@ export default function NewContactModal({ onClose, onCreated, contact, prefill }
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [dealLinks, setDealLinks] = useState<any[]>([])
   const [contactNotes, setContactNotes] = useState<any[]>([])
+  const [activeTab, setActiveTab] = useState<'details' | 'notes'>('details')
+  const [notesLoading, setNotesLoading] = useState(false)
+  const [notesError, setNotesError] = useState<string | null>(null)
+  const [noteDraft, setNoteDraft] = useState('')
+  const [noteNextSteps, setNoteNextSteps] = useState('')
+  const [noteSaving, setNoteSaving] = useState(false)
+  const [noteError, setNoteError] = useState<string | null>(null)
   const [form, setForm] = useState({
     first_name: contact?.first_name || prefill?.first_name || '',
     last_name:  contact?.last_name  || prefill?.last_name  || '',
@@ -37,6 +44,20 @@ export default function NewContactModal({ onClose, onCreated, contact, prefill }
     notes:      contact?.notes      || '',
   })
 
+  const loadContactNotes = useCallback(async () => {
+    if (!contact?.id) return
+    setNotesLoading(true)
+    const { data, error } = await supabase
+      .from('notes')
+      .select('id, note_date, summary, raw_text, next_steps, logged_by, source, sentiment')
+      .eq('contact_id', contact.id)
+      .order('note_date', { ascending: false })
+      .order('created_at', { ascending: false })
+    if (error) setNotesError(error.message)
+    else { setContactNotes(data ?? []); setNotesError(null) }
+    setNotesLoading(false)
+  }, [supabase, contact?.id])
+
   // Fetch deals and notes linked to this contact if editing
   useEffect(() => {
     if (!contact?.id) return
@@ -45,14 +66,8 @@ export default function NewContactModal({ onClose, onCreated, contact, prefill }
       .select('role, deal:deals(id, company_name, stage, status, sector, revenue, ebitda, asking_price)')
       .eq('contact_id', contact.id)
       .then(({ data }) => { if (data) setDealLinks(data) })
-    supabase
-      .from('notes')
-      .select('id, note_date, summary, next_steps, logged_by, source')
-      .eq('contact_id', contact.id)
-      .order('note_date', { ascending: false })
-      .limit(10)
-      .then(({ data }) => { if (data) setContactNotes(data) })
-  }, [contact?.id])
+    loadContactNotes()
+  }, [contact?.id, loadContactNotes])
 
   const field = (key: keyof typeof form) => ({
     value: form[key],
@@ -111,6 +126,35 @@ export default function NewContactModal({ onClose, onCreated, contact, prefill }
     }
   }
 
+  // Add a note to this contact via POST /api/notes (NoteCreateSchema in
+  // lib/schemas.ts) — the same endpoint the email note-append command uses,
+  // so notes filed here and by email share the same validation and shape.
+  const addContactNote = async () => {
+    if (!contact?.id || !noteDraft.trim()) return
+    setNoteSaving(true)
+    setNoteError(null)
+    try {
+      const res = await fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          raw_text: noteDraft,
+          contact_id: contact.id,
+          next_steps: noteNextSteps.trim() || null,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Failed to save note')
+      setContactNotes(prev => [json, ...prev])
+      setNoteDraft('')
+      setNoteNextSteps('')
+    } catch (err: any) {
+      setNoteError(err.message)
+    } finally {
+      setNoteSaving(false)
+    }
+  }
+
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 100,
@@ -134,6 +178,18 @@ export default function NewContactModal({ onClose, onCreated, contact, prefill }
           </button>
         </div>
 
+        {/* Tabs — edit mode only, same underline style as the deal page tabs */}
+        {isEdit && (
+          <div style={{ display: 'flex', gap: '2px', borderBottom: '1px solid var(--border)', marginBottom: '20px' }}>
+            {([['details', 'Details'], ['notes', `Notes${contactNotes.length ? ` (${contactNotes.length})` : ''}`]] as const).map(([key, label]) => (
+              <button key={key} onClick={() => setActiveTab(key)} style={{ padding: '8px 14px', border: 'none', background: 'transparent', fontSize: '13px', cursor: 'pointer', color: activeTab === key ? 'var(--accent)' : 'var(--text-muted)', borderBottom: activeTab === key ? '2px solid var(--accent)' : '2px solid transparent', fontFamily: 'var(--font-sans)', fontWeight: activeTab === key ? 600 : 400, marginBottom: '-1px', whiteSpace: 'nowrap' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {activeTab === 'details' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {/* Name */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -256,7 +312,7 @@ export default function NewContactModal({ onClose, onCreated, contact, prefill }
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
               <label className="label" style={{ marginBottom: '10px' }}>Recent Notes</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {contactNotes.map((note: any) => (
+                {contactNotes.slice(0, 10).map((note: any) => (
                   <div key={note.id} style={{
                     padding: '10px 12px',
                     background: 'var(--surface-2)',
@@ -281,8 +337,59 @@ export default function NewContactModal({ onClose, onCreated, contact, prefill }
             </div>
           )}
         </div>
+        )}
+
+        {/* Notes tab — full history for this contact + add-note (edit mode only) */}
+        {isEdit && activeTab === 'notes' && (
+          <div>
+            <div style={{ marginBottom: '16px' }}>
+              <label className="label">Add a note</label>
+              <textarea className="input" rows={3} placeholder={`Log a call, meeting, or update about ${contact.first_name}…`} value={noteDraft} onChange={e => setNoteDraft(e.target.value)} style={{ resize: 'vertical', width: '100%' }} />
+              <input className="input" placeholder="Next steps (optional)" value={noteNextSteps} onChange={e => setNoteNextSteps(e.target.value)} style={{ marginTop: '8px', fontSize: '12px' }} />
+              {noteError && <div style={{ fontSize: '11px', color: 'var(--red)', marginTop: '6px' }}>{noteError}</div>}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                <button className="btn btn-primary" style={{ fontSize: '12px' }} onClick={addContactNote} disabled={noteSaving || !noteDraft.trim()}>
+                  {noteSaving ? 'Saving…' : 'Add Note'}
+                </button>
+              </div>
+            </div>
+
+            {notesLoading ? (
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '12px 0' }}>Loading notes…</div>
+            ) : notesError ? (
+              <div style={{ fontSize: '12px', color: 'var(--red)', padding: '12px 0' }}>Couldn’t load notes: {notesError}</div>
+            ) : contactNotes.length === 0 ? (
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '24px 0', textAlign: 'center' }}>No notes logged for this contact yet.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {contactNotes.map((note: any) => (
+                  <div key={note.id} style={{
+                    padding: '10px 12px',
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '6px',
+                    borderLeft: '3px solid var(--border)',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
+                        {note.source === 'email' ? 'Email' : note.source === 'discord' ? 'Discord' : 'Note'}
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        {note.note_date ? new Date(note.note_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                        {note.logged_by ? ` · ${note.logged_by}` : ''}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{note.summary || note.raw_text}</div>
+                    {note.next_steps && <div style={{ fontSize: '11px', color: 'var(--accent)', marginTop: '3px' }}>→ {note.next_steps}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Footer */}
+        {activeTab === 'details' && (
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '24px', paddingTop: '20px', borderTop: '1px solid var(--border)', alignItems: 'center' }}>
           {isEdit && (
             <button
@@ -303,6 +410,7 @@ export default function NewContactModal({ onClose, onCreated, contact, prefill }
             {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Contact'}
           </button>
         </div>
+        )}
       </div>
 
       {/* Delete confirmation */}
