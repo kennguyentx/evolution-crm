@@ -162,7 +162,9 @@ export default function PipelinePage() {
     setDeals(prev => prev.map(d => d.id === dealId ? { ...d, stage } : d))
     await supabase.from('deals').update({ stage }).eq('id', dealId)
     const deal = deals.find(d => d.id === dealId)
-    if (deal) moveDropboxOnStageChange(supabase, dealId, deal.company_name, (deal as any).dropbox_path, stage).catch(console.error)
+    // The move is recorded in dropbox_move_jobs by the helper; a failure
+    // surfaces as a warning banner (with Retry) on the deal page.
+    if (deal) moveDropboxOnStageChange(supabase, dealId, (deal as any).dropbox_path, stage).catch(console.error)
   }
 
   if (loading) return <div style={{ padding: '40px', color: 'var(--text-muted)' }}>Loading...</div>

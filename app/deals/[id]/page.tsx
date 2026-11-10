@@ -13,7 +13,7 @@ import DropboxFilesTab from '@/components/deals/DropboxFilesTab'
 import NDATab from '@/components/deals/NDATab'
 import NewContactModal from '@/components/contacts/NewContactModal'
 import UndoToast, { type UndoEntry } from '@/components/layout/UndoToast'
-import { moveDropboxOnStageChange } from '@/lib/dropbox-stage-move'
+import { moveDropboxOnStageChange, retryDropboxMove, getLatestFailedMoveJob } from '@/lib/dropbox-stage-move'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import { initialParam, useSyncUrlParams } from '@/hooks/useUrlState'
 import { usePageTitle } from '@/hooks/usePageTitle'
@@ -91,6 +91,11 @@ export default function DealDetailPage() {
   const [editingContact, setEditingContact] = useState<any>(null)
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([])
 
+  // Dropbox folder-move warning banner (item 44)
+  const [moveWarning, setMoveWarning] = useState<{ error: string; toPath: string } | null>(null)
+  const [moveDismissed, setMoveDismissed] = useState(false)
+  const [retryingMove, setRetryingMove] = useState(false)
+
   const pushUndo = (entry: Omit<UndoEntry,'id'>) => {
     const id = Math.random().toString(36).slice(2)
     setUndoStack(prev => [{ ...entry, id }, ...prev].slice(0,3))
@@ -147,6 +152,12 @@ export default function DealDetailPage() {
       return
     }
     setDeal(dealRes.data)
+    // Dropbox move warning (item 44): derived from the latest move-job row
+    // so a failed folder move stays visible across page reloads.
+    const failedMove = await getLatestFailedMoveJob(supabase, dealId)
+    if (failedMove) {
+      setMoveWarning({ error: failedMove.error ?? 'Unknown error', toPath: failedMove.to_path })
+    }
     if (linksRes.data) setLinkedContacts(linksRes.data)
     else if (linksRes.error) console.warn('[deal page] contacts query failed:', linksRes.error.message)
     if (interactionsRes.data) setInteractions(interactionsRes.data)
@@ -273,18 +284,21 @@ export default function DealDetailPage() {
       if (newEntry) setInteractions(prev => [newEntry, ...prev])
     }
 
-    // Move Dropbox folder and track the resolved path
+    // Move Dropbox folder and track the resolved path. A failure does NOT
+    // block the stage save (already done above) — it shows a non-blocking
+    // warning banner with Retry instead (item 44).
     let resolvedDropboxPath = currentDeal?.dropbox_path ?? null
     if (currentDeal) {
       const { path: newPath, error: moveErr } = await moveDropboxOnStageChange(
-        supabase, dealId, currentDeal.company_name, currentDeal.dropbox_path, stage,
+        supabase, dealId, currentDeal.dropbox_path, stage,
       )
       if (moveErr) {
         console.error('[Dropbox stage move]', moveErr)
-        // Quietly log instead of blocking the user with an alert.
-        // Benign errors like "to/conflict/folder" are common and harmless.
-        // If the user cares they can check the deal's Documents tab.
+        const failedJob = await getLatestFailedMoveJob(supabase, dealId)
+        setMoveWarning({ error: moveErr, toPath: failedJob?.to_path ?? '' })
+        setMoveDismissed(false)
       } else if (newPath) {
+        setMoveWarning(null)
         if (newPath !== currentDeal.dropbox_path) {
           setDeal(prev => prev ? { ...prev, dropbox_path: newPath } : null)
         }
@@ -317,6 +331,18 @@ export default function DealDetailPage() {
           alert(`Deal marked as closed, but portfolio company could not be created:\n${portcoErr.message}\n\nPlease add it manually in the Portfolio tab.`)
         }
       }
+    }
+  }
+
+  const handleRetryMove = async () => {
+    setRetryingMove(true)
+    const { path: newPath, error: retryErr } = await retryDropboxMove(supabase, dealId)
+    setRetryingMove(false)
+    if (retryErr) {
+      setMoveWarning({ error: retryErr, toPath: moveWarning?.toPath ?? '' })
+    } else {
+      setMoveWarning(null)
+      if (newPath) setDeal(prev => prev ? { ...prev, dropbox_path: newPath } : null)
     }
   }
 
@@ -826,6 +852,21 @@ export default function DealDetailPage() {
           </button>
         ))}
       </div>
+
+      {/* Dropbox move warning (item 44) — non-blocking; the stage save already succeeded */}
+      {moveWarning && !moveDismissed && (
+        <div style={{ margin: isMobile ? '12px 16px 0' : '16px 28px 0', padding: '10px 14px', background: 'var(--amber-light, #fef3c7)', border: '1px solid var(--amber, #f59e0b)', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '13px', color: 'var(--text-primary)', flex: 1, minWidth: '220px' }}>
+            ⚠️ Dropbox folder could not be moved{moveWarning.toPath ? <> to <span style={{ fontFamily: 'monospace', fontSize: '12px' }}>{moveWarning.toPath.split('/').slice(-2).join('/')}</span></> : ''} — files are still at the old location. ({moveWarning.error})
+          </span>
+          <button onClick={handleRetryMove} disabled={retryingMove} style={{ padding: '5px 12px', fontSize: '12px', borderRadius: '6px', border: '1px solid var(--amber, #f59e0b)', background: 'var(--surface)', color: 'var(--text-primary)', cursor: retryingMove ? 'wait' : 'pointer', fontWeight: 600 }}>
+            {retryingMove ? 'Retrying…' : 'Retry'}
+          </button>
+          <button onClick={() => setMoveDismissed(true)} style={{ padding: '5px 8px', fontSize: '12px', border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* TAB CONTENT */}
       <div style={{ flex: 1, overflow: 'auto', padding: isMobile ? '16px' : '24px 28px' }}>
@@ -1629,6 +1670,7 @@ export default function DealDetailPage() {
     <DropboxFilesTab
       dealId={dealId}
       companyName={deal.company_name}
+      stage={deal.stage}
       dropboxPath={deal.dropbox_path}
       onPathSaved={(path) => setDeal(prev => prev ? { ...prev, dropbox_path: path } : prev)}
     />

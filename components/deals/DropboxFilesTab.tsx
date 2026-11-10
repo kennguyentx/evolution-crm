@@ -11,7 +11,8 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { Upload, Download, Folder, File, FileText, Table2, Monitor,
-         Image, Archive, Loader2, ExternalLink, RefreshCw, Link, Check } from 'lucide-react'
+         Image, Archive, Loader2, ExternalLink, RefreshCw, Link, Check, Trash2 } from 'lucide-react'
+import { expectedDropboxFolder } from '@/lib/dropbox'
 
 interface DropboxItem {
   name: string
@@ -26,10 +27,15 @@ interface DropboxItem {
 interface DropboxFilesTabProps {
   dealId: string
   companyName: string
+  /** Deal stage — used to prefill the deal's expected (deal-ID) folder path. */
+  stage?: string
   dropboxPath?: string | null
   onPathSaved?: (path: string) => void
   table?: string
 }
+
+/** Server allow-list root — manual paths must live under it (item 46). */
+const ALLOWED_ROOT = '/Evolution Strategy Partners'
 
 function formatSize(bytes?: number) {
   if (!bytes) return ''
@@ -61,32 +67,42 @@ function normalizeFolderPath(path: string): string {
 }
 
 export default function DropboxFilesTab({
-  dealId, companyName, dropboxPath: initialPath, onPathSaved, table = 'deals',
+  dealId, companyName, stage, dropboxPath: initialPath, onPathSaved, table = 'deals',
 }: DropboxFilesTabProps) {
   const folderPath = normalizeFolderPath(initialPath || '')
   const [dropboxPath, setDropboxPath] = useState(folderPath)
-  const [pathInput, setPathInput] = useState(folderPath || `/${companyName}`)
+  // Prefill with the deal's expected folder (deal-ID path, item 45/46) —
+  // NEVER a bare `/<CompanyName>`, which sits outside the allow-list root
+  // and would make every later list call 403.
+  const [pathInput, setPathInput] = useState(folderPath || (stage ? expectedDropboxFolder(dealId, stage) : ''))
   const [showPathEdit, setShowPathEdit] = useState(!folderPath)
   const [savingPath, setSavingPath] = useState(false)
+  const [pathError, setPathError] = useState<string | null>(null)
 
   const [items, setItems] = useState<DropboxItem[]>([])
   const [currentPath, setCurrentPath] = useState(initialPath || '')
   const [breadcrumbs, setBreadcrumbs] = useState<{ name: string; path: string }[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadSuccess, setUploadSuccess] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const fetchFolder = useCallback(async (path: string) => {
+  const fetchFolder = useCallback(async (path: string, cursor?: string) => {
     if (!path) return
-    setLoading(true)
+    const append = !!cursor
+    if (append) setLoadingMore(true); else { setLoading(true); setNextCursor(null) }
     setError(null)
     try {
-      const res = await fetch(`/api/dropbox?action=list&path=${encodeURIComponent(path)}`)
+      const qs = new URLSearchParams({ action: 'list', path })
+      if (cursor) qs.set('cursor', cursor)
+      const res = await fetch(`/api/dropbox?${qs.toString()}`)
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      setItems(data.items || [])
+      setItems(prev => append ? [...prev, ...(data.items || [])] : (data.items || []))
+      setNextCursor(data.has_more ? (data.cursor ?? null) : null)
       setCurrentPath(path)
       // Build breadcrumbs
       const parts = path.split('/').filter(Boolean)
@@ -99,6 +115,7 @@ export default function DropboxFilesTab({
       setError(err.message)
     }
     setLoading(false)
+    setLoadingMore(false)
   }, [])
 
   useEffect(() => {
@@ -106,17 +123,67 @@ export default function DropboxFilesTab({
   }, [dropboxPath, fetchFolder])
 
   const handleSavePath = async () => {
+    const path = (pathInput.startsWith('/') ? pathInput : `/${pathInput}`).replace(/\/$/, '')
+    setPathError(null)
+
+    // Validate against the server allow-list BEFORE saving (item 46):
+    // a path outside the root saves fine in Supabase but every later
+    // Dropbox call then 403s.
+    if (!path.toLowerCase().startsWith(ALLOWED_ROOT.toLowerCase())) {
+      setPathError(`Path must be under ${ALLOWED_ROOT} — e.g. ${ALLOWED_ROOT}/Deals/…`)
+      return
+    }
+
     setSavingPath(true)
-    const path = pathInput.startsWith('/') ? pathInput : `/${pathInput}`
-    // Save to Supabase deal record
-    const { createClient } = await import('@/lib/supabase')
-    const supabase = createClient()
-    await supabase.from(table as any).update({ dropbox_path: path }).eq('id', dealId)
-    setDropboxPath(path)
-    setShowPathEdit(false)
-    onPathSaved?.(path)
-    setSavingPath(false)
-    fetchFolder(path)
+    try {
+      // Verify the folder actually exists before linking it. If it doesn't,
+      // warn and ask for confirmation instead of storing a dead link; if
+      // Dropbox can't be reached, say so and let the user decide.
+      let proceed = true
+      try {
+        const res = await fetch(`/api/dropbox?action=exists&path=${encodeURIComponent(path)}`)
+        const data = await res.json()
+        if (data.error) throw new Error(data.error)
+        if (!data.exists) {
+          proceed = window.confirm(
+            `The folder "${path}" does not exist in Dropbox yet.\n\nLink it anyway? Browsing it will show an error until the folder is created in Dropbox.`,
+          )
+        }
+      } catch {
+        proceed = window.confirm(
+          `Could not verify that "${path}" exists in Dropbox (Dropbox may be unreachable).\n\nSave the link anyway?`,
+        )
+      }
+      if (!proceed) { setSavingPath(false); return }
+
+      // Save to Supabase deal record
+      const { createClient } = await import('@/lib/supabase')
+      const supabase = createClient()
+      await supabase.from(table as any).update({ dropbox_path: path }).eq('id', dealId)
+      setDropboxPath(path)
+      setShowPathEdit(false)
+      onPathSaved?.(path)
+      fetchFolder(path)
+    } finally {
+      setSavingPath(false)
+    }
+  }
+
+  // Delete a file/folder from Dropbox (item 51) — confirm first, always.
+  const handleDelete = async (item: DropboxItem) => {
+    const ok = window.confirm(
+      `Delete "${item.name}" from Dropbox?\n\nThis permanently removes it from Dropbox (it can be recovered from Dropbox's Deleted files for a limited time). It cannot be undone from Nexus.`,
+    )
+    if (!ok) return
+    setError(null)
+    try {
+      const res = await fetch(`/api/dropbox?path=${encodeURIComponent(item.path)}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      fetchFolder(currentPath)
+    } catch (err: any) {
+      setError(`Delete failed: ${err.message}`)
+    }
   }
 
   const handleDownload = async (item: DropboxItem) => {
@@ -198,14 +265,15 @@ export default function DropboxFilesTab({
           </div>
           <p className="text-xs text-zinc-500">
             Enter the path to the existing company folder in your Dropbox.
-            Example: <code className="text-zinc-400">/Deals/DiPonio Holdings</code>
+            It must be under <code className="text-zinc-400">{ALLOWED_ROOT}</code> —
+            example: <code className="text-zinc-400">{ALLOWED_ROOT}/Deals/DiPonio Holdings</code>
           </p>
           <div className="flex gap-2">
             <input
               type="text"
               value={pathInput}
-              onChange={e => setPathInput(e.target.value)}
-              placeholder="/Deals/Company Name"
+              onChange={e => { setPathInput(e.target.value); setPathError(null) }}
+              placeholder={`${ALLOWED_ROOT}/Deals/…`}
               className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
             />
             <button
@@ -216,6 +284,9 @@ export default function DropboxFilesTab({
               {savingPath ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Link'}
             </button>
           </div>
+          {pathError && (
+            <p className="text-xs text-red-400 bg-red-400/10 px-3 py-2 rounded-lg">{pathError}</p>
+          )}
         </div>
       </div>
     )
@@ -267,7 +338,7 @@ export default function DropboxFilesTab({
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={() => setShowPathEdit(true)}
+            onClick={() => { setPathInput(dropboxPath); setPathError(null); setShowPathEdit(true) }}
             className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
           >
             Change folder
@@ -342,8 +413,28 @@ export default function DropboxFilesTab({
                   <ExternalLink className="w-3.5 h-3.5" />
                 </button>
               )}
+              <button
+                onClick={e => { e.stopPropagation(); handleDelete(item) }}
+                className="p-1 text-zinc-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
+                title="Delete from Dropbox"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
             </div>
           ))}
+          {/* Pagination (item 48): folders can hold more entries than one
+              list_folder page returns — fetch the next page on demand. */}
+          {nextCursor && (
+            <button
+              onClick={() => fetchFolder(currentPath, nextCursor)}
+              disabled={loadingMore}
+              className="w-full mt-2 py-2 text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-800 hover:border-zinc-600 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {loadingMore
+                ? <span className="inline-flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…</span>
+                : 'Show more'}
+            </button>
+          )}
         </div>
       )}
     </div>

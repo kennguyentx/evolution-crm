@@ -5,6 +5,7 @@
 //   GET  ?action=read&path=/Deals/...file.pdf — read text/PDF content for assistant
 //   POST { path, file (base64), name }        — upload a file
 //   PATCH { from_path, to_path }              — move a file/folder
+//   DELETE ?path=/Deals/...file.pdf           — delete a file/folder
 //
 // Security controls applied to every request:
 //   • Path allow-list  — all paths must be inside ALLOWED_ROOT
@@ -13,11 +14,13 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getDropboxToken, dropboxMove } from '@/lib/dropbox'
+import {
+  getDropboxToken, dropboxMove, dropboxApiPost, dropboxGetMetadata,
+  dropboxFolderExists, dropboxDelete, withDropboxRetry, DropboxError,
+} from '@/lib/dropbox'
 import { apiError, withErrorHandler } from '@/lib/api-response'
 import { DropboxUploadSchema, DropboxMoveSchema } from '@/lib/schemas'
 
-const DBX_API     = 'https://api.dropboxapi.com/2'
 const DBX_CONTENT = 'https://content.dropboxapi.com/2'
 
 // ── Security constants ────────────────────────────────────────────────────────
@@ -28,6 +31,9 @@ const ALLOWED_ROOT = '/evolution strategy partners'
 /** 20 MB binary ≈ 27 MB base64 — cap before the buffer is even decoded. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 const MAX_UPLOAD_BASE64 = Math.ceil(MAX_UPLOAD_BYTES * 4 / 3)
+
+/** Read cap (item 47): same 20 MB — refuse before downloading into memory. */
+const MAX_READ_BYTES = MAX_UPLOAD_BYTES
 
 // ── Path guard ────────────────────────────────────────────────────────────────
 
@@ -96,22 +102,10 @@ function fileIcon(name: string): string {
   return 'file'
 }
 
-async function dbxPost(endpoint: string, body: any, contentHeaders?: Record<string, string>) {
-  const token = await getDropboxToken()
-  const res = await fetch(`${DBX_API}${endpoint}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...contentHeaders,
-    },
-    body: JSON.stringify(body),
-  })
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`Dropbox error ${res.status}: ${err}`)
-  }
-  return res.json()
+// All JSON API calls go through lib/dropbox's helper: 429/5xx are retried
+// with backoff and failures surface as classified DropboxErrors (item 50).
+async function dbxPost(endpoint: string, body: any) {
+  return dropboxApiPost(endpoint, body)
 }
 
 // ── GET ───────────────────────────────────────────────────────────────────────
@@ -130,13 +124,19 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
         return NextResponse.json({ error: 'Path not allowed' }, { status: 403 })
       }
 
+      // Pagination (item 48): pass ?cursor=… from a previous response to
+      // fetch the next page via list_folder/continue. The cursor is only
+      // meaningful for the same folder, so it stays bound to that listing.
+      const cursor = searchParams.get('cursor')
       const dbxPath = path === '/' || path === '.' ? '' : path
-      const data = await dbxPost('/files/list_folder', {
-        path: dbxPath,
-        recursive: false,
-        include_media_info: false,
-        include_deleted: false,
-      })
+      const data = cursor
+        ? await dbxPost('/files/list_folder/continue', { cursor })
+        : await dbxPost('/files/list_folder', {
+            path: dbxPath,
+            recursive: false,
+            include_media_info: false,
+            include_deleted: false,
+          })
 
       const items = (data.entries || []).map((e: any) => ({
         name:     e.name,
@@ -154,7 +154,21 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
       })
 
       audit('list', path, userId, { count: items.length })
-      return NextResponse.json({ items, has_more: data.has_more })
+      return NextResponse.json({ items, has_more: data.has_more, cursor: data.cursor ?? null })
+    }
+
+    // ── Folder existence check (used by manual path linking, item 46) ───────
+    if (action === 'exists') {
+      if (!isAllowedPath(path)) {
+        audit('exists:denied', path, userId, { reason: 'path not allowed' })
+        return NextResponse.json({ error: 'Path not allowed' }, { status: 403 })
+      }
+
+      // Throws on API failures (bad token, rate limit) — surfaced as a 500
+      // by the outer catch so "couldn't verify" is never read as "missing".
+      const exists = await dropboxFolderExists(path)
+      audit('exists', path, userId, { exists })
+      return NextResponse.json({ exists })
     }
 
     // ── Temporary download link ──────────────────────────────────────────────
@@ -181,17 +195,44 @@ export const GET = withErrorHandler(async (req: NextRequest) => {
         return NextResponse.json({ error: 'File type not readable' }, { status: 400 })
       }
 
-      const token = await getDropboxToken()
-      const downloadRes = await fetch(`${DBX_CONTENT}/files/download`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Dropbox-API-Arg': JSON.stringify({ path }),
-        },
+      // Size cap (item 47): check the file's size BEFORE downloading it
+      // into memory — an oversized CIM would OOM the function or blow
+      // Vercel's response limit when returned base64'd.
+      const fileMeta = await dropboxGetMetadata(path)
+      if (!fileMeta) {
+        return NextResponse.json({ error: 'File not found' }, { status: 404 })
+      }
+      if (typeof fileMeta.size === 'number' && fileMeta.size > MAX_READ_BYTES) {
+        const mb = (fileMeta.size / 1024 / 1024).toFixed(1)
+        audit('read:denied', path, userId, { reason: 'size limit exceeded', sizeMb: mb })
+        return NextResponse.json(
+          { error: `File too large to read in the CRM (${mb} MB; limit is 20 MB). Open it in Dropbox instead.` },
+          { status: 413 },
+        )
+      }
+
+      const downloadRes = await withDropboxRetry(async () => {
+        const token = await getDropboxToken()
+        return fetch(`${DBX_CONTENT}/files/download`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Dropbox-API-Arg': JSON.stringify({ path }),
+          },
+        })
       })
       if (!downloadRes.ok) throw new Error(`Download failed: ${downloadRes.status}`)
 
       const buffer = await downloadRes.arrayBuffer()
+      // Backstop in case metadata under-reported the size.
+      if (buffer.byteLength > MAX_READ_BYTES) {
+        const mb = (buffer.byteLength / 1024 / 1024).toFixed(1)
+        audit('read:denied', path, userId, { reason: 'size limit exceeded', sizeMb: mb })
+        return NextResponse.json(
+          { error: `File too large to read in the CRM (${mb} MB; limit is 20 MB). Open it in Dropbox instead.` },
+          { status: 413 },
+        )
+      }
       const base64 = Buffer.from(buffer).toString('base64')
       const metaHeader = downloadRes.headers.get('dropbox-api-result')
       const meta = metaHeader ? JSON.parse(metaHeader) : {}
@@ -263,21 +304,23 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     }
 
     const fullPath   = `${path.replace(/\/$/, '')}/${name}`
-    const uploadToken = await getDropboxToken()
 
-    const uploadRes = await fetch(`${DBX_CONTENT}/files/upload`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${uploadToken}`,
-        'Content-Type': 'application/octet-stream',
-        'Dropbox-API-Arg': JSON.stringify({
-          path: fullPath,
-          mode: 'add',
-          autorename: true,
-          mute: false,
-        }),
-      },
-      body: new Uint8Array(fileBuffer),
+    const uploadRes = await withDropboxRetry(async () => {
+      const uploadToken = await getDropboxToken()
+      return fetch(`${DBX_CONTENT}/files/upload`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${uploadToken}`,
+          'Content-Type': 'application/octet-stream',
+          'Dropbox-API-Arg': JSON.stringify({
+            path: fullPath,
+            mode: 'add',
+            autorename: true,
+            mute: false,
+          }),
+        },
+        body: new Uint8Array(fileBuffer),
+      })
     })
 
     if (!uploadRes.ok) {
@@ -306,15 +349,24 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
 
 export const PATCH = withErrorHandler(async (req: NextRequest) => {
   const userId = await getSessionUser(req)
+  let fromPath = ''
+  let toPath = ''
 
   try {
     const parsed = DropboxMoveSchema.safeParse(await req.json())
-    if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0].message, code: 'unknown' },
+        { status: 400 },
+      )
+    }
     const { from_path, to_path } = parsed.data
+    fromPath = from_path
+    toPath = to_path
 
     if (!isAllowedPath(from_path) || !isAllowedPath(to_path)) {
       audit('move:denied', from_path, userId, { to_path, reason: 'path not allowed' })
-      return NextResponse.json({ error: 'Path not allowed' }, { status: 403 })
+      return NextResponse.json({ error: 'Path not allowed', code: 'unknown' }, { status: 403 })
     }
 
     const newPath = await dropboxMove(from_path, to_path)
@@ -322,7 +374,55 @@ export const PATCH = withErrorHandler(async (req: NextRequest) => {
     return NextResponse.json({ success: true, path: newPath })
 
   } catch (err: any) {
+    // Structured error (items 44/50): the client records the code on the
+    // move-job row and uses it to decide retry vs. show-the-banner.
+    const code = err instanceof DropboxError ? err.code : 'unknown'
+    const status =
+      code === 'not_found' ? 404 :
+      code === 'conflict' ? 409 :
+      code === 'rate_limited' ? 429 :
+      code === 'auth' ? 401 : 500
     console.error('Dropbox move error:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    audit('move:failed', fromPath, userId, { to_path: toPath, code, error: err.message })
+    return NextResponse.json({ error: err.message, code }, { status })
   }
 })
+
+// ── DELETE — remove a file/folder (item 51) ───────────────────────────────────
+
+export async function DELETE(req: NextRequest) {
+  const userId = await getSessionUser(req)
+  let path = new URL(req.url).searchParams.get('path') ?? ''
+
+  try {
+    if (!path) {
+      // Also accept a JSON body: { path }
+      try {
+        const body = await req.json()
+        path = body?.path ?? ''
+      } catch { /* no body — handled below */ }
+    }
+
+    if (!path) {
+      return NextResponse.json({ error: 'path required', code: 'unknown' }, { status: 400 })
+    }
+
+    if (!isAllowedPath(path)) {
+      audit('delete:denied', path, userId, { reason: 'path not allowed' })
+      return NextResponse.json({ error: 'Path not allowed', code: 'unknown' }, { status: 403 })
+    }
+
+    const deletedPath = await dropboxDelete(path)
+    audit('delete', path, userId, { deleted: deletedPath })
+    return NextResponse.json({ success: true, path: deletedPath })
+
+  } catch (err: any) {
+    const code = err instanceof DropboxError ? err.code : 'unknown'
+    console.error('Dropbox delete error:', err)
+    audit('delete:failed', path, userId, { code, error: err.message })
+    return NextResponse.json(
+      { error: err.message, code },
+      { status: code === 'not_found' ? 404 : 500 },
+    )
+  }
+}

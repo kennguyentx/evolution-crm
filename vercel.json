@@ -15,6 +15,14 @@
     {
       "path": "/api/intake/daily-digest",
       "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/dropbox/reconcile",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/intake/cleanup-temp",
+      "schedule": "0 4 * * 0"
     }
   ]
 }
