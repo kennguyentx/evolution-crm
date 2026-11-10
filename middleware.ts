@@ -22,7 +22,11 @@ const CRON_API_ROUTES = [
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
   const supabase = createMiddlewareClient({ req, res })
-  const { data: { session } } = await supabase.auth.getSession()
+  // getUser() revalidates the JWT against the Auth server; getSession() only
+  // trusts the session cookie, so it must not gate access decisions.
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  // A missing user — or any error revalidating the token — is unauthenticated.
+  const authenticated = !authError && !!user
 
   const { pathname } = req.nextUrl
 
@@ -34,20 +38,20 @@ export async function middleware(req: NextRequest) {
     const isCron = CRON_API_ROUTES.some(p => pathname.startsWith(p))
     if (isCron && isAuthorizedCron(req)) return res
 
-    if (!session) {
+    if (!authenticated) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     return res
   }
 
   // Redirect unauthenticated page requests to /login
-  if (pathname !== '/login' && !session) {
+  if (pathname !== '/login' && !authenticated) {
     return NextResponse.redirect(new URL('/login', req.url))
   }
 
   // MFA enforcement: if user has enrolled TOTP but hasn't completed the challenge
   // this session, gate all pages except /login and /mfa/*
-  if (session && !pathname.startsWith('/mfa') && pathname !== '/login') {
+  if (authenticated && !pathname.startsWith('/mfa') && pathname !== '/login') {
     const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
     if (aal && aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') {
       return NextResponse.redirect(new URL('/mfa/verify', req.url))

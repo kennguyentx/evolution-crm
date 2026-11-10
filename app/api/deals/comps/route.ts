@@ -4,15 +4,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { AI_MODELS } from '@/lib/ai-config'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { DealCompsSchema } from '@/lib/schemas'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandler(async (req: NextRequest) => {
   try {
-    const { company_name, sector, geography, ebitda, revenue } = await req.json()
-    if (!sector && !company_name) {
-      return NextResponse.json({ error: 'Need at least sector or company name' }, { status: 400 })
-    }
+    const validated = DealCompsSchema.safeParse(await req.json())
+    if (!validated.success) return apiError(validated.error.issues[0].message, 400)
+    const { company_name, sector, geography, ebitda, revenue } = validated.data
 
     const ebitdaStr = ebitda ? `$${(ebitda / 1e6).toFixed(1)}M EBITDA` : ''
     const revStr = revenue ? `$${(revenue / 1e6).toFixed(1)}M revenue` : ''
@@ -109,4 +110,4 @@ Use null for any field not found. Only include comps where you found at least th
     console.error('Comps error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})

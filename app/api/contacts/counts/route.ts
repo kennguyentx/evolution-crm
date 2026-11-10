@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
+import { withErrorHandler } from '@/lib/api-response'
 
-export async function GET() {
+export const GET = withErrorHandler(async () => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
@@ -27,4 +28,4 @@ export async function GET() {
   types.forEach((t, i) => { counts[t] = parseCount(typeRes[i]) })
 
   return NextResponse.json({ total, counts })
-}
+})

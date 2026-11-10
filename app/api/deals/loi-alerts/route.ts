@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { generateLoiIcs, icsAttachment } from '@/lib/ics'
 import { getRecipients } from '@/lib/notify-config'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { withErrorHandler } from '@/lib/api-response'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://nexus.evolutionstrategy.com'
 
@@ -11,17 +12,17 @@ function serviceClient() {
 }
 
 // GET — scheduled trigger (GitHub Actions, daily 14:00 UTC)
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandler(async (req: NextRequest) => {
   if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   return sendAlerts()
-}
+})
 
 // POST — manual trigger from UI
-export async function POST() {
+export const POST = withErrorHandler(async () => {
   return sendAlerts()
-}
+})
 
 async function sendAlerts() {
   const supabase = serviceClient()

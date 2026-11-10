@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { fetchCuratedPortfolioNews, defaultLookbackDays, CompanyNews, NewsArticle } from '@/lib/portfolio-news'
 import { getRecipients } from '@/lib/notify-config'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { withErrorHandler } from '@/lib/api-response'
 
 export const maxDuration = 60
 
@@ -218,17 +219,17 @@ async function runSend() {
 
 // ── GET — Vercel Cron ─────────────────────────────────────────────────────────
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandler(async (req: NextRequest) => {
   if (!process.env.CRON_SECRET) return NextResponse.json({ error: 'Server misconfigured: CRON_SECRET not set' }, { status: 500 })
   if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   return runSend()
-}
+})
 
 // ── POST — manual trigger from UI ────────────────────────────────────────────
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandler(async (req: NextRequest) => {
   const authHeader = req.headers.get('authorization')
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -242,4 +243,4 @@ export async function POST(req: NextRequest) {
   if (error || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   return runSend()
-}
+})

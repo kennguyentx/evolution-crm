@@ -15,7 +15,7 @@ export function apiOk<T>(data: T, status = 200): NextResponse {
   return NextResponse.json(data, { status })
 }
 
-type RouteHandler = (req: NextRequest, ctx: any) => Promise<NextResponse>
+type RouteHandler = (req: NextRequest, ctx: any) => Promise<NextResponse | Response>
 
 /**
  * Wraps a route handler so any unhandled throw becomes a structured JSON 500

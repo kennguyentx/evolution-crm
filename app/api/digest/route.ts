@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { withErrorHandler } from '@/lib/api-response'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -31,7 +32,7 @@ function stageBadge(stage: string): string {
   return `<span style="display:inline-block;padding:2px 10px;border-radius:999px;background:${s.bg};color:${s.color};font-size:11px;font-weight:700;letter-spacing:0.04em;">${stage}</span>`
 }
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandler(async (req: NextRequest) => {
   // Verify cron secret (query param / custom header / bearer — see lib/cron-auth)
   if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -229,4 +230,4 @@ export async function GET(req: NextRequest) {
     console.error('Digest error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})

@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { AI_MODELS } from '@/lib/ai-config'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { PortfolioAnalyzeSchema } from '@/lib/schemas'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandler(async (req: NextRequest) => {
   try {
-    const { company, sector, financials } = await req.json()
+    const parsed = PortfolioAnalyzeSchema.safeParse(await req.json())
+    if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+    const { company, sector, financials } = parsed.data
 
     const response = await anthropic.messages.create({
       model: AI_MODELS.balanced,
@@ -36,4 +40,4 @@ Be direct and specific. Use numbers. Flag any concerning trends clearly. No fill
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})

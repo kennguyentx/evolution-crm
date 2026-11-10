@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { AI_MODELS } from '@/lib/ai-config'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { DigestGenerateSchema } from '@/lib/schemas'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandler(async (req: NextRequest) => {
   try {
-    const { deals } = await req.json()
+    const parsed = DigestGenerateSchema.safeParse(await req.json())
+    if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+    const { deals } = parsed.data
     const activeDeals = deals.filter((d: any) => d.status === 'Active')
     const closedDeals = deals.filter((d: any) => d.status === 'Closed')
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
@@ -50,4 +54,4 @@ Keep it sharp, data-focused, and useful for a 3-person deal team. Use plain busi
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})

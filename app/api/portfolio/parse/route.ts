@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { AI_MODELS } from '@/lib/ai-config'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { PortfolioParseSchema } from '@/lib/schemas'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -46,9 +48,11 @@ function repairJson(str: string): string {
     .replace(/:\s*Infinity/g, ': null')
 }
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandler(async (req: NextRequest) => {
   try {
-    const { base64, fileName, companyName, csvText } = await req.json()
+    const validated = PortfolioParseSchema.safeParse(await req.json())
+    if (!validated.success) return apiError(validated.error.issues[0].message, 400)
+    const { base64, fileName, companyName, csvText } = validated.data
     const isSpreadsheet = fileName?.match(/\.(xlsx|xls|csv)$/i)
 
     let messageContent: any[]
@@ -107,4 +111,4 @@ export async function POST(req: NextRequest) {
     console.error('Portfolio parse error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})

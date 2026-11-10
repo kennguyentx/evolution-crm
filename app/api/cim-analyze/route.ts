@@ -3,6 +3,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase'
 import { dropboxUpload } from '@/lib/dropbox'
 import { AI_MODELS } from '@/lib/ai-config'
+import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { CimAnalyzeSchema } from '@/lib/schemas'
 
 export const maxDuration = 120
 
@@ -23,14 +26,19 @@ async function extractDocxText(buffer: ArrayBuffer): Promise<string> {
     .trim()
 }
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandler(async (req: NextRequest) => {
+  // AI-cost endpoint: cap requests per IP so a loop can't burn Anthropic spend.
+  const limit = checkRateLimit(`cim-analyze:${getClientIp(req)}`, { limit: 10, windowMs: 60_000 })
+  if (!limit.allowed) return rateLimitResponse(limit.retryAfterSeconds)
+
   try {
     const formData    = await req.formData()
     const file        = formData.get('file') as File | null
     const pastedText  = formData.get('text') as string | null
     const dealId      = formData.get('deal_id') as string
 
-    if (!dealId) return NextResponse.json({ error: 'deal_id required' }, { status: 400 })
+    const parsed = CimAnalyzeSchema.safeParse({ deal_id: dealId ?? '' })
+    if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
     if (!file && !pastedText?.trim()) return NextResponse.json({ error: 'File or text required' }, { status: 400 })
 
     const supabase = createClient()
@@ -210,4 +218,4 @@ Return ONLY valid JSON:
     console.error('CIM analyze error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})

@@ -8,6 +8,9 @@ export const maxDuration = 120 // seconds — agent loops need more than the 10s
 import { NextRequest, NextResponse } from 'next/server'
 import { AI_MODELS } from '@/lib/ai-config'
 import { anthropic, TOOLS, WRITE_TOOLS, executeTool, buildSystemPrompt } from '@/lib/assistant-core'
+import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { AssistantRequestSchema } from '@/lib/schemas'
 
 // ─── Message sanitizer ────────────────────────────────────────
 // Ensures every assistant message with tool_use blocks is immediately followed
@@ -50,14 +53,15 @@ function sanitizeMessages(msgs: any[]): any[] {
 
 // ─── Main handler ─────────────────────────────────────────────
 
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json()
-    const { messages, confirming } = body
+export const POST = withErrorHandler(async (req: NextRequest) => {
+  // AI-cost endpoint: cap requests per IP so a loop can't burn Anthropic spend.
+  const limit = checkRateLimit(`assistant:${getClientIp(req)}`, { limit: 20, windowMs: 60_000 })
+  if (!limit.allowed) return rateLimitResponse(limit.retryAfterSeconds)
 
-    if (!messages || !Array.isArray(messages)) {
-      return NextResponse.json({ error: 'Invalid messages array' }, { status: 400 })
-    }
+  try {
+    const parsed = AssistantRequestSchema.safeParse(await req.json())
+    if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+    const { messages, confirming } = parsed.data
 
     const systemPrompt = buildSystemPrompt({ channel: 'web' })
     const encoder = new TextEncoder()
@@ -163,4 +167,4 @@ export async function POST(req: NextRequest) {
     console.error('Assistant error:', err)
     return NextResponse.json({ error: err?.message || String(err) }, { status: 500 })
   }
-}
+})

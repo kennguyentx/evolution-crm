@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getValidCCToken } from '@/lib/constant-contact'
+import { withErrorHandler } from '@/lib/api-response'
 
 export const maxDuration = 60
 
@@ -28,7 +29,7 @@ async function getSyncListId(): Promise<string | null> {
   return data?.value ?? null
 }
 
-export async function POST() {
+export const POST = withErrorHandler(async () => {
   let token: string
   try {
     token = await getValidCCToken()
@@ -104,4 +105,4 @@ export async function POST() {
     activity_id: result.activity_id,
     message: `${nexusContacts.length} contacts submitted — CC is processing in the background`,
   })
-}
+})

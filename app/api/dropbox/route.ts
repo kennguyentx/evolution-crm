@@ -14,6 +14,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getDropboxToken, dropboxMove } from '@/lib/dropbox'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { DropboxUploadSchema, DropboxMoveSchema } from '@/lib/schemas'
 
 const DBX_API     = 'https://api.dropboxapi.com/2'
 const DBX_CONTENT = 'https://content.dropboxapi.com/2'
@@ -114,7 +116,7 @@ async function dbxPost(endpoint: string, body: any, contentHeaders?: Record<stri
 
 // ── GET ───────────────────────────────────────────────────────────────────────
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandler(async (req: NextRequest) => {
   const { searchParams } = new URL(req.url)
   const action = searchParams.get('action')
   const path   = searchParams.get('path') || ''
@@ -210,13 +212,13 @@ export async function GET(req: NextRequest) {
     console.error('Dropbox API error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})
 
 // ── POST — upload ─────────────────────────────────────────────────────────────
 
 const TEMP_BUCKET = 'intake-temp'
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandler(async (req: NextRequest) => {
   const userId = await getSessionUser(req)
 
   try {
@@ -225,11 +227,9 @@ export async function POST(req: NextRequest) {
     //  - storagePath:  larger files the client first PUT to the intake-temp Supabase
     //                  bucket via a signed URL; we download server-side (no body
     //                  limit) and push to Dropbox, then delete the temp object.
-    const { path, name, base64, storagePath } = await req.json()
-
-    if (!path || !name || (!base64 && !storagePath)) {
-      return NextResponse.json({ error: 'path, name, and base64 or storagePath required' }, { status: 400 })
-    }
+    const parsed = DropboxUploadSchema.safeParse(await req.json())
+    if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+    const { path, name, base64, storagePath } = parsed.data
 
     if (!isAllowedPath(path)) {
       audit('upload:denied', path, userId, { name, reason: 'path not allowed' })
@@ -252,6 +252,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: `File too large (${mb} MB; limit is 20 MB)` }, { status: 413 })
       }
     } else {
+      // Schema guarantees base64 when storagePath is absent; guard anyway for TS.
+      if (!base64) return NextResponse.json({ error: 'path, name, and base64 or storagePath required' }, { status: 400 })
       if (base64.length > MAX_UPLOAD_BASE64) {
         const mb = (base64.length * 3 / 4 / 1024 / 1024).toFixed(1)
         audit('upload:denied', path, userId, { name, reason: 'size limit exceeded', sizeMb: mb })
@@ -298,19 +300,17 @@ export async function POST(req: NextRequest) {
     console.error('Dropbox upload error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})
 
 // ── PATCH — move ──────────────────────────────────────────────────────────────
 
-export async function PATCH(req: NextRequest) {
+export const PATCH = withErrorHandler(async (req: NextRequest) => {
   const userId = await getSessionUser(req)
 
   try {
-    const { from_path, to_path } = await req.json()
-
-    if (!from_path || !to_path) {
-      return NextResponse.json({ error: 'from_path and to_path required' }, { status: 400 })
-    }
+    const parsed = DropboxMoveSchema.safeParse(await req.json())
+    if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+    const { from_path, to_path } = parsed.data
 
     if (!isAllowedPath(from_path) || !isAllowedPath(to_path)) {
       audit('move:denied', from_path, userId, { to_path, reason: 'path not allowed' })
@@ -325,4 +325,4 @@ export async function PATCH(req: NextRequest) {
     console.error('Dropbox move error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})

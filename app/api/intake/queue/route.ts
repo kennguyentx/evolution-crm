@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { withErrorHandler } from '@/lib/api-response'
 
 function serviceClient() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
 
-export async function GET(req: NextRequest) {
+export const GET = withErrorHandler(async (req: NextRequest) => {
   const supabase = serviceClient()
   const status = req.nextUrl.searchParams.get('status') ?? 'pending'
   const { data, error } = await supabase
@@ -16,4 +17,4 @@ export async function GET(req: NextRequest) {
     .limit(50)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data)
-}
+})

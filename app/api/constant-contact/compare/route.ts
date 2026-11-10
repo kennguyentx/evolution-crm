@@ -5,6 +5,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getValidCCToken } from '@/lib/constant-contact'
+import { withErrorHandler } from '@/lib/api-response'
 
 const CC_API = 'https://api.cc.email/v3'
 
@@ -39,7 +40,7 @@ async function fetchAllCCContacts(token: string): Promise<any[]> {
   return all
 }
 
-export async function GET() {
+export const GET = withErrorHandler(async () => {
   let token: string
   try {
     token = await getValidCCToken()
@@ -120,4 +121,4 @@ export async function GET() {
     cc_only: ccOnly,
     matched: matched,
   })
-}
+})

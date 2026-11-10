@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { IntakeUploadUrlSchema } from '@/lib/schemas'
 
 const BUCKET = 'intake-temp'
 
@@ -10,9 +12,11 @@ function serviceClient() {
   )
 }
 
-export async function POST(req: NextRequest) {
+export const POST = withErrorHandler(async (req: NextRequest) => {
   try {
-    const { fileName } = await req.json()
+    const parsed = IntakeUploadUrlSchema.safeParse(await req.json())
+    if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+    const { fileName } = parsed.data
     const supabase = serviceClient()
 
     // Ensure bucket exists
@@ -37,4 +41,4 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
+})

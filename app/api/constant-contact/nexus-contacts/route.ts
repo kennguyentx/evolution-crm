@@ -7,6 +7,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { withErrorHandler } from '@/lib/api-response'
 
 function serviceClient() {
   return createClient(
@@ -30,7 +31,7 @@ async function fetchPage(supabase: ReturnType<typeof serviceClient>, from: numbe
   return q
 }
 
-export async function GET() {
+export const GET = withErrorHandler(async () => {
   const supabase = serviceClient()
   const contacts: any[] = []
   let from = 0
@@ -59,4 +60,4 @@ export async function GET() {
   }
 
   return NextResponse.json({ contacts, total: contacts.length, synced_filter_active: filterSynced })
-}
+})

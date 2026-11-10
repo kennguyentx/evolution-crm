@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendDealNotification } from '@/lib/deal-notify'
 import { IntakeQueueActionSchema } from '@/lib/schemas'
-import { apiError } from '@/lib/api-response'
+import { apiError, withErrorHandler } from '@/lib/api-response'
 
 function serviceClient() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export const PATCH = withErrorHandler(async (req: NextRequest, { params }: { params: { id: string } }) => {
   const supabase = serviceClient()
 
   const parsed = IntakeQueueActionSchema.safeParse(await req.json())
@@ -128,4 +128,4 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
-}
+})
