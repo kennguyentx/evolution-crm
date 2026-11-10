@@ -4,5 +4,6 @@
 
 insert into app_settings (key, value) values
   ('deal_notify_recipients',    '["ken@evolutionstrategy.com","sean@evolutionstrategy.com"]'),
-  ('portfolio_news_recipients', '["ken@evolutionstrategy.com","sean@evolutionstrategy.com"]')
+  ('portfolio_news_recipients', '["ken@evolutionstrategy.com","sean@evolutionstrategy.com"]'),
+  ('intake_digest_recipients',  '["ken@evolutionstrategy.com","sean@evolutionstrategy.com"]')
 on conflict (key) do nothing;
