@@ -28,7 +28,7 @@ import { createLogger } from '@/lib/log'
 const log = createLogger('deal-page')
 
 
-const STAGES = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
+const STAGES = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold','Dead']
 
 const DEFAULT_DILIGENCE = [
   { category: 'financial', item: 'Monthly P&L' },
@@ -265,6 +265,7 @@ export default function DealDetailPage() {
 
   const stageToStatus = (s: string) => {
     if (['Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)'].includes(s)) return 'Passed'
+    if (s === 'Dead') return 'Dead'
     if (['Closed (Platform)','Closed (Add-On)'].includes(s)) return 'Closed'
     return 'Active'
   }
