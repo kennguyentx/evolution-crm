@@ -18,6 +18,9 @@ const CRON_API_ROUTES = [
   '/api/portfolio-news/daily-email',
   '/api/deals/loi-alerts',
   '/api/intake/daily-digest',
+  '/api/intake/cleanup-temp',
+  '/api/dropbox/reconcile',
+  '/api/dropbox/migrate-folders',
 ]
 
 export async function middleware(req: NextRequest) {
