@@ -134,6 +134,87 @@ describe('parseEmailCommand — log-contact', () => {
   });
 });
 
+describe('parseEmailCommand — log-contact with company', () => {
+  it('parses a single contact with a company', () => {
+    const r = parseEmailCommand('log new contact Jane Doe at Acme Corp');
+    expect(r.kind).toBe('log-contact');
+    expect(r.contactNames).toEqual(['Jane Doe']);
+    expect(r.contacts).toEqual([{ name: 'Jane Doe', company: 'Acme Corp' }]);
+    expect(r.noteText).toBe('');
+  });
+
+  it('shares a trailing company across the whole list', () => {
+    const r = parseEmailCommand('log new contact Jane Doe, John Smith at Acme Corp');
+    expect(r.contacts).toEqual([
+      { name: 'Jane Doe', company: 'Acme Corp' },
+      { name: 'John Smith', company: 'Acme Corp' },
+    ]);
+    const r2 = parseEmailCommand('log new contact Jane Doe and John Smith at Amped');
+    expect(r2.contacts).toEqual([
+      { name: 'Jane Doe', company: 'Amped' },
+      { name: 'John Smith', company: 'Amped' },
+    ]);
+  });
+
+  it('keeps per-person companies separate', () => {
+    const r = parseEmailCommand(
+      'log new contact Jane Doe at Acme, John Smith at Beta LLC',
+    );
+    expect(r.contacts).toEqual([
+      { name: 'Jane Doe', company: 'Acme' },
+      { name: 'John Smith', company: 'Beta LLC' },
+    ]);
+  });
+
+  it('does not share a company backwards', () => {
+    const r = parseEmailCommand('log new contact Jane Doe at Acme, John Smith');
+    expect(r.contacts).toEqual([
+      { name: 'Jane Doe', company: 'Acme' },
+      { name: 'John Smith', company: null },
+    ]);
+  });
+
+  it('supports a trailing "both at <Company>" clause', () => {
+    const r = parseEmailCommand('log new contact Jane Doe, John Smith, both at Amped');
+    expect(r.contacts).toEqual([
+      { name: 'Jane Doe', company: 'Amped' },
+      { name: 'John Smith', company: 'Amped' },
+    ]);
+    expect(r.noteText).toBe('');
+  });
+
+  it('leaves company null when no "at" is given (regression)', () => {
+    const r = parseEmailCommand('log new contact Jane Doe and John Smith');
+    expect(r.contacts).toEqual([
+      { name: 'Jane Doe', company: null },
+      { name: 'John Smith', company: null },
+    ]);
+  });
+
+  it('keeps multi-word companies and corporate suffixes', () => {
+    expect(
+      parseEmailCommand('log new contact Jane Doe at Acme Capital Partners').contacts,
+    ).toEqual([{ name: 'Jane Doe', company: 'Acme Capital Partners' }]);
+    expect(
+      parseEmailCommand('log new contact Jane Doe at Acme Inc.').contacts,
+    ).toEqual([{ name: 'Jane Doe', company: 'Acme Inc.' }]);
+  });
+
+  it('stops the company at trailing sentence text and keeps it in noteText', () => {
+    const r = parseEmailCommand(
+      'log new contact Jane Doe at Amped, she runs sourcing there',
+    );
+    expect(r.contacts).toEqual([{ name: 'Jane Doe', company: 'Amped' }]);
+    expect(r.noteText).toContain('she runs sourcing there');
+  });
+
+  it('parses company in "add <name> at <company> to contacts"', () => {
+    const r = parseEmailCommand('add Jane Doe at Acme to contacts');
+    expect(r.kind).toBe('log-contact');
+    expect(r.contacts).toEqual([{ name: 'Jane Doe', company: 'Acme' }]);
+  });
+});
+
 describe('parseEmailCommand — note', () => {
   it('parses "note for <contact>: <text>"', () => {
     const r = parseEmailCommand(
