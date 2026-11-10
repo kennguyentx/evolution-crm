@@ -9,6 +9,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import type Anthropic from '@anthropic-ai/sdk'
 import { AI_MODELS } from '@/lib/ai-config'
 import { anthropic, TOOLS, WRITE_TOOLS, executeTool, buildSystemPrompt } from '@/lib/assistant-core'
+import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
+import { apiError, withErrorHandler } from '@/lib/api-response'
+import { AssistantRequestSchema } from '@/lib/schemas'
 
 // ─── Message sanitizer ────────────────────────────────────────
 // Ensures every assistant message with tool_use blocks is immediately followed
@@ -62,25 +65,20 @@ function sanitizeMessages(msgs: Anthropic.MessageParam[]): Anthropic.MessagePara
 
 // ─── Main handler ─────────────────────────────────────────────
 
-interface ConfirmingPayload {
-  tool_use_id: string
-  tool_name: string
-  input: unknown
-}
+export const POST = withErrorHandler(async (req: NextRequest) => {
+  // AI-cost endpoint: cap requests per IP so a loop can't burn Anthropic spend.
+  const limit = checkRateLimit(`assistant:${getClientIp(req)}`, { limit: 20, windowMs: 60_000 })
+  if (!limit.allowed) return rateLimitResponse(limit.retryAfterSeconds)
 
-interface AssistantRequestBody {
-  messages?: Anthropic.MessageParam[]
-  confirming?: ConfirmingPayload
-}
-
-export async function POST(req: NextRequest) {
   try {
-    const body: AssistantRequestBody = await req.json()
-    const { messages, confirming } = body
-
-    if (!messages || !Array.isArray(messages)) {
-      return NextResponse.json({ error: 'Invalid messages array' }, { status: 400 })
-    }
+    const parsed = AssistantRequestSchema.safeParse(await req.json())
+    if (!parsed.success) return apiError(parsed.error.issues[0].message, 400)
+    const { confirming } = parsed.data
+    // The zod schema validates the wire shape; assert the SDK's message type
+    // at this boundary so the typed helpers below (sanitizeMessages,
+    // agenticLoop) keep item 13's Anthropic types instead of zod's
+    // passthrough output type.
+    const messages = parsed.data.messages as unknown as Anthropic.MessageParam[]
 
     const systemPrompt = buildSystemPrompt({ channel: 'web' })
     const encoder = new TextEncoder()
@@ -186,4 +184,4 @@ export async function POST(req: NextRequest) {
     console.error('Assistant error:', err)
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })
   }
-}
+})

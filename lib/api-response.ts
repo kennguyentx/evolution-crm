@@ -26,13 +26,13 @@ export interface RouteContext {
   params: Record<string, string | string[]> | Promise<Record<string, string | string[]>>
 }
 
-type RouteHandler = (req: NextRequest, ctx: RouteContext) => Promise<NextResponse>
+type RouteHandler<C = RouteContext> = (req: NextRequest, ctx: C) => Promise<NextResponse | Response>
 
 /**
  * Wraps a route handler so any unhandled throw becomes a structured JSON 500
  * instead of an empty response or HTML error page.
  */
-export function withErrorHandler(handler: RouteHandler): RouteHandler {
+export function withErrorHandler<C = RouteContext>(handler: RouteHandler<C>): RouteHandler<C> {
   return async (req, ctx) => {
     try {
       return await handler(req, ctx)
