@@ -5,6 +5,8 @@ import { Upload, Check, AlertCircle, ChevronRight, Search, Plus, X, FileText, Fi
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import { initialParam, useSyncUrlParams } from '@/hooks/useUrlState'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1367,25 +1369,25 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                     <div>
-                      <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>Company</label>
+                      <label className="label">Company</label>
                       <input className="input" style={{ fontSize: '13px' }} value={edit.company_name} onChange={e => setEdit(item.id, { company_name: e.target.value })} />
                     </div>
                     <div>
-                      <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>Sector</label>
+                      <label className="label">Sector</label>
                       <input className="input" list="pending-sector-opts" style={{ fontSize: '13px' }} value={edit.sector} onChange={e => setEdit(item.id, { sector: e.target.value })} placeholder="Type or select…" />
                       <datalist id="pending-sector-opts">{SECTORS.map(s => <option key={s} value={s} />)}</datalist>
                     </div>
                     <div>
-                      <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>Geography</label>
+                      <label className="label">Geography</label>
                       <input className="input" style={{ fontSize: '13px' }} value={edit.geography ?? ''} onChange={e => setEdit(item.id, { geography: e.target.value })} />
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                       <div>
-                        <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>Revenue ($M)</label>
+                        <label className="label">Revenue ($M)</label>
                         <input className="input" type="number" style={{ fontSize: '13px' }} value={edit.revenue != null ? edit.revenue / 1e6 : ''} onChange={e => setEdit(item.id, { revenue: e.target.value ? parseFloat(e.target.value) * 1e6 : null })} />
                       </div>
                       <div>
-                        <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }}>EBITDA ($M)</label>
+                        <label className="label">EBITDA ($M)</label>
                         <input className="input" type="number" style={{ fontSize: '13px' }} value={edit.ebitda != null ? edit.ebitda / 1e6 : ''} onChange={e => setEdit(item.id, { ebitda: e.target.value ? parseFloat(e.target.value) * 1e6 : null })} />
                       </div>
                     </div>
@@ -1393,7 +1395,7 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
 
                   {/* Deal type */}
                   <div>
-                    <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>Deal type</label>
+                    <label className="label">Deal type</label>
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                       {(['platform', 'add-on'] as const).map(t => (
                         <button key={t} onClick={() => setEdit(item.id, { deal_type: t, parent_portco: t === 'platform' ? '' : edit.parent_portco })}
@@ -1412,7 +1414,7 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
 
                   {/* Stage selector — choose where the deal lands in the pipeline */}
                   <div>
-                    <label style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', display: 'block', marginBottom: '6px' }}>Stage</label>
+                    <label className="label">Stage</label>
                     <select
                       className="select"
                       style={{ width: '100%', fontSize: '13px' }}
@@ -1460,7 +1462,7 @@ function PendingQueue({ onApproved }: { onApproved: () => void }) {
                     <button
                       onClick={() => handleReject(item.id)}
                       disabled={!!isProcessing}
-                      style={{ padding: '8px 14px', fontSize: '13px', borderRadius: '7px', border: '1px solid var(--border)', background: 'white', color: 'var(--text-muted)', cursor: 'pointer' }}
+                      className="btn btn-ghost"
                     >
                       Discard
                     </button>
@@ -1494,8 +1496,19 @@ const DOC_TYPES: { key: DocType; label: string; icon: React.ReactNode; descripti
 
 export default function DocumentIntakePage() {
   const isMobile = useIsMobile()
-  const [activeType, setActiveType] = useState<DocType>('teaser')
+  // Item 23: the selected intake flow lives in the URL (?type=cim) so it
+  // can be bookmarked/shared and survives a refresh.
+  const syncUrlParams = useSyncUrlParams()
+  const [activeType, setActiveTypeState] = useState<DocType>(() => {
+    const t = initialParam('type')
+    return t === 'cim' || t === 'nda' ? t : 'teaser'
+  })
+  const setActiveType = (t: DocType) => {
+    setActiveTypeState(t)
+    syncUrlParams({ type: t === 'teaser' ? null : t })
+  }
   const [queueKey, setQueueKey] = useState(0)
+  usePageTitle('Document Intake')
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>

@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 // ─── Types ───────────────────────────────────────────────────
 // Matches existing capital_raises table (target_equity, target_debt, close_date, status = 'Open'|'Closed')
@@ -253,7 +254,7 @@ function AddActivityModal({
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-4">
-          <button onClick={onClose} className="text-xs px-3 py-1.5 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">Cancel</button>
+          <button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button>
           <button onClick={save} disabled={saving} className="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
             {saving ? 'Saving…' : 'Save'}
           </button>
@@ -344,7 +345,7 @@ function AddParticipantModal({
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-4">
-          <button onClick={onClose} className="text-xs px-3 py-1.5 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">Cancel</button>
+          <button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button>
           <button onClick={save} disabled={saving} className="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
             {saving ? 'Saving…' : 'Add'}
           </button>
@@ -730,7 +731,7 @@ function EditRaiseModal({
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-4">
-          <button onClick={onClose} className="text-xs px-3 py-1.5 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">Cancel</button>
+          <button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button>
           <button onClick={save} disabled={saving} className="text-xs px-3 py-1.5 rounded bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-medium hover:opacity-90 disabled:opacity-50">
             {saving ? 'Saving…' : 'Save changes'}
           </button>
@@ -842,7 +843,7 @@ function NewRaiseModal({
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-4">
-          <button onClick={onClose} className="text-xs px-3 py-1.5 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">Cancel</button>
+          <button onClick={onClose} className="btn btn-ghost btn-sm">Cancel</button>
           <button onClick={save} disabled={saving} className="text-xs px-3 py-1.5 rounded bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-medium hover:opacity-90 disabled:opacity-50">
             {saving ? 'Creating…' : 'Create raise'}
           </button>
@@ -857,6 +858,7 @@ function NewRaiseModal({
 export default function RaisesPage() {
   const supabase = createClient()
   const isMobile = useIsMobile()
+  usePageTitle('Capital Raises')
   const [raises, setRaises] = useState<Raise[]>([])
   const [selectedRaise, setSelectedRaise] = useState<Raise | null>(null)
   const [participants, setParticipants] = useState<Participant[]>([])
@@ -994,12 +996,8 @@ export default function RaisesPage() {
               <button
                 key={r.id}
                 onClick={() => setSelectedRaise(r)}
-                className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
-                  selectedRaise?.id === r.id
-                    ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 border-transparent font-medium'
-                    : 'border-gray-200 dark:border-gray-700 text-gray-500 hover:border-gray-400'
-                }`}
-                style={{ fontSize: '11px' }}
+                className={`chip${selectedRaise?.id === r.id ? ' chip-active' : ''}`}
+                style={{ textTransform: 'none', letterSpacing: 'normal', fontSize: '12px' }}
               >
                 {r.name || r.deal?.company_name || 'Unnamed'}
                 {r.status === 'Closed' && <span className="ml-1.5 opacity-50 text-[9px]">Closed</span>}
@@ -1014,13 +1012,13 @@ export default function RaisesPage() {
             <div className="flex items-center gap-2 mb-4">
               <button
                 onClick={() => setShowEditRaise(true)}
-                className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-500 hover:border-gray-400 hover:text-gray-700"
+                className="btn btn-ghost btn-sm"
               >
                 Edit raise
               </button>
               <button
                 onClick={deleteRaise}
-                className="text-xs px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-900 text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                className="btn btn-danger btn-sm"
               >
                 Delete raise
               </button>

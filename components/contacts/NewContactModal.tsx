@@ -196,10 +196,12 @@ export default function NewContactModal({ onClose, onCreated, contact, prefill }
             <textarea className="input" rows={2} placeholder="Context, how you know them..." style={{ resize: 'vertical' }} {...field('notes')} />
           </div>
 
-          {/* Linked deals — only shown when editing */}
+          {/* Deals — only shown when editing (item 30: contacts link back
+              to their deals via contact_deal_links, with the contact's
+              role on each deal) */}
           {isEdit && dealLinks.length > 0 && (() => {
             const fmt = (n: number) => n >= 1e6 ? `$${(n/1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n/1e3).toFixed(0)}K` : `$${n}`
-            const isPassed = (d: any) => d?.status === 'Pass' || d?.stage === 'Pass'
+            const isPassed = (d: any) => d?.status === 'Passed' || (typeof d?.stage === 'string' && d.stage.startsWith('Pass'))
             const active = dealLinks.filter(l => !isPassed(l.deal))
             const passed = dealLinks.filter(l => isPassed(l.deal))
             const renderLink = (link: any, i: number) => {
@@ -220,6 +222,7 @@ export default function NewContactModal({ onClose, onCreated, contact, prefill }
                 }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d?.company_name}</div>
+                    {link.role && <div style={{ fontSize: '11px', color: 'var(--accent)', marginTop: '2px' }}>{link.role}</div>}
                     {d?.sector && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{d.sector}</div>}
                     {fins && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '1px' }}>{fins}</div>}
                   </div>
@@ -239,7 +242,7 @@ export default function NewContactModal({ onClose, onCreated, contact, prefill }
             return (
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
                 <label className="label" style={{ marginBottom: '10px' }}>
-                  Deal History ({dealLinks.length} deal{dealLinks.length !== 1 ? 's' : ''})
+                  Deals ({dealLinks.length} deal{dealLinks.length !== 1 ? 's' : ''})
                 </label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   {active.map(renderLink)}
@@ -251,6 +254,13 @@ export default function NewContactModal({ onClose, onCreated, contact, prefill }
               </div>
             )
           })()}
+          {/* Deals section is always present when editing, even with no links yet */}
+          {isEdit && dealLinks.length === 0 && (
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+              <label className="label" style={{ marginBottom: '6px' }}>Deals</label>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No linked deals yet — link this contact from a deal’s Contacts tab.</div>
+            </div>
+          )}
           {/* Linked notes — only shown when editing and notes exist */}
           {isEdit && contactNotes.length > 0 && (
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px' }}>

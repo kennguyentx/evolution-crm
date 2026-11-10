@@ -2,9 +2,9 @@
 import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { Search, X, FileText, Users, Building2, StickyNote, Briefcase } from 'lucide-react'
+import { Search, X, FileText, Users, Building2, StickyNote, Briefcase, CalendarDays, TrendingUp, PiggyBank } from 'lucide-react'
 
-type ResultType = 'deal' | 'contact' | 'capital_contact' | 'portfolio' | 'note'
+type ResultType = 'deal' | 'contact' | 'capital_contact' | 'portfolio' | 'note' | 'investor' | 'raise' | 'calendar_event'
 interface Result {
   id: string
   label: string
@@ -19,8 +19,13 @@ const NAV_SHORTCUTS = [
   { label: 'Deals', href: '/deals' },
   { label: 'Contacts', href: '/contacts' },
   { label: 'Capital Raises', href: '/raises' },
+  { label: 'Portfolio', href: '/portfolio' },
+  { label: 'Calendar', href: '/calendar' },
+  { label: 'Investors', href: '/investors' },
   { label: 'Notes', href: '/notes' },
   { label: 'Intake', href: '/intake' },
+  { label: 'Assistant', href: '/assistant' },
+  { label: 'Digest', href: '/digest' },
 ]
 
 export default function CommandPalette({ onClose }: { onClose: () => void }) {
@@ -41,19 +46,25 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
     setLoading(true)
     timer.current = setTimeout(async () => {
       const q = query.trim()
-      const [{ data: deals }, { data: contacts }, { data: caps }, { data: portcos }, { data: notes }] = await Promise.all([
+      const [{ data: deals }, { data: contacts }, { data: caps }, { data: portcos }, { data: notes }, { data: investors }, { data: raises }, { data: events }] = await Promise.all([
         supabase.from('deals').select('id, company_name, sector, stage').ilike('company_name', `%${q}%`).limit(5),
         supabase.from('contacts').select('id, first_name, last_name, firm').or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,firm.ilike.%${q}%`).limit(5),
         supabase.from('capital_contacts').select('id, firm, contact_name').or(`firm.ilike.%${q}%,contact_name.ilike.%${q}%`).limit(3),
         supabase.from('portfolio_companies').select('id, name, sector').ilike('name', `%${q}%`).limit(3),
         supabase.from('notes').select('id, summary, note_date').ilike('summary', `%${q}%`).not('summary', 'is', null).order('note_date', { ascending: false }).limit(3),
+        supabase.from('investors').select('id, first_name, last_name, firm').or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,firm.ilike.%${q}%`).limit(3),
+        supabase.from('capital_raises').select('id, name, status, deal:deals(company_name)').or(`name.ilike.%${q}%`).limit(3),
+        supabase.from('calendar_events').select('id, title, event_date, event_type').ilike('title', `%${q}%`).order('event_date', { ascending: false }).limit(3),
       ])
       const r: Result[] = [
         ...(deals ?? []).map((d: any) => ({ id: d.id, label: d.company_name, sublabel: [d.sector, d.stage].filter(Boolean).join(' · ') || undefined, type: 'deal' as const, href: `/deals/${d.id}` })),
         ...(contacts ?? []).map((c: any) => ({ id: c.id, label: `${c.first_name} ${c.last_name}`, sublabel: c.firm ?? undefined, type: 'contact' as const, href: `/contacts?open=${c.id}` })),
         ...(caps ?? []).map((c: any) => ({ id: c.id, label: c.firm, sublabel: c.contact_name ?? undefined, type: 'capital_contact' as const, href: `/raises/contacts?firm=${encodeURIComponent(c.firm)}` })),
         ...(portcos ?? []).map((p: any) => ({ id: p.id, label: p.name, sublabel: p.sector ?? undefined, type: 'portfolio' as const, href: `/portfolio/${p.id}` })),
-        ...(notes ?? []).map((n: any) => ({ id: n.id, label: n.summary?.slice(0, 60) + (n.summary?.length > 60 ? '…' : ''), sublabel: n.note_date ? new Date(n.note_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : undefined, type: 'note' as const, href: `/notes` })),
+        ...(investors ?? []).map((i: any) => ({ id: i.id, label: `${i.first_name} ${i.last_name}`, sublabel: i.firm ?? undefined, type: 'investor' as const, href: `/investors/${i.id}` })),
+        ...(raises ?? []).map((x: any) => ({ id: x.id, label: x.name || x.deal?.company_name || 'Unnamed raise', sublabel: [x.deal?.company_name && x.name ? x.deal.company_name : null, x.status].filter(Boolean).join(' · ') || undefined, type: 'raise' as const, href: `/raises/${x.id}` })),
+        ...(events ?? []).map((e: any) => ({ id: e.id, label: e.title, sublabel: e.event_date ? new Date(e.event_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : undefined, type: 'calendar_event' as const, href: `/calendar?open=${e.id}` })),
+        ...(notes ?? []).map((n: any) => ({ id: n.id, label: n.summary?.slice(0, 60) + (n.summary?.length > 60 ? '…' : ''), sublabel: n.note_date ? new Date(n.note_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : undefined, type: 'note' as const, href: `/notes?open=${n.id}` })),
       ]
       setResults(r)
       setSelected(0)
@@ -79,6 +90,9 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
     if (type === 'contact') return <Users size={12} />
     if (type === 'portfolio') return <Briefcase size={12} />
     if (type === 'note') return <StickyNote size={12} />
+    if (type === 'investor') return <PiggyBank size={12} />
+    if (type === 'raise') return <TrendingUp size={12} />
+    if (type === 'calendar_event') return <CalendarDays size={12} />
     return <Building2 size={12} />
   }
 
@@ -94,7 +108,7 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search deals, contacts, capital contacts…"
+            placeholder="Search deals, contacts, investors, raises, events, notes…"
             style={{ flex: 1, border: 'none', outline: 'none', fontSize: '14px', background: 'transparent', color: 'var(--text-primary)' }}
           />
           {query
@@ -107,13 +121,13 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
         {results.length > 0 ? (
           <div style={{ maxHeight: '380px', overflow: 'auto' }}>
             {results.map((r, i) => (
-              <button key={r.id} onClick={() => go(r.href)}
+              <button key={`${r.type}-${r.id}`} onClick={() => go(r.href)}
                 style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', textAlign: 'left', padding: '10px 16px', background: i === selected ? 'var(--surface-2)' : 'transparent', border: 'none', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)' }}>
                 <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>{typeIcon(r.type)}</span>
                 <span style={{ flex: 1, fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>{r.label}</span>
                 {r.sublabel && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{r.sublabel}</span>}
                 <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', border: '1px solid var(--border)', borderRadius: '3px', padding: '1px 5px', flexShrink: 0 }}>
-                  {r.type.replace('_', ' ')}
+                  {r.type.replace(/_/g, ' ')}
                 </span>
               </button>
             ))}

@@ -9,6 +9,7 @@ import NewContactModal from '@/components/contacts/NewContactModal'
 import CCSyncPanel from '@/components/contacts/CCSyncPanel'
 import UndoToast, { type UndoEntry } from '@/components/layout/UndoToast'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 const CONTACT_TYPES = ['banker', 'lp', 'lender', 'advisor', 'management', 'other']
 const PAGE_SIZE = 100
@@ -32,6 +33,7 @@ export default function ContactsPage() {
   const supabase = createClient()
   const router = useRouter()
   const isMobile = useIsMobile()
+  usePageTitle('Contacts')
 
   // Close modals on Escape
   useEffect(() => {

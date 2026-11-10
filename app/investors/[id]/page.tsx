@@ -3,9 +3,11 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatCurrencyFull as formatCurrency } from '@/types'
-import { ArrowLeft, Plus, X, Check, Building2, Edit2, Trash2 } from 'lucide-react'
+import { Plus, X, Check, Building2, Edit2, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import Breadcrumbs from '@/components/layout/Breadcrumbs'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 const INVESTOR_TYPES = ['Individual', 'Family Office', 'Institutional', 'Fund of Funds', 'Other']
 const ENTITY_TYPES = ['LLC', 'LP', 'Trust', 'Individual', 'Corp', 'Other']
@@ -19,6 +21,7 @@ export default function InvestorPage() {
   const isMobile = useIsMobile()
 
   const [investor, setInvestor] = useState<any>(null)
+  usePageTitle(investor ? `${investor.first_name} ${investor.last_name}` : null)
   const [entities, setEntities] = useState<any[]>([])
   const [investments, setInvestments] = useState<any[]>([])
   const [commitments, setCommitments] = useState<any[]>([])
@@ -167,9 +170,7 @@ export default function InvestorPage() {
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: isMobile ? '12px 16px' : '16px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
-        <Link href="/investors" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '12px', textDecoration: 'none', marginBottom: '10px' }}>
-          <ArrowLeft size={12} /> Investors
-        </Link>
+        <Breadcrumbs items={[{ label: 'Investors', href: '/investors' }, { label: `${investor.first_name} ${investor.last_name}` }]} />
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           {editingField === 'name' ? (
             <div style={{ display: 'flex', gap: '8px' }}>

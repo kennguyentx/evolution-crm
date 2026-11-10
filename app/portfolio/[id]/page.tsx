@@ -3,12 +3,14 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatCurrency } from '@/types'
-import { ArrowLeft, Plus, TrendingUp, TrendingDown, Zap, Check, Upload, AlertCircle, Pencil, X } from 'lucide-react'
+import { Plus, TrendingUp, TrendingDown, Zap, Check, Upload, AlertCircle, Pencil, X } from 'lucide-react'
 import Link from 'next/link'
 import { useDropzone } from 'react-dropzone'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 import DropboxFilesTab from '@/components/deals/DropboxFilesTab'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import Breadcrumbs from '@/components/layout/Breadcrumbs'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 export default function PortfolioCompanyPage() {
   const params = useParams()
@@ -17,6 +19,7 @@ export default function PortfolioCompanyPage() {
   const isMobile = useIsMobile()
 
   const [company, setCompany] = useState<any>(null)
+  usePageTitle(company?.name)
   const [financials, setFinancials] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'overview'|'financials'|'upload'|'analysis'|'notes'|'documents'>('overview')
@@ -267,9 +270,7 @@ export default function PortfolioCompanyPage() {
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div style={{ padding: isMobile ? '12px 16px' : '16px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
-        <Link href="/portfolio" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '12px', textDecoration: 'none', marginBottom: '10px' }}>
-          <ArrowLeft size={12} /> Portfolio
-        </Link>
+        <Breadcrumbs items={[{ label: 'Portfolio', href: '/portfolio' }, { label: company.name }]} />
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <h1 style={{ fontSize: '22px', fontWeight: 700 }}>{company.name}</h1>
           <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{company.sector}{company.geography ? ` · ${company.geography}` : ''}</span>

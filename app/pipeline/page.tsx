@@ -3,11 +3,13 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import type { Deal, DealStage } from '@/types'
 import { formatCurrency, stageClass } from '@/types'
-import { Plus, ChevronRight, Mail, X, Send, Check } from 'lucide-react'
+import { Plus, ChevronRight, Mail, X, Send, Check, Search, ArrowRightLeft } from 'lucide-react'
 import Link from 'next/link'
 import NewDealModal from '@/components/deals/NewDealModal'
 import { moveDropboxOnStageChange } from '@/lib/dropbox-stage-move'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import { initialParam, useUrlFilterSync } from '@/hooks/useUrlState'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 const STAGES: { name: DealStage; label: string }[] = [
   { name: 'Teaser',        label: 'Teaser' },
@@ -25,6 +27,12 @@ export default function PipelinePage() {
   const [showNewDeal, setShowNewDeal] = useState(false)
   const [dragOverStage, setDragOverStage] = useState<DealStage | null>(null)
   const dragId = useRef<string | null>(null)
+  // Item 23: board search lives in the URL (?q=) like the other list pages.
+  const [search, setSearch] = useState(() => initialParam('q') ?? '')
+  // Item 24: which card's touch stage menu is open (deal id), if any.
+  const [stageMenuFor, setStageMenuFor] = useState<string | null>(null)
+  usePageTitle('Pipeline')
+  useUrlFilterSync({ q: search || null })
 
   // Email settings state
   const [showEmailPanel, setShowEmailPanel] = useState(false)
@@ -141,7 +149,14 @@ export default function PipelinePage() {
     setSending(false)
   }
 
-  const dealsByStage = (stage: DealStage) => deals.filter(d => d.stage === stage)
+  const dealsByStage = (stage: DealStage) => deals.filter(d => {
+    if (d.stage !== stage) return false
+    if (!search.trim()) return true
+    const q = search.trim().toLowerCase()
+    return d.company_name.toLowerCase().includes(q)
+      || (d.sector || '').toLowerCase().includes(q)
+      || (d.geography || '').toLowerCase().includes(q)
+  })
 
   const updateStage = async (dealId: string, stage: DealStage) => {
     setDeals(prev => prev.map(d => d.id === dealId ? { ...d, stage } : d))
@@ -168,9 +183,13 @@ export default function PipelinePage() {
         <div style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
           {deals.length} active deal{deals.length !== 1 ? 's' : ''}
         </div>
+        <div style={{ position: 'relative', marginLeft: 'auto', flex: isMobile ? '1 1 120px' : '0 0 220px' }}>
+          <Search size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <input className="input" placeholder="Search board…" value={search} onChange={e => setSearch(e.target.value)} style={{ paddingLeft: '30px' }} aria-label="Search pipeline deals" />
+        </div>
         <button
           className="btn btn-ghost"
-          style={{ marginLeft: 'auto', fontSize: '12px', gap: '5px' }}
+          style={{ fontSize: '12px', gap: '5px' }}
           onClick={() => setShowEmailPanel(p => !p)}
         >
           <Mail size={13} /> {isMobile ? '' : 'Weekly Email'}
@@ -247,7 +266,7 @@ export default function PipelinePage() {
 
       {/* Mobile scroll hint */}
       <div style={{ display: isMobile ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center', padding: '6px 16px', background: 'var(--accent-muted)', borderBottom: '1px solid var(--border)', fontSize: '11px', color: 'var(--accent)', flexShrink: 0 }}>
-        ← Scroll to see all stages →
+        ← Scroll to see all stages · use “Move to” on a card to change its stage →
       </div>
 
       {/* Kanban board — horizontal columns */}
@@ -298,7 +317,9 @@ export default function PipelinePage() {
                   key={deal.id}
                   deal={deal}
                   contacts={dealContacts[deal.id] || []}
-                  onStageChange={updateStage}
+                  onStageChange={(id, stage) => { setStageMenuFor(null); updateStage(id, stage) }}
+                  menuOpen={stageMenuFor === deal.id}
+                  onToggleMenu={() => setStageMenuFor(cur => cur === deal.id ? null : deal.id)}
                   onDragStart={(e) => { dragId.current = deal.id; e.dataTransfer.setData('text/plain', deal.id); e.dataTransfer.effectAllowed = 'move' }}
                 />
               ))}
@@ -317,13 +338,29 @@ export default function PipelinePage() {
   )
 }
 
-function DealCard({ deal, contacts, onStageChange, onDragStart }: {
+function DealCard({ deal, contacts, onStageChange, onDragStart, menuOpen, onToggleMenu }: {
   deal: Deal
   contacts: any[]
   onStageChange: (id: string, stage: DealStage) => void
   onDragStart: (e: React.DragEvent) => void
+  menuOpen: boolean
+  onToggleMenu: () => void
 }) {
+  // Escape closes the stage menu (item 24 touch fallback).
+  useEffect(() => {
+    if (!menuOpen) return
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onToggleMenu() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [menuOpen, onToggleMenu])
+
   return (
+    // Click-vs-drag stays explicit (item 24): the card wrapper is the
+    // draggable element (desktop HTML5 drag); the inner <Link> and the
+    // stage-menu controls are draggable={false} so a click/tap on them
+    // navigates or opens the menu instead of starting a drag. Touch
+    // devices never fire HTML5 drag events, so the "Move to" menu below
+    // is the stage-change path there.
     <div
       draggable
       onDragStart={onDragStart}
@@ -432,6 +469,42 @@ function DealCard({ deal, contacts, onStageChange, onDragStart }: {
           </div>
         )}
       </Link>
+
+      {/* Touch fallback for stage moves (item 24): native HTML5
+          drag-and-drop never fires on touch devices, so every card gets
+          a stage menu. It sits outside the <Link> so tapping it never
+          navigates, and it is draggable={false} so a desktop drag that
+          starts on it still belongs to the card wrapper. */}
+      <div draggable={false} style={{ position: 'relative', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
+        <button
+          type="button"
+          draggable={false}
+          className="btn btn-ghost btn-sm"
+          style={{ width: '100%', justifyContent: 'center' }}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleMenu() }}
+        >
+          <ArrowRightLeft size={12} /> Move to stage
+        </button>
+        {menuOpen && (
+          <div role="menu" className="menu-sheet" style={{ left: 0, right: 0, top: 'calc(100% + 4px)' }}>
+            {STAGES.map(({ name, label }) => (
+              <button
+                key={name}
+                type="button"
+                role="menuitem"
+                draggable={false}
+                className={`menu-sheet-item${name === deal.stage ? ' menu-sheet-item-current' : ''}`}
+                disabled={name === deal.stage}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onStageChange(deal.id, name) }}
+              >
+                {label}{name === deal.stage ? ' · current' : ''}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

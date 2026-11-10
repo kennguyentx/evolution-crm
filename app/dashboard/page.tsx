@@ -5,6 +5,7 @@ import Link from 'next/link'
 import type { DealStage } from '@/types'
 import { formatCurrency } from '@/types'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 // ── Portfolio News types ──────────────────────────────────────────────────────
 
@@ -282,6 +283,7 @@ const daysSince = (d: string) => Math.floor((Date.now() - new Date(d + 'T12:00:0
 
 export default function DashboardPage() {
   const isMobile = useIsMobile()
+  usePageTitle('Dashboard')
   const supabase = createClient()
   const [deals, setDeals] = useState<DealRow[]>([])
   const [raises, setRaises] = useState<RaiseRow[]>([])
