@@ -5,7 +5,10 @@ import { createClient } from '@supabase/supabase-js'
 import { upsertContacts, findContactCandidates } from '@/lib/contacts'
 import { parseEmailCommand, type ParsedEmailCommand } from '@/lib/email-commands'
 import { extractEmailSignature, enrichContactsFromSignature, parseForwardedFrom } from '@/lib/email-signature'
-import { recordIntakeEvent } from '@/lib/intake-events'
+import { recordIntakeEvent, fetchDigestBatch, fetchLatestDigestBatch, type IntakeEvent, type IntakeEventInput } from '@/lib/intake-events'
+import { flattenDigestEvents } from '@/lib/digest-format'
+import { findDigestBatch, isDigestReplySubject, extractReplyText, parseReplyInstructions, resolveByNumber, findByName, type ReplyInstruction } from '@/lib/digest-reply'
+import { approveQueueItem, rejectQueueItem, type QueueActionEdited } from '@/lib/intake-queue-actions'
 import { dropboxConfigured, dropboxUpload, dropboxMove, expectedDropboxFolder, uniqueDropboxFolder } from '@/lib/dropbox'
 import { parseAiJson, extractText } from '@/lib/ai-json'
 import { AI_MODELS } from '@/lib/ai-config'
@@ -147,7 +150,7 @@ async function parseForwardingNote(bodyText: string, emailHeaders: { from: strin
     system: `Extract deal instructions AND contact info from a forwarding note. Return ONLY valid JSON.
 
 {
-  "stage": "exact stage or null — one of: Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity | Closed (Platform) | Closed (Add-On) | Pass (DOA) | Pass (Pre-LOI) | Pass (Post-LOI) | Hold | Dead",
+  "stage": "exact stage or null — one of: Teaser | Reviewing | Pre-LOI | LOI Submitted | Exclusivity | Closed (Platform) | Closed (Add-On) | Pass (DOA) | Pass (Pre-LOI) | Pass (Post-LOI) | Hold",
   "deal_name": "string or null — name of a SPECIFIC EXISTING DEAL to link this document to (e.g. 'for Project Anchor', 're: Anchor deal'). Only set if the sender is linking to a previously-created deal by a project codename or company name. Do NOT set this to a portfolio company name when the sender is describing an add-on acquisition.",
   "portco_name": "string or null — name of OUR EXISTING PORTFOLIO COMPANY this email note should be filed under. Set when the sender explicitly wants to attach a note/article/update to a portco they already own (e.g. 'portco: Ethoscapes', 'file under Ethoscapes', 'industry note for Ethoscapes'). Do NOT set for acquisition targets or add-ons.",
   "status": "Active | Dead | Closed | null",
@@ -160,7 +163,6 @@ async function parseForwardingNote(bodyText: string, emailHeaders: { from: strin
   - "pass", "not for us", "no thanks", "skip" → "Pass (DOA)"
   - "pass post-LOI", "passed after LOI" → "Pass (Post-LOI)"
   - "pass pre-LOI" → "Pass (Pre-LOI)"
-  - "dead", "deal is dead", "killed" → "Dead"
   - "hold", "park" → "Hold"
   - "submitted LOI", "LOI out" → "LOI Submitted"
   - "log as teaser" / "log as pre-LOI" / "log as hold" → the named stage (Teaser / Pre-LOI / Hold, etc.)
@@ -252,6 +254,404 @@ function parseAddContactInstruction(topNote: string, subject: string): { trigger
   return { trigger: contactIntent || strongName, names }
 }
 
+// ── File a "note for <name>" under a contact ─────────────────────────────────
+// Shared by the forward flow and digest replies. Resolves the contact by
+// exact name, then fuzzy; ambiguous (0 or 2+ matches) goes to the intake
+// queue with candidates — the daily digest flags it and Ken picks in the
+// queue. Never auto-creates a contact from a note command. Records the
+// intake event either way (note-appended / ambiguous).
+async function fileNoteForContact(
+  supabase: ReturnType<typeof serviceClient>,
+  args: { name: string; noteBody: string; from: string; subject: string; messageId: string; noteDate: string },
+): Promise<
+  | { outcome: 'filed'; contactId: string; noteId?: string }
+  | { outcome: 'queued'; queueId?: string; ambiguity: string }
+> {
+  const { name, noteBody, from, subject, messageId, noteDate } = args
+  const candidates = await findContactCandidates(supabase, name)
+  const display = (c: any) => `${c.first_name} ${c.last_name}${c.firm ? ` · ${c.firm}` : ''}`
+  if (candidates.length === 1 && noteBody.trim()) {
+    const { data: filedNote } = await supabase.from('notes').insert({
+      note_date: noteDate,
+      raw_text: noteBody.slice(0, 4000),
+      summary: noteBody.slice(0, 300),
+      logged_by: from.split('@')[0] ?? 'email',
+      source: 'email',
+      contact_id: candidates[0].id,
+    }).select('id').single()
+    await recordIntakeEvent(supabase, {
+      kind: 'note-appended',
+      summary: `Note filed under ${display(candidates[0])}`,
+      detail: { contact_name: display(candidates[0]), note_preview: noteBody.slice(0, 200), from },
+      contact_id: candidates[0].id,
+      message_id: messageId || null,
+    })
+    return { outcome: 'filed', contactId: candidates[0].id, noteId: filedNote?.id }
+  }
+  // 0 or 2+ candidates, or an empty note → queue with candidates.
+  const ambiguity = !noteBody.trim()
+    ? `Note for "${name}" had no note text`
+    : candidates.length === 0
+      ? `No contact matched "${name}"`
+      : `${candidates.length} contacts matched "${name}"`
+  const { data: queued } = await supabase.from('intake_queue').insert({
+    source: 'email',
+    doc_type: 'note',
+    file_name: subject.slice(0, 200),
+    from_email: from,
+    extracted: {
+      _kind: 'note-append',
+      _contact_name: name,
+      _note_text: noteBody.slice(0, 4000),
+      _candidates: candidates,
+      _ambiguity: ambiguity,
+      _command: `note for ${name}`,
+      _command_source: 'deterministic',
+    },
+    status: 'pending',
+  }).select('id').single()
+  await recordIntakeEvent(supabase, {
+    kind: 'ambiguous',
+    summary: `Note for "${name}" needs a contact pick`,
+    detail: { reason: ambiguity, candidates: candidates.map(display), note_preview: noteBody.slice(0, 200), from },
+    queue_id: queued?.id ?? null,
+    message_id: messageId || null,
+  })
+  return { outcome: 'queued', queueId: queued?.id, ambiguity }
+}
+
+// ── Digest replies ────────────────────────────────────────────────────────────
+// A reply to the daily digest comes back to this same inbox (the digest's
+// ReplyTo is the intake address). It is recognized by the [NEXUS-DIGEST <ts>]
+// marker in the quoted body — or, failing that, by its subject — and ONLY
+// from internal senders, the same trust bar as every other command path.
+// Ken's own text (above the quote) is parsed line by line as instructions
+// (lib/digest-reply.ts); the quoted digest is never re-classified as intake.
+// Every instruction's outcome is recorded as a reply-action / reply-failed
+// intake event, so the NEXT digest confirms what the reply did.
+
+interface DigestReplyCtx {
+  ordered: IntakeEvent[]
+  from: string
+  fromName: string
+  subject: string
+  messageId: string
+  noteDate: string
+  record: (ok: boolean, summary: string, extra?: Partial<IntakeEventInput>) => Promise<void>
+}
+
+async function executeReplyInstruction(
+  supabase: ReturnType<typeof serviceClient>,
+  ins: ReplyInstruction,
+  ctx: DigestReplyCtx,
+): Promise<{ instruction: string; ok: boolean; summary: string }> {
+  const { ordered, record } = ctx
+  const done = async (summary: string, extra?: Partial<IntakeEventInput>) => {
+    await record(true, summary, extra)
+    return { instruction: ins.raw, ok: true, summary }
+  }
+  const fail = async (summary: string, extra?: Partial<IntakeEventInput>) => {
+    await record(false, summary, extra)
+    return { instruction: ins.raw, ok: false, summary }
+  }
+  const detail = { instruction: ins.raw }
+
+  if (ins.type === 'invalid') {
+    return fail(`Reply instruction not carried out: "${ins.raw}"`, { detail: { ...detail, reason: ins.reason } })
+  }
+
+  // ── approve / reject a queued item from the digest ──────────────────────
+  if (ins.type === 'approve' || ins.type === 'reject') {
+    const verb = ins.type
+    let event: IntakeEvent | null = null
+    let label = ''
+    if (ins.ref.kind === 'number') {
+      event = resolveByNumber(ordered, ins.ref.n)
+      if (!event) {
+        return fail(`Reply: no item #${ins.ref.n} in the digest (it had ${ordered.length} item${ordered.length !== 1 ? 's' : ''}) — nothing was ${verb === 'approve' ? 'approved' : 'rejected'}`, { detail })
+      }
+      label = `item #${ins.ref.n}`
+    } else {
+      const matches = findByName(ordered, ins.ref.name).filter(e => e.queue_id)
+      if (matches.length === 0) {
+        return fail(`Reply: no queued item in the digest matches "${ins.ref.name}"`, { detail })
+      }
+      if (matches.length > 1) {
+        return fail(`Reply: "${ins.ref.name}" matches ${matches.length} queued items — use the item number instead`, { detail })
+      }
+      event = matches[0]
+      label = `item #${ordered.indexOf(event) + 1}`
+    }
+    if (!event.queue_id) {
+      return fail(`Reply: ${label} ("${event.summary}") has no queued item to ${verb}`, { detail })
+    }
+    const { data: item } = await supabase.from('intake_queue').select('*').eq('id', event.queue_id).single()
+    if (!item) {
+      return fail(`Reply: the queued item for ${label} no longer exists`, { detail, queue_id: event.queue_id })
+    }
+
+    if (verb === 'reject') {
+      if (item.status === 'approved') {
+        return fail(`Reply: ${label} ("${event.summary}") is already approved — it can't be rejected by reply`, { detail, queue_id: item.id })
+      }
+      if (item.status !== 'pending') {
+        return fail(`Reply: ${label} ("${event.summary}") is already ${item.status}`, { detail, queue_id: item.id })
+      }
+      await rejectQueueItem(supabase, item.id)
+      return done(`Rejected ${label}: ${event.summary}`, { detail, queue_id: item.id })
+    }
+
+    // approve — note-append items first need their contact pick resolved.
+    const edited: QueueActionEdited = {}
+    if (item.extracted?._kind === 'note-append') {
+      const candidates = (item.extracted?._candidates ?? []) as any[]
+      let contactId: string | null = null
+      if (ins.ref.kind === 'name') {
+        const nm = ins.ref.name.toLowerCase().trim()
+        const hit = candidates.filter((c: any) => {
+          const full = `${c.first_name} ${c.last_name}`.toLowerCase()
+          return full === nm || full.includes(nm) || nm.includes(full)
+        })
+        if (hit.length === 1) contactId = hit[0].id
+      }
+      if (!contactId && candidates.length === 1) contactId = candidates[0].id
+      if (!contactId) {
+        return fail(`Reply: ${label} is a note that needs a contact pick (${candidates.length} candidates) — approve it in the intake queue`, { detail, queue_id: item.id })
+      }
+      edited.contact_id = contactId
+    } else {
+      // A plain "approve" honors the stage already on the item — the
+      // forwarder's original suggestion first, else the extracted stage —
+      // since approveQueueItem otherwise defaults to Teaser (the review UI
+      // always passes the stage explicitly; a reply has to supply it).
+      const stage = item.extracted?._stage_suggestion ?? item.extracted?.stage
+      if (stage) edited.stage = stage
+    }
+    const res = await approveQueueItem(supabase, item.id, edited)
+    if (!res.ok) {
+      return fail(`Reply: approving ${label} failed — ${res.error}`, { detail, queue_id: item.id })
+    }
+    if (res.skipped) {
+      return done(`Reply: ${label} was already approved (${event.summary})`, { detail, queue_id: item.id, deal_id: res.deal_id ?? null })
+    }
+    if (res.note_id) {
+      return done(`Filed the note from ${label}: ${event.summary}`, { detail, queue_id: item.id })
+    }
+    return done(`Approved ${label}: ${event.summary}`, { detail, queue_id: item.id, deal_id: res.deal_id ?? null })
+  }
+
+  // ── "<n>: log as <stage> …" — stage change for the item's deal ──────────
+  if (ins.type === 'stage') {
+    const event = resolveByNumber(ordered, ins.n)
+    if (!event) {
+      return fail(`Reply: no item #${ins.n} in the digest (it had ${ordered.length} item${ordered.length !== 1 ? 's' : ''}) — no stage was changed`, { detail })
+    }
+    const cmd = ins.command
+    if (event.deal_id) {
+      const { data: deal } = await supabase.from('deals')
+        .select('id, company_name, stage, status, dropbox_path')
+        .eq('id', event.deal_id)
+        .single()
+      if (!deal) {
+        return fail(`Reply: item #${ins.n} refers to a deal that no longer exists`, { detail })
+      }
+      const newStage = cmd.stage!
+      const updates: Record<string, any> = { stage: newStage, status: resolveDealStatus(newStage) }
+      if (cmd.deal_type) updates.deal_type = cmd.deal_type
+      if (cmd.parent_portco) updates.parent_portco = cmd.parent_portco
+      // Move the Dropbox folder to the new stage's canonical parent, the
+      // same re-keying the forward flow does on a rename. Non-fatal on error.
+      let folderNote = ''
+      const currentFolder = toFolder(deal.dropbox_path)
+      const targetFolder = expectedDropboxFolder(deal.id, newStage)
+      if (dropboxConfigured() && currentFolder && currentFolder.toLowerCase() !== targetFolder.toLowerCase()) {
+        try {
+          const moved = await dropboxMove(currentFolder, targetFolder)
+          updates.dropbox_path = toFolder(moved) ?? targetFolder
+        } catch (e: any) {
+          folderNote = ` (folder move failed: ${e?.message})`
+          log.error('[digest-reply] folder move failed:', e?.message)
+        }
+      }
+      await supabase.from('deals').update(updates).eq('id', deal.id)
+      return done(`Moved ${deal.company_name} to ${newStage} (was ${deal.stage})${folderNote}`, {
+        detail: { ...detail, stage: newStage },
+        deal_id: deal.id,
+      })
+    }
+    if (event.queue_id) {
+      // The item is still queued — "log as" approves it at the given stage.
+      const { data: item } = await supabase.from('intake_queue').select('*').eq('id', event.queue_id).single()
+      if (!item) {
+        return fail(`Reply: the queued item for item #${ins.n} no longer exists`, { detail })
+      }
+      if (item.status !== 'pending') {
+        return fail(`Reply: item #${ins.n} is already ${item.status} — its stage can't be set by reply`, { detail, queue_id: item.id })
+      }
+      const edited: QueueActionEdited = {
+        stage: cmd.stage!,
+        ...(cmd.deal_type ? { deal_type: cmd.deal_type } : {}),
+        ...(cmd.parent_portco ? { parent_portco: cmd.parent_portco } : {}),
+      }
+      const res = await approveQueueItem(supabase, item.id, edited)
+      if (!res.ok) {
+        return fail(`Reply: item #${ins.n} stage change failed — ${res.error}`, { detail, queue_id: item.id })
+      }
+      return done(`Approved item #${ins.n} as ${cmd.stage}: ${event.summary}`, {
+        detail,
+        queue_id: item.id,
+        deal_id: res.deal_id ?? null,
+      })
+    }
+    return fail(`Reply: item #${ins.n} ("${event.summary}") does not refer to a deal`, { detail })
+  }
+
+  // ── Standalone commands: note-for / ask / log-contact ────────────────────
+  const cmd = ins.command
+  if (cmd.kind === 'note' && cmd.contactName) {
+    const noteBody = cmd.noteText.trim()
+    if (!noteBody) {
+      return fail(`Reply: "note for ${cmd.contactName}" had no note text`, { detail })
+    }
+    const filed = await fileNoteForContact(supabase, {
+      name: cmd.contactName,
+      noteBody,
+      from: ctx.from,
+      subject: ctx.subject,
+      messageId: ctx.messageId,
+      noteDate: ctx.noteDate,
+    })
+    if (filed.outcome === 'filed') {
+      return done(`Note filed under ${cmd.contactName} (from your digest reply)`, { detail, contact_id: filed.contactId })
+    }
+    return fail(`Reply: note for "${cmd.contactName}" was queued instead — ${filed.ambiguity}`, { detail, queue_id: filed.queueId ?? null })
+  }
+  if (cmd.kind === 'ask') {
+    const question = cmd.noteText.trim()
+    if (!question) {
+      return fail('Reply: "ask:" had no question', { detail })
+    }
+    try {
+      const { text: answer } = await runAgentToText(question, {
+        channel: 'email',
+        senderName: ctx.fromName || ctx.from.split('@')[0],
+      })
+      await sendAssistantReply({ to: ctx.from, subject: ctx.subject, answer, inReplyTo: ctx.messageId || undefined })
+      return done(`Answered your ask: "${question.slice(0, 80)}"`, { detail })
+    } catch (e: any) {
+      log.error('[digest-reply] ask failed:', e?.message)
+      await sendAssistantReply({
+        to: ctx.from,
+        subject: ctx.subject,
+        answer: `Sorry — I hit an error answering that: ${e?.message || 'unknown error'}. Try rephrasing or ask in the Nexus web assistant.\n\n— Nexus Assistant`,
+        inReplyTo: ctx.messageId || undefined,
+      }).catch(() => {})
+      return fail(`Reply: ask failed — ${e?.message || 'unknown error'}`, { detail })
+    }
+  }
+  if (cmd.kind === 'log-contact') {
+    const people = cmd.contacts.length
+      ? cmd.contacts
+      : cmd.contactNames.map(name => ({ name, company: null as string | null }))
+    if (!people.length) {
+      return fail('Reply: "log new contact" needs at least one name in a reply', { detail })
+    }
+    // Deterministic only: in a reply there is no source email to mine, so the
+    // named people are created/filled directly — same bare-contact behavior
+    // the forward flow uses for names it can't find in the email.
+    const { created, existing } = await upsertContacts(
+      supabase,
+      people.map(p => ({ name: p.name, firm: p.company ?? null, role: 'Other' })),
+      null,
+      { fillBlanks: true },
+    )
+    const parts = [
+      created.length ? `added ${created.join(', ')}` : '',
+      existing.length ? `already in Nexus: ${existing.join(', ')}` : '',
+    ].filter(Boolean)
+    return done(`Contacts from your digest reply: ${parts.join(' · ') || 'none added'}`, {
+      detail: { ...detail, created, existing },
+    })
+  }
+  return fail(`Reply: could not carry out "${ins.raw}"`, { detail })
+}
+
+async function handleDigestReply(
+  supabase: ReturnType<typeof serviceClient>,
+  args: { from: string; fromName: string; subject: string; text: string; messageId: string; noteDate: string; batchTs: string | null },
+): Promise<NextResponse> {
+  const { from, subject, text, messageId, noteDate } = args
+
+  const record = async (ok: boolean, summary: string, extra: Partial<IntakeEventInput> = {}) => {
+    await recordIntakeEvent(supabase, {
+      kind: ok ? 'reply-action' : 'reply-failed',
+      summary,
+      detail: { source: 'digest-reply', from, ...(extra.detail ?? {}) },
+      deal_id: extra.deal_id ?? null,
+      contact_id: extra.contact_id ?? null,
+      queue_id: extra.queue_id ?? null,
+      message_id: messageId || null,
+    })
+  }
+
+  // Webhook retries must not execute the same instructions twice. Reply
+  // outcomes carry this message's id, so a prior outcome means "done".
+  if (messageId) {
+    const { data: prior } = await supabase.from('intake_events')
+      .select('id')
+      .eq('message_id', messageId)
+      .in('kind', ['reply-action', 'reply-failed'])
+      .limit(1)
+    if (prior?.length) {
+      log.info('[digest-reply] duplicate webhook delivery — skipping', { messageId })
+      return NextResponse.json({ success: true, skipped: 'duplicate digest reply' })
+    }
+  }
+
+  let batch: IntakeEvent[] = []
+  try {
+    batch = args.batchTs
+      ? await fetchDigestBatch(supabase, args.batchTs)
+      : await fetchLatestDigestBatch(supabase)
+  } catch (e: any) {
+    log.error('[digest-reply] batch fetch failed:', e?.message)
+  }
+  if (!batch.length) {
+    await record(false, 'Reply to the intake digest could not be matched to a sent digest', {
+      detail: { reason: 'digest batch not found', marker: args.batchTs },
+    })
+    return NextResponse.json({ success: true, processed: [{ type: 'digest-reply', actions: 0, error: 'batch not found' }] })
+  }
+
+  const ordered = flattenDigestEvents(batch)
+  const instructions = parseReplyInstructions(extractReplyText(text))
+  if (!instructions.length) {
+    await recordIntakeEvent(supabase, {
+      kind: 'skipped',
+      summary: 'Digest reply had no recognizable instructions',
+      detail: { source: 'digest-reply', reason: 'no instructions parsed', from },
+      message_id: messageId || null,
+    })
+    return NextResponse.json({ success: true, processed: [{ type: 'digest-reply', actions: 0 }] })
+  }
+
+  log.info('[digest-reply] executing instructions', { count: instructions.length, batch: args.batchTs ?? 'latest' })
+  const ctx: DigestReplyCtx = {
+    ordered,
+    from,
+    fromName: args.fromName,
+    subject,
+    messageId,
+    noteDate,
+    record,
+  }
+  const outcomes = []
+  for (const ins of instructions) {
+    outcomes.push(await executeReplyInstruction(supabase, ins, ctx))
+  }
+  return NextResponse.json({ success: true, processed: [{ type: 'digest-reply', actions: outcomes.length, outcomes }] })
+}
+
 export const POST = withErrorHandler(async (req: NextRequest) => {
   // ── Auth: accept either a Postmark webhook token or the relay internal secret ──
   // Direct Postmark path: token in query param or X-Webhook-Token header.
@@ -340,6 +740,21 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
       }
     }
 
+    // ── Digest replies ──────────────────────────────────────────────────────
+    // A reply to the daily digest (ReplyTo points back at this inbox) is
+    // recognized by the [NEXUS-DIGEST <ts>] marker in the quoted body, or by
+    // its subject as a secondary signal. Internal senders only — the same
+    // trust bar as the note/add-contact commands. Handled before everything
+    // below so the quoted digest is never classified as new intake.
+    const digestBatchTs = findDigestBatch(text)
+    if (digestBatchTs || isDigestReplySubject(subject)) {
+      if (!isInternal(from)) {
+        log.warn('[digest-reply] Ignoring digest reply from non-internal sender', { senderDomain: from.split('@')[1] ?? 'unknown' })
+        return NextResponse.json({ success: true, skipped: 'digest reply from non-internal sender' })
+      }
+      return handleDigestReply(supabase, { from, fromName, subject, text, messageId, noteDate, batchTs: digestBatchTs })
+    }
+
     // ── Deterministic command parse (runs before the LLM) ───────────────────
     // The forwarder's own note (top of body + subject) may carry an explicit
     // command: "log as teaser as add-on for DiPonio", "log new contact",
@@ -366,56 +781,11 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
         const threadParts = text.split(/\n-{3,}|\r?\nFrom:|\r?\nOn .+wrote:|_{5,}/i)
         noteBody = threadParts.slice(1).join('\n').trim()
       }
-      const candidates = await findContactCandidates(supabase, name)
-      const display = (c: any) => `${c.first_name} ${c.last_name}${c.firm ? ` · ${c.firm}` : ''}`
-      if (candidates.length === 1 && noteBody.trim()) {
-        const { data: filedNote } = await supabase.from('notes').insert({
-          note_date: noteDate,
-          raw_text: noteBody.slice(0, 4000),
-          summary: noteBody.slice(0, 300),
-          logged_by: from.split('@')[0] ?? 'email',
-          source: 'email',
-          contact_id: candidates[0].id,
-        }).select('id').single()
-        await recordIntakeEvent(supabase, {
-          kind: 'note-appended',
-          summary: `Note filed under ${display(candidates[0])}`,
-          detail: { contact_name: display(candidates[0]), note_preview: noteBody.slice(0, 200), from },
-          contact_id: candidates[0].id,
-          message_id: messageId || null,
-        })
-        return NextResponse.json({ success: true, processed: [{ type: 'note-appended', contact_id: candidates[0].id, note_id: filedNote?.id }] })
+      const filed = await fileNoteForContact(supabase, { name, noteBody, from, subject, messageId, noteDate })
+      if (filed.outcome === 'filed') {
+        return NextResponse.json({ success: true, processed: [{ type: 'note-appended', contact_id: filed.contactId, note_id: filed.noteId }] })
       }
-      // 0 or 2+ candidates, or an empty note → queue with candidates.
-      const ambiguity = !noteBody.trim()
-        ? `Note for "${name}" had no note text`
-        : candidates.length === 0
-          ? `No contact matched "${name}"`
-          : `${candidates.length} contacts matched "${name}"`
-      const { data: queued } = await supabase.from('intake_queue').insert({
-        source: 'email',
-        doc_type: 'note',
-        file_name: subject.slice(0, 200),
-        from_email: from,
-        extracted: {
-          _kind: 'note-append',
-          _contact_name: name,
-          _note_text: noteBody.slice(0, 4000),
-          _candidates: candidates,
-          _ambiguity: ambiguity,
-          _command: `note for ${name}`,
-          _command_source: 'deterministic',
-        },
-        status: 'pending',
-      }).select('id').single()
-      await recordIntakeEvent(supabase, {
-        kind: 'ambiguous',
-        summary: `Note for "${name}" needs a contact pick`,
-        detail: { reason: ambiguity, candidates: candidates.map(display), note_preview: noteBody.slice(0, 200), from },
-        queue_id: queued?.id ?? null,
-        message_id: messageId || null,
-      })
-      return NextResponse.json({ success: true, processed: [{ type: 'note-append', status: 'queued', queue_id: queued?.id }] })
+      return NextResponse.json({ success: true, processed: [{ type: 'note-append', status: 'queued', queue_id: filed.queueId }] })
     }
 
     // ── "Add contact" path ────────────────────────────────────────────────────
