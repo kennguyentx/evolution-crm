@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import type { Deal, Interaction, DiligenceItem, DealCapitalAssignment } from '@/types'
 import { formatCurrency, stageClass, contactTypeClass } from '@/types'
-import { ArrowLeft, Check, X, Plus, Phone, Mail, ChevronDown, ChevronRight, Search, Trash2, Upload, Pencil } from 'lucide-react'
+import { Check, X, Plus, Phone, Mail, ChevronDown, ChevronRight, Search, Trash2, Upload, Pencil } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useDropzone } from 'react-dropzone'
@@ -15,6 +15,12 @@ import NewContactModal from '@/components/contacts/NewContactModal'
 import UndoToast, { type UndoEntry } from '@/components/layout/UndoToast'
 import { moveDropboxOnStageChange } from '@/lib/dropbox-stage-move'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import { initialParam, useSyncUrlParams } from '@/hooks/useUrlState'
+import { usePageTitle } from '@/hooks/usePageTitle'
+import Breadcrumbs from '@/components/layout/Breadcrumbs'
+
+type DealTab = 'overview'|'diligence'|'contacts'|'capital'|'activity'|'documents'|'nda'
+const DEAL_TABS: DealTab[] = ['overview','diligence','contacts','capital','activity','documents','nda']
 
 
 const STAGES = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
@@ -69,7 +75,17 @@ export default function DealDetailPage() {
   const [cimSendError, setCimSendError] = useState<string | null>(null)
 
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview'|'diligence'|'contacts'|'capital'|'activity'|'documents'|'nda'>('overview')
+  // Item 22: the active tab is deep-linkable via ?tab= (e.g. /deals/<id>?tab=nda).
+  const syncUrlParams = useSyncUrlParams()
+  const [activeTab, setActiveTabState] = useState<DealTab>(() => {
+    const t = initialParam('tab')
+    return t && DEAL_TABS.includes(t as DealTab) ? (t as DealTab) : 'overview'
+  })
+  const setActiveTab = (tab: DealTab) => {
+    setActiveTabState(tab)
+    syncUrlParams({ tab: tab === 'overview' ? null : tab })
+  }
+  usePageTitle(deal?.company_name)
   const [editingStage, setEditingStage] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [editingContact, setEditingContact] = useState<any>(null)
@@ -742,15 +758,7 @@ export default function DealDetailPage() {
 
       {/* HEADER */}
       <div style={{ padding: isMobile ? '14px 16px' : '16px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
-          <Link href="/deals" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '12px', textDecoration: 'none' }}>
-            <ArrowLeft size={12} /> Deals
-          </Link>
-          <span style={{ color: 'var(--border)', fontSize: '12px' }}>·</span>
-          <Link href="/pipeline" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '12px', textDecoration: 'none' }}>
-            <ArrowLeft size={12} /> Pipeline
-          </Link>
-        </div>
+        <Breadcrumbs items={[{ label: 'Deals', href: '/deals' }, { label: deal.company_name }]} />
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', rowGap: isMobile ? '8px' : '16px' }}>
           <EditableInline value={deal.company_name} onSave={v => updateField('company_name', v)} style={{ fontSize: '22px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' }} />
           <div style={{ position: 'relative' }}>
@@ -813,7 +821,7 @@ export default function DealDetailPage() {
       {/* TABS */}
       <div className="tab-bar" style={{ display: 'flex', padding: isMobile ? '0 16px' : '0 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
         {tabs.map(tab => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} style={{ padding: isMobile ? '10px 12px' : '11px 16px', border: 'none', background: 'transparent', fontSize: '13px', cursor: 'pointer', color: activeTab === tab.key ? 'var(--accent)' : 'var(--text-muted)', borderBottom: activeTab === tab.key ? '2px solid var(--accent)' : '2px solid transparent', fontFamily: 'var(--font-sans)', fontWeight: activeTab === tab.key ? 600 : 400, whiteSpace: 'nowrap' }}>
+          <button key={tab.key} onClick={() => setActiveTab(tab.key as DealTab)} className={`tab-btn${activeTab === tab.key ? ' tab-btn-active' : ''}`} style={isMobile ? { padding: '10px 12px' } : undefined}>
             {tab.label}
           </button>
         ))}

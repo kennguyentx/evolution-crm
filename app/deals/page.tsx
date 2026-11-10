@@ -8,6 +8,8 @@ import Link from 'next/link'
 import NewDealModal from '@/components/deals/NewDealModal'
 import UndoToast, { type UndoEntry } from '@/components/layout/UndoToast'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import { initialParam, useUrlFilterSync } from '@/hooks/useUrlState'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 const ALL_STAGES: DealStage[] = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
 
@@ -45,14 +47,30 @@ export default function DealsPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [offset, setOffset]       = useState(0)
   const [hasMore, setHasMore]     = useState(false)
-  const [search, setSearch]       = useState('')
-  const [groupFilter, setGroupFilter] = useState<GroupFilter>('all')
-  const [stageFilter, setStageFilter] = useState('all')
+  // Item 23: filter state lives in the URL (?q=&group=&stage=&sort=&dir=)
+  // so a filtered view can be bookmarked/shared and survives a refresh.
+  const [search, setSearch]       = useState(() => initialParam('q') ?? '')
+  const [groupFilter, setGroupFilter] = useState<GroupFilter>(() => {
+    const g = initialParam('group')
+    return g && ['pipeline','closed','passed','hold'].includes(g) ? (g as GroupFilter) : 'all'
+  })
+  const [stageFilter, setStageFilter] = useState(() => initialParam('stage') ?? 'all')
   const [showNewDeal, setShowNewDeal] = useState(false)
-  const [sortField, setSortField] = useState<SortField>('created_at')
-  const [sortDir, setSortDir]     = useState<SortDir>('desc')
+  const [sortField, setSortField] = useState<SortField>(() => {
+    const s = initialParam('sort')
+    return s && ['company_name','sector','geography','ebitda','revenue','stage','created_at'].includes(s) ? (s as SortField) : 'created_at'
+  })
+  const [sortDir, setSortDir]     = useState<SortDir>(() => initialParam('dir') === 'asc' ? 'asc' : 'desc')
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([])
   const supabase = createClient()
+  usePageTitle('Deals')
+  useUrlFilterSync({
+    q: search || null,
+    group: groupFilter !== 'all' ? groupFilter : null,
+    stage: stageFilter !== 'all' ? stageFilter : null,
+    sort: sortField !== 'created_at' ? sortField : null,
+    dir: sortDir !== 'desc' ? sortDir : null,
+  })
 
   // Fetch total count + per-group counts
   const fetchCounts = useCallback(async () => {
@@ -175,7 +193,7 @@ export default function DealsPage() {
       <div style={{ padding: isMobile ? '10px 16px' : '12px 28px', display:'flex', gap:'8px', flexWrap:'wrap', borderBottom:'1px solid var(--border)', flexShrink:0, background:'var(--surface)' }}>
         {(['all', 'pipeline', 'closed', 'passed', 'hold'] as GroupFilter[]).map(g => (
           <button key={g} onClick={() => { setGroupFilter(g); setStageFilter('all') }}
-            style={{ padding:'4px 10px', borderRadius:'999px', border:`1px solid ${groupFilter===g?'var(--accent)':'var(--border)'}`, background: groupFilter===g?'var(--accent-muted)':'transparent', cursor:'pointer', fontSize:'11px', color: groupFilter===g?'var(--accent)':'var(--text-secondary)', textTransform:'uppercase', letterSpacing:'0.05em', fontWeight:500 }}>
+            className={`chip${groupFilter===g ? ' chip-active' : ''}`}>
             {g === 'all' ? `All  ${total.toLocaleString()}` : `${groupLabels[g]}  ${(groupCounts[g]||0).toLocaleString()}`}
           </button>
         ))}

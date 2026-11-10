@@ -3,9 +3,11 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { formatCurrency } from '@/types'
-import { ArrowLeft, Plus, X, Check, Search } from 'lucide-react'
+import { Plus, X, Check, Search } from 'lucide-react'
 import Link from 'next/link'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import Breadcrumbs from '@/components/layout/Breadcrumbs'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 const STATUSES = ['Interested', 'Soft Circle', 'Committed', 'Funded', 'Passed']
 const STATUS_COLORS: Record<string, string> = {
@@ -20,6 +22,7 @@ export default function RaiseDetailPage() {
   const isMobile = useIsMobile()
 
   const [raise, setRaise] = useState<any>(null)
+  usePageTitle(raise ? (raise.name || raise.deal?.company_name) : null)
   const [commitments, setCommitments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -97,9 +100,7 @@ export default function RaiseDetailPage() {
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: isMobile ? '12px 16px' : '16px 28px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--surface)' }}>
-        <Link href="/raises" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '12px', textDecoration: 'none', marginBottom: '10px' }}>
-          <ArrowLeft size={12} /> Capital Raises
-        </Link>
+        <Breadcrumbs items={[{ label: 'Capital Raises', href: '/raises' }, { label: raise.name || raise.deal?.company_name || 'Unnamed Raise' }]} />
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '14px' }}>
           <h1 style={{ fontSize: '22px', fontWeight: 700 }}>{raise.name || raise.deal?.company_name || 'Unnamed Raise'}</h1>
           {raise.deal && <Link href={`/deals/${raise.deal.id}`} style={{ fontSize: '12px', color: 'var(--accent)', textDecoration: 'none' }}>{raise.deal.company_name} →</Link>}

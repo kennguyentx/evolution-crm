@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase'
 import { Plus, Search, X, Check, Mail, MessageSquare, Edit3, Pencil, UserPlus } from 'lucide-react'
 import Link from 'next/link'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import { initialParam, useUrlFilterSync } from '@/hooks/useUrlState'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 type Note = {
   id: string
@@ -69,10 +71,12 @@ export default function NotesPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
-  const [search, setSearch] = useState('')
-  const [sourceFilter, setSourceFilter] = useState('all')
-  const [sentimentFilter, setSentimentFilter] = useState('all')
-  const [dealFilter, setDealFilter] = useState('')
+  // Item 23: filter state lives in the URL (?q=&source=&sentiment=&deal=).
+  // Item 28: ?open=<note id> deep-links to one note (see the effect below).
+  const [search, setSearch] = useState(() => initialParam('q') ?? '')
+  const [sourceFilter, setSourceFilter] = useState(() => initialParam('source') ?? 'all')
+  const [sentimentFilter, setSentimentFilter] = useState(() => initialParam('sentiment') ?? 'all')
+  const [dealFilter, setDealFilter] = useState(() => initialParam('deal') ?? '')
   const [deals, setDeals] = useState<{ id: string; company_name: string }[]>([])
   const [showAddForm, setShowAddForm] = useState(false)
   const [addForm, setAddForm] = useState({ note_date: new Date().toISOString().split('T')[0], raw_text: '', logged_by: 'Ken', deal_id: '', contact_id: '', contact_label: '', capital_contact_id: '', capital_contact_label: '' })
@@ -81,7 +85,15 @@ export default function NotesPage() {
   const [addCapContactSearch, setAddCapContactSearch] = useState('')
   const [addCapContactResults, setAddCapContactResults] = useState<any[]>([])
   const [saving, setSaving] = useState(false)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(() => initialParam('open'))
+  usePageTitle('Notes')
+  useUrlFilterSync({
+    q: search || null,
+    source: sourceFilter !== 'all' ? sourceFilter : null,
+    sentiment: sentimentFilter !== 'all' ? sentimentFilter : null,
+    deal: dealFilter || null,
+    open: expandedId,
+  })
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<{ note_date: string; raw_text: string; summary: string; next_steps: string; logged_by: string; deal_id: string; contact_id: string; contact_label: string; capital_contact_id: string; capital_contact_label: string }>({ note_date: '', raw_text: '', summary: '', next_steps: '', logged_by: '', deal_id: '', contact_id: '', contact_label: '', capital_contact_id: '', capital_contact_label: '' })
   const [editContactSearch, setEditContactSearch] = useState('')
@@ -152,6 +164,27 @@ export default function NotesPage() {
   }, [supabase, search, sourceFilter, sentimentFilter, dealFilter])
 
   useEffect(() => { load() }, [])
+
+  // ?open=<id> deep link (item 28, e.g. from ⌘K): if the linked note is
+  // not in the first loaded page, fetch it directly and put it at the
+  // top of the list, expanded. Runs once on mount.
+  useEffect(() => {
+    const openId = initialParam('open')
+    if (!openId) return
+    supabase.from('notes').select(`
+        *,
+        deal:deals(company_name),
+        contact:contacts(first_name, last_name, firm),
+        raise:capital_raises(name),
+        capital_contact:capital_contacts(firm, contact_name),
+        portfolio_company:portfolio_companies(id, name)
+      `).eq('id', openId).single().then(({ data }) => {
+        if (!data) return
+        setNotes(prev => prev.some(n => n.id === openId) ? prev : [data as Note, ...prev])
+        setExpandedId(openId)
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleSearch = (v: string) => {
     setSearch(v)

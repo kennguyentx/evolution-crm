@@ -2,7 +2,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
+import Link from 'next/link'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import { initialParam } from '@/hooks/useUrlState'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 type CalEvent = {
   id: string
@@ -48,6 +51,7 @@ const emptyForm = () => ({
 export default function CalendarPage() {
   const supabase = createClient()
   const isMobile = useIsMobile()
+  usePageTitle('Calendar')
   const today = new Date()
   const [year, setYear] = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth())
@@ -98,6 +102,23 @@ export default function CalendarPage() {
   }
 
   useEffect(() => { loadEvents() }, [year, month])
+
+  // ?open=<event id> deep link (item 28, e.g. from ⌘K): jump to the
+  // event's month and open it in the edit form. Runs once on mount.
+  useEffect(() => {
+    const openId = initialParam('open')
+    if (!openId) return
+    supabase.from('calendar_events')
+      .select('*, deal:deals(company_name), contact:contacts(first_name, last_name), portfolio_company:portfolio_companies(name)')
+      .eq('id', openId).single()
+      .then(({ data }) => {
+        if (!data) return
+        const d = new Date(data.event_date + 'T12:00:00')
+        setYear(d.getFullYear()); setMonth(d.getMonth())
+        openEdit(data as CalEvent)
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const prevMonth = () => { if (month === 0) { setYear(y => y - 1); setMonth(11) } else setMonth(m => m - 1) }
   const nextMonth = () => { if (month === 11) { setYear(y => y + 1); setMonth(0) } else setMonth(m => m + 1) }
@@ -221,6 +242,12 @@ export default function CalendarPage() {
                     <button key={ev.id} onClick={() => openEdit(ev)}
                       style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px 10px 20px', borderBottom: '1px solid var(--border-subtle)', borderLeft: `3px solid ${TYPE_COLORS[ev.event_type]}`, background: 'var(--surface)', cursor: 'pointer', border: 'none', borderBottomWidth: '1px', borderBottomStyle: 'solid', borderBottomColor: 'var(--border-subtle)' }}>
                       <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>{ev.title}</div>
+                      {/* Item 30: surface the linked deal (events store deal_id but never showed it) */}
+                      {ev.deal_id && unwrap(ev.deal)?.company_name && (
+                        <span style={{ display: 'inline-block', fontSize: '11px', color: 'var(--accent)', marginTop: '2px' }}>
+                          Deal: {unwrap(ev.deal)?.company_name}
+                        </span>
+                      )}
                       {ev.start_time && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{ev.start_time.slice(0, 5)}{ev.end_time ? ` – ${ev.end_time.slice(0, 5)}` : ''}</div>}
                       <div style={{ fontSize: '11px', color: TYPE_COLORS[ev.event_type], marginTop: '2px', textTransform: 'capitalize' }}>{ev.event_type}</div>
                     </button>
@@ -336,9 +363,15 @@ export default function CalendarPage() {
                   <label className="label">Deal</label>
                   <div style={{ position: 'relative' }}>
                     {form.deal_id ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 8px', border: '1px solid var(--accent)', borderRadius: '5px', fontSize: '11px' }}>
-                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{form.deal_label}</span>
-                        <button onClick={() => setForm(p => ({...p, deal_id: '', deal_label: ''}))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0 }}><X size={10} /></button>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 8px', border: '1px solid var(--accent)', borderRadius: '5px', fontSize: '11px' }}>
+                          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{form.deal_label}</span>
+                          <button onClick={() => setForm(p => ({...p, deal_id: '', deal_label: ''}))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0 }}><X size={10} /></button>
+                        </div>
+                        {/* Item 30: calendar event → deal cross-link */}
+                        <Link href={`/deals/${form.deal_id}`} style={{ display: 'inline-block', fontSize: '11px', color: 'var(--accent)', textDecoration: 'none', marginTop: '4px' }}>
+                          View deal →
+                        </Link>
                       </div>
                     ) : (
                       <>

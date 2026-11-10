@@ -2,37 +2,58 @@
 import { useState, useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { Kanban, Building2, Users, BarChart3, Zap, TrendingUp, FileText, Menu, X, FileText as NoteIcon, Star, LayoutDashboard, Calendar, Search, BookOpen, ShieldCheck } from 'lucide-react'
+import { Kanban, Building2, Users, BarChart3, Zap, TrendingUp, FileText, Menu, X, FileText as NoteIcon, Star, LayoutDashboard, Calendar, Search, BookOpen, ShieldCheck, Mail } from 'lucide-react'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
-const NAV = [
-  { href: '/dashboard',        label: 'Dashboard',         icon: LayoutDashboard },
-  { href: '/pipeline',         label: 'Pipeline',          icon: Kanban },
-  { href: '/deals',            label: 'Deals',             icon: FileText },
-  { href: '/intake',           label: 'Document Intake',   icon: Zap },
-  { href: '/contacts',         label: 'Contacts',          icon: Users },
-  { href: '/raises',           label: 'Capital Raises',    icon: TrendingUp },
-  { href: '/raises/contacts',  label: 'Capital Contacts',  icon: BarChart3 },
-  { href: '/investors',        label: 'Investors',         icon: Users },
-  { href: '/portfolio',        label: 'Portfolio',         icon: Building2 },
-  { href: '/calendar',         label: 'Calendar',          icon: Calendar },
-  { href: '/notes',            label: 'Notes',             icon: NoteIcon },
-  { href: '/best-practices',   label: 'Best Practices',    icon: BookOpen },
-  { href: '/assistant',        label: 'Assistant',         icon: Star },
+// Nav grouped into labeled sections (item 27). Dashboard sits above the
+// sections as the home item; Digest joins Tools (it was missing from the
+// flat list entirely).
+const NAV_SECTIONS: { label: string | null; items: { href: string; label: string; icon: any }[] }[] = [
+  { label: null, items: [
+    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  ] },
+  { label: 'Deals', items: [
+    { href: '/pipeline', label: 'Pipeline', icon: Kanban },
+    { href: '/deals', label: 'Deals', icon: FileText },
+    { href: '/intake', label: 'Document Intake', icon: Zap },
+  ] },
+  { label: 'People', items: [
+    { href: '/contacts', label: 'Contacts', icon: Users },
+    { href: '/raises/contacts', label: 'Capital Contacts', icon: BarChart3 },
+    { href: '/investors', label: 'Investors', icon: Users },
+  ] },
+  { label: 'Portfolio', items: [
+    { href: '/portfolio', label: 'Portfolio', icon: Building2 },
+    { href: '/raises', label: 'Capital Raises', icon: TrendingUp },
+    { href: '/calendar', label: 'Calendar', icon: Calendar },
+  ] },
+  { label: 'Tools', items: [
+    { href: '/notes', label: 'Notes', icon: NoteIcon },
+    { href: '/best-practices', label: 'Best Practices', icon: BookOpen },
+    { href: '/assistant', label: 'Assistant', icon: Star },
+    { href: '/digest', label: 'Digest', icon: Mail },
+  ] },
 ]
+
+const NAV = NAV_SECTIONS.flatMap(s => s.items)
 
 export default function Sidebar() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [isMobile, setIsMobile] = useState(false)
-
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768)
-    check()
-    window.addEventListener('resize', check)
-    return () => window.removeEventListener('resize', check)
-  }, [])
+  const isMobile = useIsMobile()
 
   useEffect(() => { setMobileOpen(false) }, [pathname])
+
+  // Escape closes the mobile drawer (item 29c; the command palette
+  // already had this, the drawer did not).
+  useEffect(() => {
+    if (!mobileOpen) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileOpen(false)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [mobileOpen])
 
   const isActive = (href: string) => {
     if (pathname === href) return true
@@ -42,21 +63,26 @@ export default function Sidebar() {
 
   const NavLinks = () => (
     <>
-      {NAV.map(({ href, label, icon: Icon }) => (
-        <Link key={href} href={href} style={{
-          display: 'flex', alignItems: 'center', gap: '10px',
-          padding: isMobile ? '14px 20px' : '8px 16px',
-          borderRadius: '7px',
-          textDecoration: 'none',
-          fontSize: '13px',
-          fontWeight: isActive(href) ? 600 : 400,
-          color: isActive(href) ? '#ffffff' : 'rgba(255,255,255,0.6)',
-          background: isActive(href) ? 'rgba(255,255,255,0.15)' : 'transparent',
-          transition: 'all 0.15s',
-        }}>
-          <Icon size={15} />
-          {label}
-        </Link>
+      {NAV_SECTIONS.map(section => (
+        <div key={section.label ?? 'home'}>
+          {section.label && <div className="nav-section-label">{section.label}</div>}
+          {section.items.map(({ href, label, icon: Icon }) => (
+            <Link key={href} href={href} style={{
+              display: 'flex', alignItems: 'center', gap: '10px',
+              padding: isMobile ? '14px 20px' : '8px 16px',
+              borderRadius: '7px',
+              textDecoration: 'none',
+              fontSize: '13px',
+              fontWeight: isActive(href) ? 600 : 400,
+              color: isActive(href) ? '#ffffff' : 'rgba(255,255,255,0.6)',
+              background: isActive(href) ? 'rgba(255,255,255,0.15)' : 'transparent',
+              transition: 'all 0.15s',
+            }}>
+              <Icon size={15} />
+              {label}
+            </Link>
+          ))}
+        </div>
       ))}
     </>
   )
@@ -78,7 +104,7 @@ export default function Sidebar() {
             <img src="/esp-icon.svg" alt="ESP" style={{ width: '28px', height: '28px', flexShrink: 0, borderRadius: '6px' }} />
             <span style={{ color: 'white', fontSize: '14px', fontWeight: 700 }}>Evolution Strategy Partners</span>
           </Link>
-          <button onClick={() => setMobileOpen(!mobileOpen)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'white', padding: '4px', height: '52px', display: 'flex', alignItems: 'center' }}>
+          <button onClick={() => setMobileOpen(!mobileOpen)} aria-expanded={mobileOpen} aria-label={mobileOpen ? 'Close menu' : 'Open menu'} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'white', padding: '4px', height: '52px', display: 'flex', alignItems: 'center' }}>
             {mobileOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
         </div>
@@ -116,7 +142,7 @@ export default function Sidebar() {
     <div style={{
       width: '200px', minWidth: '200px', background: '#4F284B',
       display: 'flex', flexDirection: 'column', padding: '16px 8px',
-      height: '100vh', position: 'sticky', top: 0,
+      height: '100vh', position: 'sticky', top: 0, overflowY: 'auto',
     }}>
       {/* Logo */}
       <Link href="/dashboard" style={{ padding: '8px 10px 20px', display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
