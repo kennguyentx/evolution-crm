@@ -238,6 +238,58 @@ export async function dropboxFindFoldersByName(folderName: string): Promise<Drop
   return [...found.values()]
 }
 
+export interface DropboxFileMatch {
+  /** File name exactly as Dropbox reports it. */
+  name: string
+  /** Canonical (lowercase) full path of the file. */
+  path: string
+}
+
+/**
+ * Pure extractor for /files/search_v2 match lists: keeps only FILES whose
+ * name equals `fileName` (case-insensitive), deduped by path. Sibling of
+ * extractFolderMatches for the "move file <name> to <Deal>" email command —
+ * same-name files in different folders are ALL returned; the caller decides
+ * (one moves, several queue as ambiguous, never a guess).
+ */
+export function extractFileMatches(matches: any[] | undefined, fileName: string): DropboxFileMatch[] {
+  const wanted = fileName.toLowerCase()
+  const byPath = new Map<string, DropboxFileMatch>()
+  for (const match of matches ?? []) {
+    const entry = match?.metadata?.metadata ?? match?.metadata
+    if (!entry || entry['.tag'] !== 'file') continue
+    const name = entry.name as string | undefined
+    if (!name || name.toLowerCase() !== wanted) continue
+    const path = (entry.path_lower ?? entry.path_display) as string | undefined
+    if (!path) continue
+    byPath.set(path.toLowerCase(), { name, path })
+  }
+  return [...byPath.values()]
+}
+
+/**
+ * Account-wide search for files named exactly `fileName`. Same pagination
+ * discipline as dropboxFindFoldersByName; throws a classified DropboxError
+ * on API failure so callers never read a failed search as "no such file".
+ */
+export async function dropboxFindFilesByName(fileName: string): Promise<DropboxFileMatch[]> {
+  const found = new Map<string, DropboxFileMatch>()
+  const collect = (matches: any[] | undefined) => {
+    for (const m of extractFileMatches(matches, fileName)) found.set(m.path.toLowerCase(), m)
+  }
+
+  let page = await dropboxApiPost('/files/search_v2', {
+    query: fileName,
+    options: { filename_only: true, file_status: 'active', max_results: 100 },
+  })
+  collect(page?.matches)
+  for (let i = 0; page?.has_more && page?.cursor && i < 20; i++) {
+    page = await dropboxApiPost('/files/search/continue_v2', { cursor: page.cursor })
+    collect(page?.matches)
+  }
+  return [...found.values()]
+}
+
 // ── Upload ───────────────────────────────────────────────────────────────────
 
 export async function dropboxUpload(folderPath: string, fileName: string, buffer: Buffer | Uint8Array): Promise<string> {
