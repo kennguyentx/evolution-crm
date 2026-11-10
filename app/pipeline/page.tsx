@@ -8,6 +8,9 @@ import Link from 'next/link'
 import NewDealModal from '@/components/deals/NewDealModal'
 import { moveDropboxOnStageChange } from '@/lib/dropbox-stage-move'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('pipeline')
 
 const STAGES: { name: DealStage; label: string }[] = [
   { name: 'Teaser',        label: 'Teaser' },
@@ -127,7 +130,7 @@ export default function PipelinePage() {
       headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
     })
     const body = await res.json().catch(() => ({}))
-    console.log('[pipeline send] response:', { status: res.status, body })
+    log.info('weekly email send response', { status: res.status })
     if (res.ok) {
       setSendResult('success')
       const recipsList = Array.isArray(body.recipients) ? body.recipients.join(', ') : `${body.recipients ?? '?'} recipient(s)`
@@ -147,7 +150,7 @@ export default function PipelinePage() {
     setDeals(prev => prev.map(d => d.id === dealId ? { ...d, stage } : d))
     await supabase.from('deals').update({ stage }).eq('id', dealId)
     const deal = deals.find(d => d.id === dealId)
-    if (deal) moveDropboxOnStageChange(supabase, dealId, deal.company_name, (deal as any).dropbox_path, stage).catch(console.error)
+    if (deal) moveDropboxOnStageChange(supabase, dealId, deal.company_name, (deal as any).dropbox_path, stage).catch((e: any) => log.error('Dropbox stage move failed', { dealId, error: e?.message ?? String(e) }))
   }
 
   if (loading) return <div style={{ padding: '40px', color: 'var(--text-muted)' }}>Loading...</div>

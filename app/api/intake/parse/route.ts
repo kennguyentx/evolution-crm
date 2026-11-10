@@ -3,6 +3,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import { dropboxConfigured, dropboxUpload, dropboxFolderExists, expectedDropboxFolder, uniqueDropboxFolder } from '@/lib/dropbox'
 import { AI_MODELS } from '@/lib/ai-config'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('intake/parse')
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 const BUCKET = 'intake-temp'
@@ -157,7 +160,7 @@ export async function POST(req: NextRequest) {
         } catch (dbxErr: any) {
           dropbox_error = dbxErr.message ?? 'Unknown Dropbox error'
           dropbox_folder = folderPath  // surface the intended folder even if upload failed
-          console.warn('Dropbox upload failed:', dropbox_error)
+          log.warn('Dropbox upload failed:', dropbox_error)
         }
       } else {
         // Paste mode — no file to upload, but still surface the resolved folder
@@ -175,7 +178,7 @@ export async function POST(req: NextRequest) {
         serviceClient().storage.from(BUCKET).remove([storagePath])
       } catch { /* ignore */ }
     }
-    console.error('CIM parse error:', err)
+    log.error('CIM parse error:', err)
     return NextResponse.json({ error: err.message || 'Parse failed' }, { status: 500 })
   }
 }

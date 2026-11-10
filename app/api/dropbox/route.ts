@@ -14,6 +14,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getDropboxToken, dropboxMove } from '@/lib/dropbox'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('dropbox')
 
 const DBX_API     = 'https://api.dropboxapi.com/2'
 const DBX_CONTENT = 'https://content.dropboxapi.com/2'
@@ -47,10 +50,7 @@ function audit(
   userId: string | undefined,
   extra?: Record<string, unknown>,
 ) {
-  console.log(
-    '[dropbox-audit]',
-    JSON.stringify({ ts: new Date().toISOString(), action, path, userId, ...extra }),
-  )
+  log.info('audit', { action, path, userId, ...extra })
 }
 
 // ── Session extraction ────────────────────────────────────────────────────────
@@ -207,7 +207,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
 
   } catch (err: any) {
-    console.error('Dropbox API error:', err)
+    log.error('Dropbox API error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
@@ -295,7 +295,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, path: result.path_lower, name: result.name })
 
   } catch (err: any) {
-    console.error('Dropbox upload error:', err)
+    log.error('Dropbox upload error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
@@ -322,7 +322,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ success: true, path: newPath })
 
   } catch (err: any) {
-    console.error('Dropbox move error:', err)
+    log.error('Dropbox move error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }

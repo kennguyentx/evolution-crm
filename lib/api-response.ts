@@ -6,6 +6,9 @@
 //   export const GET = withErrorHandler(async (req) => { ... })
 
 import { NextRequest, NextResponse } from 'next/server'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('api')
 
 export function apiError(message: string, status = 500): NextResponse {
   return NextResponse.json({ error: message }, { status })
@@ -27,7 +30,7 @@ export function withErrorHandler(handler: RouteHandler): RouteHandler {
       return await handler(req, ctx)
     } catch (err: any) {
       const message = err?.message ?? 'Internal server error'
-      console.error('[api]', req.method, req.nextUrl?.pathname, message, err?.stack)
+      log.error('request failed', { method: req.method, path: req.nextUrl?.pathname, error: err })
       return apiError(message)
     }
   }

@@ -4,6 +4,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { AI_MODELS } from '@/lib/ai-config'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('deals/comps')
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -106,7 +109,7 @@ Use null for any field not found. Only include comps where you found at least th
 
     return NextResponse.json(parsed)
   } catch (err: any) {
-    console.error('Comps error:', err)
+    log.error('Comps error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }

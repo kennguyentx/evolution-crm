@@ -5,6 +5,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { embed, vectorLiteral, dealTextBlob } from '@/lib/embeddings'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('deals/similar')
 
 function serviceClient() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -52,7 +55,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ results: similar ?? [] })
 
   } catch (err: any) {
-    console.error('[similar] error:', err?.message)
+    log.error('[similar] error:', err?.message)
     return NextResponse.json({ error: err?.message ?? 'Internal error' }, { status: 500 })
   }
 }

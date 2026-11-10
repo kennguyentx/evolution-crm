@@ -3,6 +3,9 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { expectedDropboxFolder } from '@/lib/dropbox'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('dropbox-stage-move')
 
 export async function moveDropboxOnStageChange(
   supabase: SupabaseClient,
@@ -29,7 +32,7 @@ export async function moveDropboxOnStageChange(
 
     if (!res.ok) {
       const msg = data?.error ?? `Move failed (${res.status})`
-      console.error('[Dropbox] Move failed:', msg, { from: currentDropboxPath, to: toPath })
+      log.error('Move failed', { message: msg, fromPath: currentDropboxPath, toPath })
       return { path: currentDropboxPath, error: msg }
     }
 
@@ -37,7 +40,7 @@ export async function moveDropboxOnStageChange(
     return { path: data.path, error: null }
   } catch (err: any) {
     const msg = err?.message ?? 'Unknown error'
-    console.error('[Dropbox] Move exception:', msg)
+    log.error('[Dropbox] Move exception:', msg)
     return { path: currentDropboxPath, error: msg }
   }
 }

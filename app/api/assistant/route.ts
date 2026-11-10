@@ -8,6 +8,9 @@ export const maxDuration = 120 // seconds — agent loops need more than the 10s
 import { NextRequest, NextResponse } from 'next/server'
 import { AI_MODELS } from '@/lib/ai-config'
 import { anthropic, TOOLS, WRITE_TOOLS, executeTool, buildSystemPrompt } from '@/lib/assistant-core'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('assistant')
 
 // ─── Message sanitizer ────────────────────────────────────────
 // Ensures every assistant message with tool_use blocks is immediately followed
@@ -160,7 +163,7 @@ export async function POST(req: NextRequest) {
     })
 
   } catch (err: any) {
-    console.error('Assistant error:', err)
+    log.error('Assistant error:', err)
     return NextResponse.json({ error: err?.message || String(err) }, { status: 500 })
   }
 }

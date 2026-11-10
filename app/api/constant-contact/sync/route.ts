@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getValidCCToken } from '@/lib/constant-contact'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('cc-sync')
 
 const CC_API = 'https://api.cc.email/v3'
 
@@ -72,7 +75,7 @@ export async function POST(req: NextRequest) {
       text.toLowerCase().includes('already exists') ||
       text.toLowerCase().includes('email_address') && res.status === 400
     if (!isAlreadyExists) {
-      console.error('[cc-sync] error:', res.status, text)
+      log.error('CC sync error', { status: res.status, responseBytes: text.length })
       return NextResponse.json({ error: text }, { status: res.status })
     }
   }

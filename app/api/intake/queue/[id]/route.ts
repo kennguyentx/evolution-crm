@@ -3,6 +3,9 @@ import { createClient } from '@supabase/supabase-js'
 import { sendDealNotification } from '@/lib/deal-notify'
 import { IntakeQueueActionSchema } from '@/lib/schemas'
 import { apiError } from '@/lib/api-response'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('intake/queue')
 
 function serviceClient() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -112,7 +115,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         isPending:   false,
       })
     } catch (e: any) {
-      console.error('[deal-notify] intake approve:', e?.message)
+      log.error('[deal-notify] intake approve:', e?.message)
     }
 
     // Link any orphaned email-intake notes that were logged before the deal existed

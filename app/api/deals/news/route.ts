@@ -5,6 +5,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { AI_MODELS } from '@/lib/ai-config'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('deals/news')
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -21,7 +24,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(await fetchNews({ company_name, sector, geoContext, portcoCtx }))
   } catch (err: any) {
-    console.error('[news] Error:', err)
+    log.error('[news] Error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }

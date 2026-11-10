@@ -3,6 +3,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase'
 import { dropboxUpload } from '@/lib/dropbox'
 import { AI_MODELS } from '@/lib/ai-config'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('cim-analyze')
 
 export const maxDuration = 120
 
@@ -193,7 +196,7 @@ Return ONLY valid JSON:
         const folder = deal.dropbox_path || `/Evolution Strategy Partners/Deals/${deal.company_name.replace(/[<>:"/\\|?*]/g, '_')}`
         dropboxPath = await dropboxUpload(folder, fileName, Buffer.from(fileBuffer))
       } catch (e) {
-        console.error('Dropbox upload error (non-fatal):', e)
+        log.error('Dropbox upload error (non-fatal):', e)
       }
     }
 
@@ -207,7 +210,7 @@ Return ONLY valid JSON:
 
     return NextResponse.json({ success: true, id: saved?.id, dropbox_path: dropboxPath, ...extracted })
   } catch (err: any) {
-    console.error('CIM analyze error:', err)
+    log.error('CIM analyze error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }

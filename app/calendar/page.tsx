@@ -3,6 +3,9 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('calendar')
 
 type CalEvent = {
   id: string
@@ -91,8 +94,8 @@ export default function CalendarPage() {
       .select('*, deal:deals(company_name), contact:contacts(first_name, last_name), portfolio_company:portfolio_companies(name)')
       .gte('event_date', first).lte('event_date', last)
       .order('start_time', { ascending: true, nullsFirst: false })
-    if (error) console.error('[calendar] loadEvents error:', error)
-    console.log(`[calendar] loaded ${data?.length ?? 0} events for ${first}..${last}`, data?.slice(0, 3))
+    if (error) log.error('loadEvents error:', error)
+    log.info(`loaded ${data?.length ?? 0} events for ${first}..${last}`)
     setEvents(data ?? [])
     setLoading(false)
   }

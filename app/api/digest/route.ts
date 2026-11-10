@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isAuthorizedCron } from '@/lib/cron-auth'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('digest')
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -226,7 +229,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ success: true, email_id: result.id, deals: totalDeals })
   } catch (err: any) {
-    console.error('Digest error:', err)
+    log.error('Digest error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }

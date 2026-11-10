@@ -15,6 +15,9 @@ import NewContactModal from '@/components/contacts/NewContactModal'
 import UndoToast, { type UndoEntry } from '@/components/layout/UndoToast'
 import { moveDropboxOnStageChange } from '@/lib/dropbox-stage-move'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('deal-page')
 
 
 const STAGES = ['Teaser','Reviewing','Pre-LOI','LOI Submitted','Exclusivity','Closed (Platform)','Closed (Add-On)','Pass (DOA)','Pass (Pre-LOI)','Pass (Post-LOI)','Hold']
@@ -126,19 +129,19 @@ export default function DealDetailPage() {
       supabase.from('deal_capital_assignments').select('*, contact:contacts(first_name, last_name, firm)').eq('deal_id', dealId),
     ])
     if (dealRes.error || !dealRes.data) {
-      console.error('[deal page] Failed to load deal:', dealRes.error?.message)
+      log.error('[deal page] Failed to load deal:', dealRes.error?.message)
       setLoading(false)
       return
     }
     setDeal(dealRes.data)
     if (linksRes.data) setLinkedContacts(linksRes.data)
-    else if (linksRes.error) console.warn('[deal page] contacts query failed:', linksRes.error.message)
+    else if (linksRes.error) log.warn('[deal page] contacts query failed:', linksRes.error.message)
     if (interactionsRes.data) setInteractions(interactionsRes.data)
-    else if (interactionsRes.error) console.warn('[deal page] interactions query failed:', interactionsRes.error.message)
+    else if (interactionsRes.error) log.warn('[deal page] interactions query failed:', interactionsRes.error.message)
     if (diligenceRes.data) setDiligence(diligenceRes.data)
-    else if (diligenceRes.error) console.warn('[deal page] diligence query failed:', diligenceRes.error.message)
+    else if (diligenceRes.error) log.warn('[deal page] diligence query failed:', diligenceRes.error.message)
     if (capitalRes.data) setCapital(capitalRes.data)
-    else if (capitalRes.error) console.warn('[deal page] capital query failed:', capitalRes.error.message)
+    else if (capitalRes.error) log.warn('[deal page] capital query failed:', capitalRes.error.message)
     // Fetch linked notes
     const { data: notesData } = await supabase.from('notes').select('*').eq('deal_id', dealId).order('note_date', { ascending: false })
     if (notesData) setDealNotes(notesData)
@@ -253,7 +256,7 @@ export default function DealDetailPage() {
         summary: `Stage changed: ${currentDeal.stage} → ${stage}`,
         interaction_date: new Date().toISOString(),
       }).select().single()
-      if (stageLogError) console.error('[updateStage] activity log failed:', stageLogError)
+      if (stageLogError) log.error('[updateStage] activity log failed:', stageLogError)
       if (newEntry) setInteractions(prev => [newEntry, ...prev])
     }
 
@@ -264,7 +267,7 @@ export default function DealDetailPage() {
         supabase, dealId, currentDeal.company_name, currentDeal.dropbox_path, stage,
       )
       if (moveErr) {
-        console.error('[Dropbox stage move]', moveErr)
+        log.error('[Dropbox stage move]', moveErr)
         // Quietly log instead of blocking the user with an alert.
         // Benign errors like "to/conflict/folder" are common and harmless.
         // If the user cares they can check the deal's Documents tab.
@@ -610,9 +613,9 @@ export default function DealDetailPage() {
   }
 
   const addInteraction = async () => {
-    console.log('[addInteraction] CLICKED', { summary: activityForm.summary, type: activityForm.interaction_type })
+    log.debug('[addInteraction] clicked', { type: activityForm.interaction_type, summaryLength: activityForm.summary.length })
     if (!activityForm.summary.trim()) {
-      console.log('[addInteraction] aborted — empty summary')
+      log.debug('[addInteraction] aborted — empty summary')
       return
     }
     const insertPayload: any = {
@@ -625,22 +628,22 @@ export default function DealDetailPage() {
     if (detectedContacts[0]?.id) insertPayload.contact_id = detectedContacts[0].id
     if (activityForm.raise_id) insertPayload.raise_id = activityForm.raise_id
 
-    console.log('[addInteraction] inserting:', insertPayload)
+    log.debug('[addInteraction] inserting', { dealId, type: insertPayload.interaction_type, hasContact: !!insertPayload.contact_id })
     // Step 1: bare INSERT — no joins, so RLS on joined tables can't kill it
     const { data: inserted, error: insertError } = await supabase
       .from('interactions')
       .insert(insertPayload)
       .select('*')
       .single()
-    console.log('[addInteraction] insert result:', { inserted, insertError })
+    log.debug('[addInteraction] insert result', { insertedId: inserted?.id ?? null, hasError: !!insertError })
 
     if (insertError) {
-      console.error('[addInteraction] insert failed:', insertError)
+      log.error('[addInteraction] insert failed:', insertError)
       alert(`Failed to log activity: ${insertError.message}`)
       return
     }
     if (!inserted) {
-      console.error('[addInteraction] insert returned no data — likely RLS on read')
+      log.error('[addInteraction] insert returned no data — likely RLS on read')
       alert('Activity may have saved but could not be confirmed. Refresh to verify.')
       return
     }

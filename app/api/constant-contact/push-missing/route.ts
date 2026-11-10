@@ -6,6 +6,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getValidCCToken } from '@/lib/constant-contact'
+import { createLogger } from '@/lib/log'
+
+const log = createLogger('cc-push-missing')
 
 export const maxDuration = 60
 
@@ -94,7 +97,7 @@ export async function POST() {
 
   if (!res.ok) {
     const text = await res.text()
-    console.error('[push-missing] CC bulk API error:', res.status, text)
+    log.error('CC bulk API error', { status: res.status, responseBytes: text.length })
     return NextResponse.json({ error: `CC API error (${res.status}): ${text}` }, { status: 500 })
   }
 
