@@ -211,6 +211,8 @@ const REPLY_FOOTER_LINES = [
   'REPLY TO THIS EMAIL TO ACT ON IT — one instruction per line:',
   '  approve 2 / reject 2 — decide a queued item (a name works too: approve Project Anchor)',
   '  3: log as pre-loi — change item 3\'s deal stage',
+  '  change <Deal> to <stage> · update <Deal>: type add-on · update contact <Name>: phone <x>, company <x>',
+  '  move file <filename> to <Deal> — or just say it in your own words; a guess I\'m unsure of comes back here as "I think you meant: … — approve?"',
   '  note for <Name>: <text> · log new contact <Name> at <Company> · ask: <question>',
 ]
 
