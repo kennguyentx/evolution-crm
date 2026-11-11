@@ -23,6 +23,8 @@ export type IntakeEventKind =
   | 'skipped'          // duplicate or empty — nothing done
   | 'reply-action'     // an instruction from a digest reply was carried out
   | 'reply-failed'     // an instruction from a digest reply could not be carried out
+  | 'command-action'   // an email action command (change/update/file/move) was carried out
+  | 'command-failed'   // an email action command could not be carried out
 
 export interface IntakeEventInput {
   kind: IntakeEventKind
