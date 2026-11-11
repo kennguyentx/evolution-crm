@@ -17,6 +17,7 @@
  */
 
 import { parseEmailCommand, type ParsedEmailCommand } from './email-commands'
+import { parseActionCommands, type ActionCommand } from './email-action-commands'
 import type { IntakeEvent } from './intake-events'
 
 // ── Marker ────────────────────────────────────────────────────────────────────
@@ -71,6 +72,8 @@ export type ReplyInstruction =
   | { type: 'reject'; ref: ReplyRef; raw: string }
   /** "<n>: log as <stage> …" — command is the parsed log-deal remainder. */
   | { type: 'stage'; n: number; command: ParsedEmailCommand; raw: string }
+  /** An action command (lib/email-action-commands): change/update/file/move by name. */
+  | { type: 'action'; command: ActionCommand; raw: string }
   /** A reply line that tried to be an instruction but can't be honored as-is. */
   | { type: 'invalid'; raw: string; reason: string }
   /** A standalone existing command: note-for / ask / log-contact. */
@@ -121,6 +124,19 @@ export function parseReplyInstructions(replyText: string): ReplyInstruction[] {
         ? { kind: 'number', n: parseInt(numRef[1], 10) }
         : { kind: 'name', name: arg }
       out.push({ type: verb === 'approve' ? 'approve' : 'reject', ref, raw: line })
+      continue
+    }
+
+    // Action commands: change/update a deal or contact by name, file
+    // attachments under a deal, move a Dropbox file. A near-miss (started
+    // like one, didn't parse) is an invalid instruction, not prose.
+    const acts = parseActionCommands(line)
+    if (acts.commands.length > 0) {
+      out.push({ type: 'action', command: acts.commands[0], raw: line })
+      continue
+    }
+    if (acts.invalid.length > 0) {
+      out.push({ type: 'invalid', raw: line, reason: acts.invalid[0].reason })
       continue
     }
 
