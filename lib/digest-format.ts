@@ -25,6 +25,7 @@ export interface DigestSection {
 export const DIGEST_SECTIONS: DigestSection[] = [
   { kinds: ['ambiguous'],     title: 'Needs your pick',    intro: 'Could not resolve — pick the right one in the intake queue:' },
   { kinds: ['reply-action', 'reply-failed'], title: 'Digest replies', intro: 'What your reply to the previous digest did:' },
+  { kinds: ['command-action', 'command-failed'], title: 'Email commands', intro: 'What your emailed commands did:' },
   { kinds: ['deal-logged'],   title: 'Deals logged',       intro: '' },
   { kinds: ['deal-updated'],  title: 'Deals updated',      intro: '' },
   { kinds: ['deal-queued'],   title: 'Queued for review',  intro: 'Waiting in the intake queue:' },
