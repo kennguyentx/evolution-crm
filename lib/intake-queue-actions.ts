@@ -13,6 +13,7 @@
 
 import { sendDealNotification } from '@/lib/deal-notify'
 import { upsertContacts } from '@/lib/contacts'
+import { executeStoredInterpretation } from '@/lib/email-command-fallback'
 import { createLogger } from '@/lib/log'
 
 const log = createLogger('intake/queue')
@@ -91,6 +92,29 @@ export async function approveQueueItem(supabase: any, id: string, edited?: Queue
       reviewed_at: new Date().toISOString(),
     }).eq('id', id)
     return { ok: true, note_id: note?.id }
+  }
+
+  // Email-command queue items (deterministic ambiguity or an LLM
+  // interpretation from the smart fallback). With a stored interpretation,
+  // approving EXECUTES it as-is — no re-classification. Without one, the
+  // command named several matches and approval can't pick: bounce back to
+  // pending with instructions instead of creating a garbage deal.
+  if (ext._kind === 'email-command') {
+    if (!ext._interpretation) {
+      await supabase.from('intake_queue').update({ status: 'pending', reviewed_at: null }).eq('id', id)
+      return { ok: false, status: 400, error: 'This email command named several matches — re-send it with the exact name to carry it out' }
+    }
+    const outcome = await executeStoredInterpretation(supabase, ext)
+    if (outcome.status !== 'done') {
+      await supabase.from('intake_queue').update({ status: 'pending', reviewed_at: null }).eq('id', id)
+      return { ok: false, status: outcome.status === 'queued' ? 409 : 400, error: outcome.summary }
+    }
+    await supabase.from('intake_queue').update({
+      status: 'approved',
+      deal_id: outcome.deal_id ?? null,
+      reviewed_at: new Date().toISOString(),
+    }).eq('id', id)
+    return { ok: true, deal_id: outcome.deal_id ?? undefined }
   }
 
   // Resolve stage and derive status
