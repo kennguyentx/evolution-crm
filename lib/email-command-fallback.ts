@@ -225,8 +225,10 @@ async function queueInterpretation(
 
 /**
  * Run the fallback over candidate lines. Returns handled=true when at least
- * one line was attempted (executed, queued, or recorded unclassifiable) —
- * callers use that to stop normal intake processing for command emails.
+ * one line was interpreted (executed, queued, or refused) — callers use that
+ * to stop normal intake processing for command emails. A line that can't be
+ * interpreted is recorded as a failure but does NOT claim the email, so the
+ * forward still reaches normal deal/note intake instead of vanishing.
  */
 export async function runSmartFallback(
   supabase: any,
@@ -241,7 +243,6 @@ export async function runSmartFallback(
   for (const rawLine of lines) {
     const line = (rawLine ?? '').trim()
     if (!looksLikeInstruction(line)) continue
-    handled = true
 
     let cls: Classification | null = null
     try {
@@ -255,6 +256,7 @@ export async function runSmartFallback(
       outcomes.push({ line, status: 'failed', summary })
       continue
     }
+    handled = true
 
     const text = describeInterpretation(cls.command)
 

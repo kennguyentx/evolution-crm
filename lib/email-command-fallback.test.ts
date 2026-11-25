@@ -190,13 +190,14 @@ describe('runSmartFallback', () => {
     expect(ev?.summary).toMatch(/Pass\/Dead changes always need approval/)
   })
 
-  it('unclassifiable instruction-like line records a failure and does nothing', async () => {
+  it('unclassifiable instruction-like line records a failure and lets normal intake proceed', async () => {
     const { supabase, state } = makeFakeSupabase({ deals: [DEAL] })
     const records: Row[] = []
     const res = await runSmartFallback(supabase, ['move the thing to the place'], makeCtx(records), {
       classify: async () => null,
     })
-    expect(res.handled).toBe(true)
+    // Not claimed: the email must fall through to deal/note intake, not vanish
+    expect(res.handled).toBe(false)
     expect(res.outcomes[0].status).toBe('failed')
     expect(records).toHaveLength(1)
     expect(records[0].ok).toBe(false)

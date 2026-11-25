@@ -966,7 +966,11 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
         })
       }
 
-      const fb = await runSmartFallback(supabase, cmdText.split(/\r?\n/), {
+      // "log as teaser / pass", "log contact …" are intake commands handled by
+      // the deal/contact paths below — never hand them to the action fallback,
+      // which can't interpret them and would otherwise swallow the forward.
+      const intakeCommand = command.kind === 'log-deal' || command.kind === 'log-contact'
+      const fb = intakeCommand ? { handled: false, outcomes: [] } : await runSmartFallback(supabase, cmdText.split(/\r?\n/), {
         from,
         fromName,
         subject,
