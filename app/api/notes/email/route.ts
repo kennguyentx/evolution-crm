@@ -677,6 +677,12 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   )
   if (!emailLimit.allowed) return rateLimitResponse(emailLimit.retryAfterSeconds)
 
+  // Set once this request claims the intake_queue idempotency placeholder; the
+  // finally block below flips it from 'processing' to 'done'/'failed' so the
+  // row reflects what happened (it stays, to keep blocking duplicate retries).
+  let claimedMessageId: string | null = null
+  let requestFailed = false
+
   try {
     const body     = await req.json()
     const from     = body.From      ?? body.from    ?? ''
@@ -1020,6 +1026,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
           log.info(`Idempotency (messageId): duplicate, skipping`)
           return NextResponse.json({ success: true, skipped: 'duplicate messageId' })
         }
+        if (!lockError) claimedMessageId = messageId
         if (lockError) {
           // Column probably doesn't exist yet — migration not run; fall through to layer 2
           log.warn(`Sentinel insert failed (run migration?): ${lockError.code} ${lockError.message}`)
@@ -1729,6 +1736,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     })
 
   } catch (err: any) {
+    requestFailed = true
     log.error('Email intake error:', err)
     // Best-effort: a top-level failure is invisible otherwise — the digest
     // surfaces it so a broken webhook doesn't silently drop intake.
@@ -1742,5 +1750,18 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
       })
     } catch { /* ignore — intake is already failing */ }
     return NextResponse.json({ error: err.message }, { status: 500 })
+  } finally {
+    // Resolve the idempotency placeholder. Only touches the 'processing' row
+    // for this message — a real queue item inserted by the paths above is a
+    // separate row and is left alone.
+    if (claimedMessageId) {
+      try {
+        const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+        await sb.from('intake_queue')
+          .update({ status: requestFailed ? 'failed' : 'done', reviewed_at: new Date().toISOString() })
+          .eq('message_id', claimedMessageId)
+          .eq('status', 'processing')
+      } catch { /* best-effort */ }
+    }
   }
 })
